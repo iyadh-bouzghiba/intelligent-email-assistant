@@ -1,3 +1,4 @@
+from datetime import datetime
 from src.main import EmailAssistant
 from fastapi import FastAPI
 from typing import Dict, Any
@@ -28,6 +29,19 @@ REDIRECT_URI = os.environ.get("REDIRECT_URI", "http://localhost:8000/auth/google
 
 oauth_manager = OAuthManager(CLIENT_CONFIG, REDIRECT_URI)
 assistant = EmailAssistant()
+
+@app.get("/")
+def root():
+    return {
+        "service": "Intelligent Email Assistant API",
+        "status": "running",
+        "docs": "/docs",
+        "health": "/health"
+    }
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 @app.get("/auth/google/login")
 async def login_google():
