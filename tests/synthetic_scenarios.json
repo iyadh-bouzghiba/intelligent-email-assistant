@@ -1,0 +1,47 @@
+[
+    {
+        "id": "scenario_01_escalation",
+        "description": "High-priority escalation due to project failure",
+        "inputs": {
+            "subject": "CRITICAL: Database Migration Failed",
+            "sender": "cto@partner.com",
+            "body": "Your team was supposed to finish the migration by 2 AM. It is now 9 AM and the system is down. We are losing $50k/hour. I need an update NOW.",
+            "is_html": false,
+            "thread_id": "thread_888"
+        },
+        "expected": {
+            "intent": "escalation",
+            "priority": "urgent"
+        }
+    },
+    {
+        "id": "scenario_02_noise",
+        "description": "Low-priority 'noise' email",
+        "inputs": {
+            "subject": "Friday Drinks!",
+            "sender": "colleague@office.com",
+            "body": "Hey, anyone up for some drinks after work? Let me know by 4 PM.",
+            "is_html": false,
+            "thread_id": "thread_999"
+        },
+        "expected": {
+            "intent": "fyi",
+            "priority": "low"
+        }
+    },
+    {
+        "id": "scenario_03_scheduling_ambiguous",
+        "description": "Ambiguous scheduling request",
+        "inputs": {
+            "subject": "Quick sync?",
+            "sender": "manager@company.com",
+            "body": "Got a minute later today? Want to chat about the roadmap.",
+            "is_html": false,
+            "thread_id": "thread_111"
+        },
+        "expected": {
+            "intent": "scheduling",
+            "priority": "medium"
+        }
+    }
+]
