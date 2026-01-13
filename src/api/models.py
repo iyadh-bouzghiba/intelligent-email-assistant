@@ -1,4 +1,7 @@
 from ..data.models import ThreadSummary as SummaryResponse
+from pydantic import BaseModel
+from typing import List, Dict, Optional
+from datetime import datetime
 
 class GmailAuthRequest(BaseModel):
     auth_code: str

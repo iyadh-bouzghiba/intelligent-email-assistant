@@ -1,11 +1,11 @@
 import uuid
 from datetime import datetime
-from .data.models import EmailMessage, EmailMetadata, EmailContent, ThreadState, EmailAnalysis
-from .engine.nlp_engine import MistralEngine
-from .engine.preprocessing import EmailPreprocessor
-from .engine.classifier import EmailClassifier
-from .engine.summarizer import EmailSummarizer
-from .engine.drafter import EmailDrafter
+from src.data.models import EmailMessage, EmailMetadata, EmailContent, ThreadState, EmailAnalysis
+from src.engine.nlp_engine import MistralEngine
+from src.engine.preprocessing import EmailPreprocessor
+from src.engine.classifier import EmailClassifier
+from src.engine.summarizer import EmailSummarizer
+from src.engine.drafter import EmailDrafter
 
 class EmailAssistant:
     def __init__(self):

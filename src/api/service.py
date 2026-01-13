@@ -1,4 +1,13 @@
-from ..main import EmailAssistant
+from src.main import EmailAssistant
+from fastapi import FastAPI
+from typing import Dict, Any
+from fastapi.responses import RedirectResponse
+from fastapi import Request
+from fastapi import HTTPException
+from src.api.models import SummaryResponse
+from src.api.gmail_client import GmailClient
+from src.api.oauth_manager import OAuthManager
+import os
 
 app = FastAPI(title="Secure Email Assistant API")
 
