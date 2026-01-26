@@ -7,13 +7,17 @@ from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from src.main import EmailAssistant
+# --- FIX: Import main directly since we are in the backend root ---
+from main import EmailAssistant
+
+# --- FIX: Standard Absolute Imports from 'src' ---
 from src.api.models import (
     SummaryResponse,
     AnalyzeRequest,
     DraftReplyRequest,
     DraftReplyResponse,
 )
+
 # Use unified client from integrations
 from src.integrations.gmail import GmailClient
 from src.api.oauth_manager import OAuthManager
@@ -87,11 +91,7 @@ async def shutdown_event():
     # Note: CredentialStore saves tokens on update. 
     # We explicitly save threads and watch state here.
     
-    # Load current tokens to preserve them during this save (or use a merged save approach)
-    # A cleaner way is to let PersistenceManager handle the merge if we pass current in-memory objects
-    # But CredentialStore might have updated the file.
-    # We should re-load to get latest tokens, then save our in-memory threads/watch.
-    
+    # Load current tokens to preserve them during this save
     current_disk_state = persistence.load()
     persistence.save(
         tokens=current_disk_state.get("tokens", {}), # Preserve tokens on disk
@@ -338,8 +338,6 @@ async def analyze_thread(thread_id: str):
         raise HTTPException(status_code=404, detail="Thread not found")
         
     # Trigger reprocessing (this might re-summarize via DecisionRouter logic in assistant)
-    # We fake an "incoming" generic process call or direct method? 
-    # For now, let's assume we just want to re-run summarizer.
     
     summary = assistant.summarizer.summarize_thread(thread)
     thread.current_summary = summary
@@ -432,4 +430,3 @@ async def simulate_email(email_data: dict):
 # Wrap FastAPI with Socket.IO
 # ------------------------------------------------------------------
 app = socketio.ASGIApp(sio, app)
-
