@@ -1,0 +1,41 @@
+# Docker Compose for local development and testing
+version: '3.8'
+
+services:
+  # Redis for WebSocket scaling
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Backend API
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - FRONTEND_URL=http://localhost:5173
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Add your secrets here or use .env file
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    command: uvicorn src.api.service:app --host 0.0.0.0 --port 8000 --reload
+
+networks:
+  default:
+    name: email-assistant-network

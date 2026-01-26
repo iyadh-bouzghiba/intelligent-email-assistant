@@ -1,0 +1,22 @@
+# Backend endpoint to add at the end of service.py
+
+@app.post("/simulate-email")
+async def simulate_email(email_data: dict):
+    """
+    Simulates an incoming email for demo purposes.
+    Creates a thread and processes it through the assistant.
+    """
+    try:
+        # Process the email through the assistant
+        analysis = assistant.process_incoming_email(email_data)
+        
+        # Save state after creating new thread
+        persistence.save(USER_TOKEN_STORE, GMAIL_WATCH_STATE, assistant.threads)
+        
+        return {
+            "thread_id": analysis.message_id,
+            "status": "processed",
+            "summary": analysis.summary
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

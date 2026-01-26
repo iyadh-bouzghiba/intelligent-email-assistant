@@ -1,21 +1,36 @@
-# Environment variables
-.env
-.env.*
-
-# Python
+# Common
+node_modules/
+.venv/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-venv/
-.venv/
-
-# Node (if any)
-node_modules/
-
-# OS
+.env
+dist/
+build/
 .DS_Store
-Thumbs.db
 
-# Logs
+# Backend Specific
+backend/.env
+backend/assistant.db
+backend/.pytest_cache/
+backend/client_secrets.json
+backend/credentials.json
+backend/keys.json
+backend/logs/
+backend/secret_keys.json
+
+# Frontend Specific
+frontend/.env
+frontend/dist/
+frontend/.next/
+
+# ==========================================
+# MASTER SHIELDS (Added for Multi-Account Security)
+# ==========================================
+# Protects the dynamic token vault from being pushed to GitHub
+backend/data/credentials/*.json
+
+# Protects any local development database logs
 *.log
+
+# Prevents OS-specific thumbnail caches
+Thumbs.db

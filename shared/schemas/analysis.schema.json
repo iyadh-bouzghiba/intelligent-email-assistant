@@ -1,0 +1,99 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://email-assistant.com/schemas/analysis.schema.json",
+    "title": "ThreadAnalysis",
+    "description": "AI-generated analysis of an email thread",
+    "type": "object",
+    "required": [
+        "thread_id",
+        "overview",
+        "key_points",
+        "action_items",
+        "confidence_score"
+    ],
+    "properties": {
+        "thread_id": {
+            "type": "string",
+            "description": "Thread this analysis belongs to"
+        },
+        "overview": {
+            "type": "string",
+            "description": "Concise 2-3 sentence summary of the thread"
+        },
+        "key_points": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Important points from the thread"
+        },
+        "action_items": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Tasks or actions identified"
+        },
+        "deadlines": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "date"
+            },
+            "description": "Identified deadlines (ISO 8601 dates)",
+            "default": []
+        },
+        "key_participants": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Important people mentioned",
+            "default": []
+        },
+        "confidence_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "AI confidence in this analysis (0-1)"
+        },
+        "classification": {
+            "type": [
+                "object",
+                "null"
+            ],
+            "properties": {
+                "intent": {
+                    "type": "string",
+                    "enum": [
+                        "request",
+                        "follow_up",
+                        "escalation",
+                        "scheduling",
+                        "fyi",
+                        "support",
+                        "sales",
+                        "other"
+                    ]
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": [
+                        "urgent",
+                        "high",
+                        "medium",
+                        "low"
+                    ]
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                },
+                "reasoning": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,58 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://email-assistant.com/schemas/email.schema.json",
+    "title": "StandardEmail",
+    "description": "Normalized email format used across all email providers (Gmail, Outlook, etc.)",
+    "type": "object",
+    "required": [
+        "id",
+        "sender",
+        "subject",
+        "body_text",
+        "timestamp",
+        "thread_id"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "description": "Unique email ID from the provider"
+        },
+        "sender": {
+            "type": "string",
+            "description": "Sender in format: 'Name <email@example.com>'",
+            "pattern": "^.+\\s*<[^@]+@[^@]+\\.[^@]+>$|^[^@]+@[^@]+\\.[^@]+$"
+        },
+        "subject": {
+            "type": "string",
+            "description": "Email subject line"
+        },
+        "body_text": {
+            "type": "string",
+            "description": "Plain text body (HTML stripped)"
+        },
+        "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the email was sent (ISO 8601)"
+        },
+        "thread_id": {
+            "type": "string",
+            "description": "Thread/conversation ID"
+        },
+        "in_reply_to": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "description": "ID of email this is replying to"
+        },
+        "recipients": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "List of recipient email addresses",
+            "default": []
+        }
+    }
+}

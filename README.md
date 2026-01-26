@@ -1,33 +1,34 @@
-# Intelligent Email Assistant API
+# Intelligent Email Assistant (Full-Stack)
 
-A production-ready FastAPI backend that preprocesses emails and generates intelligent summaries using LLM APIs.  
-Deployed on Render with Git-based CI/CD.
-
----
-
-## 🚀 Live Demo
-
-- **Base URL:** https://intelligent-email-assistant-2npf.onrender.com
-- **Swagger Docs:** https://intelligent-email-assistant-2npf.onrender.com/docs
-- **Health Check:** https://intelligent-email-assistant-2npf.onrender.com/health
-
----
-
-## 🧠 Features
-
-- FastAPI-based REST API
-- Secure email preprocessing
-- AI-powered summarization (LLM API mode)
-- Modular architecture (API / Engine / Models)
-- Production deployment on Render
-- GitHub-based CI/CD
-
----
+A professional, production-grade application that uses AI to summarize and analyze email content.
 
 ## 🏗️ Project Structure
 
-```text
-src/
- ├── api/            # FastAPI routes & schemas
- ├── engine/         # NLP & preprocessing logic
- ├── main.py         # Core assistant logic
+This project is organized into two main parts:
+
+- **[`backend/`](./backend)**: FastAPI server that handles email preprocessing, NLP classification, and LLM-powered summarization.
+- **[`frontend/`](./frontend)**: Premium React application (Vite + TS + Tailwind) with a responsive, glassmorphism-inspired design.
+
+## 🚀 Quick Start
+
+### Backend
+```bash
+cd backend
+# Run the server (using the existing venv):
+..\.venv\Scripts\python -m uvicorn src.api.service:app --reload
+```
+
+### Frontend
+```bash
+cd frontend
+# Install dependencies: npm install
+# Start the dev server (supports Node.js 16+):
+npm run dev
+```
+
+## 🧠 Core Features
+- Paste raw email threads for instant AI analysis.
+- Extracts Key Points, Action Items, and Overviews.
+- Mobile-first, responsive design.
+- Real-time backend status indicator.
+- Secure Gmail integration (OAuth supported).
