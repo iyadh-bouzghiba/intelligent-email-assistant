@@ -1,33 +1,31 @@
+import os
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-import os
 
 from fastapi import FastAPI, Request, HTTPException, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+import socketio
 
-# --- FIX: Updated Import for new structure ---
+# --- Standard Imports ---
+# These assume you are running from the /backend folder
 from src.core import EmailAssistant
-
-# --- FIX: Standard Absolute Imports ---
 from src.api.models import (
     SummaryResponse,
     AnalyzeRequest,
     DraftReplyRequest,
     DraftReplyResponse,
 )
-
 from src.integrations.gmail import GmailClient
 from src.api.oauth_manager import OAuthManager
 from src.auth.credential_store import CredentialStore
 from src.auth.token_manager import TokenManager
 from src.data.store import PersistenceManager
 from src.data.models import ThreadSummary
-import socketio
 
 # ------------------------------------------------------------------
-# App & Environment
+# Initialization & Environment
 # ------------------------------------------------------------------
 load_dotenv()
 
@@ -49,6 +47,28 @@ app.add_middleware(
 )
 
 # ------------------------------------------------------------------
+# NEW: REQUIRED RENDER ROUTES (Prevents 404s)
+# ------------------------------------------------------------------
+
+@app.get("/health")
+async def health_check():
+    """Essential for Render to confirm the app is live."""
+    return {
+        "status": "healthy", 
+        "timestamp": datetime.now().isoformat(),
+        "version": "1.0.0"
+    }
+
+@app.get("/")
+async def root():
+    """Provides a base response when visiting the URL."""
+    return {
+        "message": "Secure Email Assistant API is Online",
+        "documentation": "/docs",
+        "health": "/health"
+    }
+
+# ------------------------------------------------------------------
 # State & Persistence
 # ------------------------------------------------------------------
 persistence = PersistenceManager()
@@ -57,7 +77,8 @@ token_manager = TokenManager(credential_store)
 
 # Initialize Assistant
 assistant = EmailAssistant()
-# IMPORTANT: Ensure assistant has a threads storage if core.py doesn't define it in __init__
+
+# Safety check for threads attribute
 if not hasattr(assistant, 'threads'):
     assistant.threads = {}
 
@@ -66,32 +87,32 @@ GMAIL_WATCH_STATE: Dict[str, Dict[str, Any]] = {}
 @app.on_event("startup")
 async def startup_event():
     print("🚀 API Starting: Loading application state...")
-    data = persistence.load()
-    
-    global GMAIL_WATCH_STATE
-    GMAIL_WATCH_STATE.update(data.get("watch_state", {}))
-    
-    # Restore Threads into Assistant
-    assistant.threads = data.get("threads", {})
-    print(f"✅ Loaded {len(assistant.threads)} threads.")
+    try:
+        data = persistence.load()
+        global GMAIL_WATCH_STATE
+        GMAIL_WATCH_STATE.update(data.get("watch_state", {}))
+        
+        # Restore Threads into Assistant
+        assistant.threads = data.get("threads", {})
+        print(f"✅ Loaded {len(assistant.threads)} threads.")
+    except Exception as e:
+        print(f"⚠️ Startup warning (Persistence): {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     print("💾 Shutdown: Saving application state...")
-    current_disk_state = persistence.load()
-    persistence.save(
-        tokens=current_disk_state.get("tokens", {}),
-        watch_state=GMAIL_WATCH_STATE,
-        threads=assistant.threads
-    )
+    try:
+        current_disk_state = persistence.load()
+        persistence.save(
+            tokens=current_disk_state.get("tokens", {}),
+            watch_state=GMAIL_WATCH_STATE,
+            threads=assistant.threads
+        )
+    except Exception as e:
+        print(f"❌ Shutdown error (Persistence): {e}")
 
 # ------------------------------------------------------------------
-# WebSocket & OAuth (Logic remains unchanged)
-# ------------------------------------------------------------------
-# ... [Keeping your existing WebSocket and OAuth routes as they are] ...
-
-# ------------------------------------------------------------------
-# THREAD-CENTRIC AI CORE (Refined to match EmailAssistant)
+# THREAD-CENTRIC AI CORE
 # ------------------------------------------------------------------
 
 @app.get("/threads")
@@ -99,16 +120,17 @@ async def list_threads():
     threads_list = []
     # Safety check for threads attribute
     for thread_id, thread in getattr(assistant, 'threads', {}).items():
-        if hasattr(thread, 'current_summary') and thread.current_summary:
-            summary = thread.current_summary
+        # Ensure we are checking for attributes correctly depending on your model structure
+        summary = getattr(thread, 'current_summary', None)
+        if summary:
             threads_list.append({
                 "thread_id": thread_id,
-                "overview": summary.overview,
+                "overview": getattr(summary, 'overview', "No summary available"),
                 "confidence_score": getattr(summary, 'confidence_score', 0),
                 "last_updated": getattr(thread, "last_updated", None)
             })
     return {"count": len(threads_list), "threads": threads_list}
 
-# ... [Rest of your endpoints stay the same, they now point to a valid assistant object] ...
-
+# --- SocketIO App Wrap ---
+# This remains at the bottom to ensure all routes are registered first
 app = socketio.ASGIApp(sio, app)
