@@ -1,27 +1,44 @@
 from services.gmail_engine import run_engine
 from services.summarizer import Summarizer
 
+class EmailAssistant:
+    def __init__(self):
+        self.brain = Summarizer()
+
+    def process_emails(self):
+        """Logic for the API to fetch and summarize emails"""
+        emails = run_engine()
+        if not emails:
+            return []
+        
+        results = []
+        for email in emails:
+            summary = self.brain.summarize(email)
+            results.append({
+                "subject": email.get('subject', 'No Subject'),
+                "summary": summary
+            })
+        return results
+
 def main():
+    """Logic for running directly via terminal (python core.py)"""
     print("🚀 INTELLIGENT EMAIL ASSISTANT: Starting Orchestration...\n")
     
-    # 1. Fetch Clean Data
+    assistant = EmailAssistant()
     emails = run_engine()
     
     if not emails:
         print("📭 No emails found or engine failed.")
         return
 
-    # 2. Process with AI
     print(f"🧠 Brain Initialized. Summarizing {len(emails)} emails...\n")
-    brain = Summarizer()
     
     print("✨ AI-Generated Executive Briefing ✨\n")
     print("="*60)
     
-    for i, email in enumerate(emails, 1):
-        summary_raw = brain.summarize(email)
+    for email in emails:
+        summary_raw = assistant.brain.summarize(email)
         
-        # Parse priority for header
         priority = "Medium"
         if "PRIORITY: High" in summary_raw: priority = "High"
         elif "PRIORITY: Low" in summary_raw: priority = "Low"
