@@ -1,17 +1,16 @@
 import axios from 'axios';
 import {
-    AnalyzeRequest,
     SummaryResponse,
     HealthStatus,
-    DraftReplyRequest,
     DraftReplyResponse,
     ThreadListResponse,
     SimulateEmailRequest,
-    BriefingResponse
-} from '../types/api';
+    BriefingResponse,
+    AccountsResponse
+} from '@types';
 
-// Use environment variable for API URL (handling Vite's import.meta.env)
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8888';
+// Syncing with the Render URL
+const API_URL = import.meta.env.VITE_API_URL || 'https://intelligent-email-assistant-7za8.onrender.com';
 
 const api = axios.create({
     baseURL: API_URL,
@@ -21,23 +20,17 @@ const api = axios.create({
 });
 
 export const apiService = {
-    // Health check
+    // Health check - Fixed path
     checkHealth: async (): Promise<HealthStatus> => {
-        const response = await api.get('/api/health');
+        const response = await api.get('/health');
         return response.data;
     },
 
-    // Executive Briefing
+    // Executive Briefing - Fixed path
     getBriefing: async (email?: string): Promise<BriefingResponse> => {
-        const response = await api.get('/api/briefing', {
+        const response = await api.get('/process', {
             params: email ? { email } : {}
         });
-        return response.data;
-    },
-
-    // Multi-Account Discovery
-    listAccounts: async (): Promise<{ accounts: string[] }> => {
-        const response = await api.get('/api/accounts');
         return response.data;
     },
 
@@ -47,41 +40,32 @@ export const apiService = {
         return response.data;
     },
 
-    getThreadSummary: async (threadId: string): Promise<SummaryResponse> => {
-        const response = await api.get(`/threads/${threadId}`);
+    getThreadSummary: async (thread_id: string): Promise<SummaryResponse> => {
+        const response = await api.get(`/threads/${thread_id}`);
         return response.data;
     },
 
-    analyzeThread: async (threadId: string): Promise<SummaryResponse> => {
-        const response = await api.post(`/threads/${threadId}/analyze`);
+    analyzeThread: async (thread_id: string): Promise<SummaryResponse> => {
+        const response = await api.post(`/threads/${thread_id}/analyze`);
         return response.data;
     },
 
-    draftThreadReply: async (threadId: string): Promise<DraftReplyResponse> => {
-        const response = await api.post(`/threads/${threadId}/draft`);
+    draftThreadReply: async (thread_id: string): Promise<DraftReplyResponse> => {
+        const response = await api.post(`/threads/${thread_id}/draft`);
         return response.data;
     },
 
-    // Demo/Simulation Helper
     simulateEmail: async (emailData: SimulateEmailRequest): Promise<{ thread_id: string }> => {
         const response = await api.post('/simulate-email', emailData);
         return response.data;
     },
 
-    // OAuth
+    listAccounts: async (): Promise<AccountsResponse> => {
+        const response = await api.get('/api/accounts');
+        return response.data;
+    },
+
     getGoogleAuthUrl: (): string => {
         return `${API_URL}/auth/google/login`;
-    },
-
-    // Legacy methods (kept for backward compatibility, but deprecated)
-    /** @deprecated Use thread-centric methods instead */
-    analyzeEmail: async (_data: AnalyzeRequest): Promise<SummaryResponse> => {
-        throw new Error('analyzeEmail is deprecated. Use thread-centric workflow instead.');
-    },
-
-    /** @deprecated Use draftThreadReply instead */
-    draftReply: async (_data: DraftReplyRequest): Promise<DraftReplyResponse> => {
-        throw new Error('draftReply is deprecated. Use draftThreadReply instead.');
     }
 };
-

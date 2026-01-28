@@ -14,7 +14,7 @@
     "allowImportingTsExtensions": false,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": false,
+    "noEmit": true,
     "jsx": "react-jsx",
     /* Linting */
     "strict": true,
@@ -27,14 +27,23 @@
       "@/*": [
         "src/*"
       ],
+      "@components": [
+        "src/components/index"
+      ],
       "@components/*": [
         "src/components/*"
+      ],
+      "@services": [
+        "src/services/index"
       ],
       "@services/*": [
         "src/services/*"
       ],
       "@hooks/*": [
         "src/hooks/*"
+      ],
+      "@types": [
+        "src/types/index"
       ],
       "@types/*": [
         "src/types/*"

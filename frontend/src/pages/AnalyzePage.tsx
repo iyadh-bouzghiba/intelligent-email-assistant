@@ -1,4 +1,4 @@
-import { EmailAnalyzer } from '../components/EmailAnalyzer';
+import { EmailAnalyzer } from '@components';
 
 export function AnalyzePage() {
     return (

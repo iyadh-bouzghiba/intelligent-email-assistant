@@ -1,95 +1,72 @@
-import { useState } from 'react';
-import { apiService } from '../services/api';
+import React, { useState } from 'react';
+import { apiService } from '@services';
+import { SummaryResponse } from '@types';
+import { ResultsCard } from './ResultsCard';
+import { Search, Loader2, AlertCircle } from 'lucide-react';
 
-export function EmailAnalyzer() {
-    const [emailText, setEmailText] = useState('');
-    const [emailSubject, setEmailSubject] = useState('');
-    const [draft, setDraft] = useState<string | null>(null);
+export const EmailAnalyzer: React.FC = () => {
+    const [threadId, setThreadId] = useState('');
+    const [result, setResult] = useState<SummaryResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const handleDraftReply = async () => {
+    const handleAnalyze = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!threadId.trim()) return;
+
         setLoading(true);
         setError(null);
-        setDraft(null);
-
         try {
-            const result = await apiService.draftReply({
-                content: emailText,
-                subject: emailSubject,
-                sender: 'User',
-            });
-
-            // ✅ FIX: normalize optional API response
-            setDraft(result.draft ?? null);
-        } catch (err) {
-            setError((err as Error).message);
+            const data = await apiService.analyzeThread(threadId.trim());
+            setResult(data);
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to analyze thread. Please check the Thread ID.');
+            setResult(null);
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md">
-            <h2 className="text-2xl font-bold mb-6 text-gray-800">
-                Email Assistant
-            </h2>
-
-            <div className="space-y-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Subject
-                    </label>
-                    <input
-                        type="text"
-                        value={emailSubject}
-                        onChange={(e) => setEmailSubject(e.target.value)}
-                        placeholder="Enter email subject"
-                        className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
+        <div className="space-y-6">
+            <form onSubmit={handleAnalyze} className="relative">
+                <div className="flex gap-2">
+                    <div className="relative flex-grow">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Search className="h-5 w-5 text-slate-400" />
+                        </div>
+                        <input
+                            type="text"
+                            value={threadId}
+                            onChange={(e) => setThreadId(e.target.value)}
+                            placeholder="Enter Thread ID to analyze..."
+                            className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-all shadow-sm"
+                        />
+                    </div>
+                    <button
+                        type="submit"
+                        disabled={loading || !threadId.trim()}
+                        className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-md shadow-blue-200"
+                    >
+                        {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Analyze'}
+                    </button>
                 </div>
-
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Email Content
-                    </label>
-                    <textarea
-                        value={emailText}
-                        onChange={(e) => setEmailText(e.target.value)}
-                        placeholder="Paste the email content here..."
-                        rows={6}
-                        className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                </div>
-
-                <button
-                    onClick={handleDraftReply}
-                    disabled={loading || !emailText.trim()}
-                    className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                >
-                    {loading ? 'Generating Draft…' : 'Generate Draft Reply'}
-                </button>
-            </div>
+            </form>
 
             {error && (
-                <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-md border border-red-200">
-                    {error}
+                <div className="p-4 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-3 text-rose-700 animate-in fade-in slide-in-from-top-2">
+                    <AlertCircle className="h-5 w-5" />
+                    <p className="text-sm font-medium">{error}</p>
                 </div>
             )}
 
-            {draft && (
-                <div className="mt-8">
-                    <h3 className="text-lg font-semibold mb-3 text-gray-800">
-                        Generated Draft
-                    </h3>
-                    <textarea
-                        value={draft}
-                        readOnly
-                        rows={8}
-                        className="w-full p-3 bg-gray-50 border border-gray-200 rounded-md text-gray-700"
-                    />
+            {result && <ResultsCard summary={result} />}
+
+            {!result && !loading && !error && (
+                <div className="text-center py-12 border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50/50">
+                    <p className="text-slate-400 font-medium">Results will appear here after analysis.</p>
                 </div>
             )}
         </div>
     );
-}
+};

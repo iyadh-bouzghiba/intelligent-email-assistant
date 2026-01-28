@@ -1,4 +1,4 @@
-import { DraftReply } from '../components/DraftReply';
+import { DraftReply } from '@components';
 
 export function DraftPage() {
     return (

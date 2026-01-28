@@ -1,17 +1,18 @@
 export interface SummaryResponse {
     thread_id: string;
-    summary: string; // Backend uses 'summary' not 'overview'
+    summary: string;           // CRITICAL: Must be 'summary'
     key_points: string[];
     action_items: string[];
     deadlines: string[];
     key_participants: string[];
     confidence_score: number;
-    classification?: any; // Optional classification result
+    classification?: any;
+    last_updated?: string;
 }
 
 export interface Thread {
     thread_id: string;
-    overview: string;
+    summary: string;
     confidence_score: number;
     last_updated: string | null;
 }
@@ -68,4 +69,8 @@ export interface BriefingResponse {
     briefings: Briefing[];
     error?: string;
     login_url?: string;
+}
+
+export interface AccountsResponse {
+    accounts: string[];
 }

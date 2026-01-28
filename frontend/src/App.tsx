@@ -1,29 +1,15 @@
 import { useState, useEffect } from 'react';
-import { apiService } from './services/api';
+import { apiService } from '@services';
 import { Sparkles, RefreshCw, Mail, Shield, AlertCircle, Clock, CheckCircle2, User, ChevronRight, Brain } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AuthButton } from './components/AuthButton';
-import { ErrorBoundary } from './components/ErrorBoundary';
-
-// --- TYPES ---
-export interface Briefing {
-  account: string;
-  subject: string;
-  sender: string;
-  priority: 'Low' | 'Medium' | 'High';
-  category: 'Security' | 'Financial' | 'General';
-  should_alert: boolean;
-  summary: string;
-  action: string;
-  date: string;
-}
+import { Briefing } from '@types';
 
 const BRAND_NAME = "EXECUTIVE BRAIN";
 const SUBTITLE = "Strategic Intelligence Feed";
-const API_HOST = "127.0.0.1:8888";
+const API_HOST = "intelligent-email-assistant-7za8.onrender.com";
 const ITEMS_PER_PAGE = 5;
 
-function App() {
+export const App = () => {
   const [briefings, setBriefings] = useState<Briefing[]>([]);
   const [account, setAccount] = useState<string>('Syncing...');
   const [loading, setLoading] = useState(false);
@@ -89,7 +75,7 @@ function App() {
       }
 
       // Process Briefings
-      briefingData.briefings.forEach(b => {
+      briefingData.briefings.forEach((b: Briefing) => {
         if (b.should_alert) triggerSentinelAlert(b);
       });
 
@@ -185,8 +171,8 @@ function App() {
                       fetchBriefing(email);
                     }}
                     className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${activeEmail === email || account.includes(email)
-                        ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'
-                        : 'text-slate-500 hover:text-slate-300'
+                      ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'
+                      : 'text-slate-500 hover:text-slate-300'
                       }`}
                   >
                     {email.split('@')[0]}
@@ -199,8 +185,6 @@ function App() {
               <User size={14} className="text-indigo-400" />
               <span className="text-sm font-medium text-slate-400 truncate max-w-[150px]">{account}</span>
             </div>
-
-            <AuthButton />
 
             <button
               onClick={() => fetchBriefing()}
@@ -306,75 +290,74 @@ function App() {
               ))
             ) : currentItems.length > 0 ? (
               currentItems.map((item, index) => (
-                <ErrorBoundary key={item.subject + index}>
-                  <motion.div
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.4, delay: index * 0.05 }}
-                    className="group relative flex flex-col h-[480px] p-10 rounded-[2.5rem] bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-500 shadow-2xl hover:shadow-indigo-500/5"
-                  >
-                    <div className="flex items-start justify-between mb-8">
-                      <div className="flex flex-col gap-3">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.15em] border transition-all duration-500 ${getPriorityStyles(item.priority)}`}>
-                            {item.priority}
-                          </div>
-                          <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.15em] border transition-all duration-500 ${getCategoryStyles(item.category)}`}>
-                            {item.category}
-                          </div>
+                <motion.div
+                  key={item.subject + index}
+                  layout
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.4, delay: index * 0.05 }}
+                  className="group relative flex flex-col h-[480px] p-10 rounded-[2.5rem] bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-500 shadow-2xl hover:shadow-indigo-500/5"
+                >
+                  <div className="flex items-start justify-between mb-8">
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.15em] border transition-all duration-500 ${getPriorityStyles(item.priority)}`}>
+                          {item.priority}
                         </div>
-                        <div className="flex items-center gap-2 text-slate-500 text-xs font-bold bg-white/[0.03] px-3 py-1.5 rounded-lg border border-white/5">
-                          <Clock size={14} className="text-indigo-400" />
-                          {item.date}
+                        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.15em] border transition-all duration-500 ${getCategoryStyles(item.category)}`}>
+                          {item.category}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-tighter">
-                        <User size={14} className="text-indigo-400" /> {item.account}
+                      <div className="flex items-center gap-2 text-slate-500 text-xs font-bold bg-white/[0.03] px-3 py-1.5 rounded-lg border border-white/5">
+                        <Clock size={14} className="text-indigo-400" />
+                        {item.date}
                       </div>
                     </div>
+                    <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-tighter">
+                      <User size={14} className="text-indigo-400" /> {item.account}
+                    </div>
+                  </div>
 
-                    <div className="mb-2">
-                      <h3 className="text-2xl font-black text-white mb-2 tracking-tight line-clamp-2 leading-[1.2] group-hover:text-indigo-400 transition-colors duration-500">
-                        {item.subject}
-                      </h3>
-                      <p className="text-slate-400 text-sm font-bold mb-6 flex items-center gap-2">
-                        <span className="text-indigo-500 opacity-50 uppercase tracking-widest text-[10px]">Source</span> {item.sender.split('<')[0].trim()}
+                  <div className="mb-2">
+                    <h3 className="text-2xl font-black text-white mb-2 tracking-tight line-clamp-2 leading-[1.2] group-hover:text-indigo-400 transition-colors duration-500">
+                      {item.subject}
+                    </h3>
+                    <p className="text-slate-400 text-sm font-bold mb-6 flex items-center gap-2">
+                      <span className="text-indigo-500 opacity-50 uppercase tracking-widest text-[10px]">Source</span> {item.sender.split('<')[0].trim()}
+                    </p>
+                  </div>
+
+                  <div className="space-y-4 flex-grow overflow-y-auto custom-scrollbar pr-2">
+                    <div className="p-5 rounded-3xl bg-white/[0.03] border border-white/5 group-hover:bg-white/[0.05] transition-colors duration-500">
+                      <p className="text-sm leading-relaxed text-slate-200 font-medium overflow-wrap-anywhere word-break-break-word">
+                        {item.summary}
                       </p>
                     </div>
 
-                    <div className="space-y-4 flex-grow overflow-y-auto custom-scrollbar pr-2">
-                      <div className="p-5 rounded-3xl bg-white/[0.03] border border-white/5 group-hover:bg-white/[0.05] transition-colors duration-500">
-                        <p className="text-sm leading-relaxed text-slate-200 font-medium overflow-wrap-anywhere word-break-break-word">
-                          {item.summary}
-                        </p>
+                    <div className={`flex items-center gap-4 p-4 rounded-3xl border transition-all duration-500 ${item.action === 'None' ? 'bg-slate-500/5 border-slate-500/10' : 'bg-indigo-500/5 border-indigo-500/20 shadow-[0_0_20px_rgba(79,70,229,0.05)]'}`}>
+                      <div className={`w-8 h-8 rounded-2xl flex items-center justify-center transition-colors duration-500 ${item.action === 'None' ? 'bg-slate-500/10 text-slate-500' : 'bg-indigo-500/10 text-indigo-400'}`}>
+                        <CheckCircle2 size={16} />
                       </div>
-
-                      <div className={`flex items-center gap-4 p-4 rounded-3xl border transition-all duration-500 ${item.action === 'None' ? 'bg-slate-500/5 border-slate-500/10' : 'bg-indigo-500/5 border-indigo-500/20 shadow-[0_0_20px_rgba(79,70,229,0.05)]'}`}>
-                        <div className={`w-8 h-8 rounded-2xl flex items-center justify-center transition-colors duration-500 ${item.action === 'None' ? 'bg-slate-500/10 text-slate-500' : 'bg-indigo-500/10 text-indigo-400'}`}>
-                          <CheckCircle2 size={16} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${item.action === 'None' ? 'text-slate-500' : 'text-indigo-400'}`}>Recommended Action</p>
-                          <p className="text-xs font-bold text-slate-100 overflow-wrap-anywhere word-break-break-word">{item.action}</p>
-                        </div>
+                      <div className="min-w-0">
+                        <p className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${item.action === 'None' ? 'text-slate-500' : 'text-indigo-400'}`}>Recommended Action</p>
+                        <p className="text-xs font-bold text-slate-100 overflow-wrap-anywhere word-break-break-word">{item.action}</p>
                       </div>
                     </div>
+                  </div>
 
-                    <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between">
-                      <button
-                        onClick={() => alert(`Strategic context expansion for "${item.subject}" is coming soon.`)}
-                        className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-[0.2em] flex items-center gap-2 transition-all group/btn"
-                      >
-                        Deep Dive <ChevronRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
-                      </button>
-                      <div className="flex items-center -space-x-2">
-                        <div className="w-8 h-8 rounded-full bg-slate-800 border-2 border-[#0f172a] shadow-inner" />
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-600 border-2 border-[#0f172a] flex items-center justify-center text-[10px] font-black text-white shadow-lg">AI</div>
-                      </div>
+                  <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between">
+                    <button
+                      onClick={() => alert(`Strategic context expansion for "${item.subject}" is coming soon.`)}
+                      className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-[0.2em] flex items-center gap-2 transition-all group/btn"
+                    >
+                      Deep Dive <ChevronRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
+                    </button>
+                    <div className="flex items-center -space-x-2">
+                      <div className="w-8 h-8 rounded-full bg-slate-800 border-2 border-[#0f172a] shadow-inner" />
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-600 border-2 border-[#0f172a] flex items-center justify-center text-[10px] font-black text-white shadow-lg">AI</div>
                     </div>
-                  </motion.div>
-                </ErrorBoundary>
+                  </div>
+                </motion.div>
               ))
             ) : !error && (
               <div className="col-span-full py-32 flex flex-col items-center gap-6 text-center">
@@ -436,6 +419,6 @@ function App() {
       `}</style>
     </div>
   );
-}
+};
 
 export default App;
