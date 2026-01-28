@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.proxy_headers import ProxyHeadersMiddleware # Added for Render stability
 from dotenv import load_dotenv
 import socketio
 
@@ -28,35 +29,51 @@ from src.data.models import ThreadSummary
 # ------------------------------------------------------------------
 load_dotenv()
 
+# Setup Socket.IO with explicit logging for debugging
 sio = socketio.AsyncServer(
     async_mode='asgi',
     cors_allowed_origins='*',
-    logger=False,
-    engineio_logger=False
+    logger=True,
+    engineio_logger=True
 )
 
 app = FastAPI(title="Secure Email Assistant API")
 
-# --- UPDATED: Secure CORS Configuration ---
-# Only allow your local development and your live production backend URL.
-# Once your frontend is deployed, you will add its unique URL here.
+# Professional Proxy Middleware: Essential for Render's Load Balancer
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
+# --- SECURE CORS HANDSHAKE ---
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://intelligent-email-assistant-7za8.onrender.com",  # Backend URL
-    "https://intelligent-email-frontend.onrender.com",   # Frontend URL
+    "https://intelligent-email-assistant-7za8.onrender.com", # Backend URL
+    "https://intelligent-email-frontend.onrender.com", # Frontend URL
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allows GET, POST, OPTIONS, etc.
-    allow_headers=["*"],   # Allows Content-Type, Authorization, etc.
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ------------------------------------------------------------------
-# NEW: REQUIRED RENDER ROUTES (Prevents 404s)
+# STATE & PERSISTENCE
+# ------------------------------------------------------------------
+persistence = PersistenceManager()
+credential_store = CredentialStore(persistence)
+token_manager = TokenManager(credential_store)
+assistant = EmailAssistant()
+
+# Safety check for threads attribute initialization
+if not hasattr(assistant, 'threads'):
+    assistant.threads = {}
+
+GMAIL_WATCH_STATE: Dict[str, Dict[str, Any]] = {}
+
+# ------------------------------------------------------------------
+# CORE ROUTES (Registered BEFORE SocketIO Wrap)
 # ------------------------------------------------------------------
 
 @app.get("/health")
@@ -65,33 +82,45 @@ async def health_check():
     return {
         "status": "healthy", 
         "timestamp": datetime.now().isoformat(),
-        "version": "1.0.0"
+        "version": "1.1.0"
     }
 
 @app.get("/")
 async def root():
-    """Provides a base response when visiting the URL."""
+    """Base API response."""
     return {
         "message": "Secure Email Assistant API is Online",
         "documentation": "/docs",
         "health": "/health"
     }
 
+@app.get("/threads")
+async def list_threads():
+    """Returns AI-summarized threads. Fixed key mapping for Frontend."""
+    threads_list = []
+    current_threads = getattr(assistant, 'threads', {})
+    
+    for thread_id, thread in current_threads.items():
+        summary_obj = getattr(thread, 'current_summary', None)
+        if summary_obj:
+            # SYNC: We use 'summary' to match the frontend ResultCard requirement
+            # We also provide 'overview' as a fallback for backward compatibility
+            raw_text = getattr(summary_obj, 'overview', 
+                       getattr(summary_obj, 'summary', "No content"))
+            
+            threads_list.append({
+                "thread_id": thread_id,
+                "summary": raw_text, 
+                "overview": raw_text, 
+                "confidence_score": getattr(summary_obj, 'confidence_score', 0),
+                "last_updated": getattr(thread, "last_updated", datetime.now().isoformat())
+            })
+            
+    return {"count": len(threads_list), "threads": threads_list}
+
 # ------------------------------------------------------------------
-# State & Persistence
+# LIFECYCLE EVENTS
 # ------------------------------------------------------------------
-persistence = PersistenceManager()
-credential_store = CredentialStore(persistence)
-token_manager = TokenManager(credential_store)
-
-# Initialize Assistant
-assistant = EmailAssistant()
-
-# Safety check for threads attribute
-if not hasattr(assistant, 'threads'):
-    assistant.threads = {}
-
-GMAIL_WATCH_STATE: Dict[str, Dict[str, Any]] = {}
 
 @app.on_event("startup")
 async def startup_event():
@@ -100,12 +129,10 @@ async def startup_event():
         data = persistence.load()
         global GMAIL_WATCH_STATE
         GMAIL_WATCH_STATE.update(data.get("watch_state", {}))
-        
-        # Restore Threads into Assistant
         assistant.threads = data.get("threads", {})
-        print(f"✅ Loaded {len(assistant.threads)} threads.")
+        print(f"✅ State loaded successfully.")
     except Exception as e:
-        print(f"⚠️ Startup warning (Persistence): {e}")
+        print(f"⚠️ Startup warning: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -118,26 +145,11 @@ async def shutdown_event():
             threads=assistant.threads
         )
     except Exception as e:
-        print(f"❌ Shutdown error (Persistence): {e}")
+        print(f"❌ Shutdown error: {e}")
 
 # ------------------------------------------------------------------
-# THREAD-CENTRIC AI CORE
+# FINAL MOUNTING (The Professional Way)
 # ------------------------------------------------------------------
-
-@app.get("/threads")
-async def list_threads():
-    threads_list = []
-    # Safety check for threads attribute
-    for thread_id, thread in getattr(assistant, 'threads', {}).items():
-        summary = getattr(thread, 'current_summary', None)
-        if summary:
-            threads_list.append({
-                "thread_id": thread_id,
-                "overview": getattr(summary, 'overview', "No summary available"),
-                "confidence_score": getattr(summary, 'confidence_score', 0),
-                "last_updated": getattr(thread, "last_updated", None)
-            })
-    return {"count": len(threads_list), "threads": threads_list}
-
-# --- SocketIO App Wrap ---
-app = socketio.ASGIApp(sio, app)
+# We mount SocketIO as an ASGI app but we define the path explicitly 
+# to ensure it doesn't block standard HTTP GET/POST requests.
+app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path="/socket.io")
