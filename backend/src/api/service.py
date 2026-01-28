@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 import socketio
 
 # --- Standard Imports ---
-# These assume you are running from the /backend folder
 from src.core import EmailAssistant
 from src.api.models import (
     SummaryResponse,
@@ -38,9 +37,18 @@ sio = socketio.AsyncServer(
 
 app = FastAPI(title="Secure Email Assistant API")
 
+# --- UPDATED: Secure CORS Configuration ---
+# Only allow your local development and your live production backend URL.
+# Once your frontend is deployed, you will add its unique URL here.
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://intelligent-email-assistant-7za8.onrender.com",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -120,7 +128,6 @@ async def list_threads():
     threads_list = []
     # Safety check for threads attribute
     for thread_id, thread in getattr(assistant, 'threads', {}).items():
-        # Ensure we are checking for attributes correctly depending on your model structure
         summary = getattr(thread, 'current_summary', None)
         if summary:
             threads_list.append({
@@ -132,5 +139,4 @@ async def list_threads():
     return {"count": len(threads_list), "threads": threads_list}
 
 # --- SocketIO App Wrap ---
-# This remains at the bottom to ensure all routes are registered first
 app = socketio.ASGIApp(sio, app)
