@@ -43,15 +43,16 @@ app = FastAPI(title="Secure Email Assistant API")
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://intelligent-email-assistant-7za8.onrender.com",
+    "https://intelligent-email-assistant-7za8.onrender.com",  # Backend URL
+    "https://intelligent-email-frontend.onrender.com",   # Frontend URL
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allows GET, POST, OPTIONS, etc.
+    allow_headers=["*"],   # Allows Content-Type, Authorization, etc.
 )
 
 # ------------------------------------------------------------------
