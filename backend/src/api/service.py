@@ -5,7 +5,8 @@ from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.proxy_headers import ProxyHeadersMiddleware # Added for Render stability
+# Use starlette version for maximum compatibility with FastAPI on Render
+from starlette.middleware.proxied_headers import ProxiedHeadersMiddleware
 from dotenv import load_dotenv
 import socketio
 
@@ -29,7 +30,6 @@ from src.data.models import ThreadSummary
 # ------------------------------------------------------------------
 load_dotenv()
 
-# Setup Socket.IO with explicit logging for debugging
 sio = socketio.AsyncServer(
     async_mode='asgi',
     cors_allowed_origins='*',
@@ -39,15 +39,15 @@ sio = socketio.AsyncServer(
 
 app = FastAPI(title="Secure Email Assistant API")
 
-# Professional Proxy Middleware: Essential for Render's Load Balancer
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+# Professional Proxy Middleware: Ensures HTTPS recognition behind Render's Load Balancer
+app.add_middleware(ProxiedHeadersMiddleware, trusted_hosts="*")
 
 # --- SECURE CORS HANDSHAKE ---
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://intelligent-email-assistant-7za8.onrender.com", # Backend URL
-    "https://intelligent-email-frontend.onrender.com", # Frontend URL
+    "https://intelligent-email-assistant-7za8.onrender.com", 
+    "https://intelligent-email-frontend.onrender.com",
 ]
 
 app.add_middleware(
@@ -66,7 +66,6 @@ credential_store = CredentialStore(persistence)
 token_manager = TokenManager(credential_store)
 assistant = EmailAssistant()
 
-# Safety check for threads attribute initialization
 if not hasattr(assistant, 'threads'):
     assistant.threads = {}
 
@@ -78,7 +77,6 @@ GMAIL_WATCH_STATE: Dict[str, Dict[str, Any]] = {}
 
 @app.get("/health")
 async def health_check():
-    """Essential for Render to confirm the app is live."""
     return {
         "status": "healthy", 
         "timestamp": datetime.now().isoformat(),
@@ -87,7 +85,6 @@ async def health_check():
 
 @app.get("/")
 async def root():
-    """Base API response."""
     return {
         "message": "Secure Email Assistant API is Online",
         "documentation": "/docs",
@@ -96,15 +93,12 @@ async def root():
 
 @app.get("/threads")
 async def list_threads():
-    """Returns AI-summarized threads. Fixed key mapping for Frontend."""
     threads_list = []
     current_threads = getattr(assistant, 'threads', {})
     
     for thread_id, thread in current_threads.items():
         summary_obj = getattr(thread, 'current_summary', None)
         if summary_obj:
-            # SYNC: We use 'summary' to match the frontend ResultCard requirement
-            # We also provide 'overview' as a fallback for backward compatibility
             raw_text = getattr(summary_obj, 'overview', 
                        getattr(summary_obj, 'summary', "No content"))
             
@@ -148,8 +142,6 @@ async def shutdown_event():
         print(f"❌ Shutdown error: {e}")
 
 # ------------------------------------------------------------------
-# FINAL MOUNTING (The Professional Way)
+# FINAL MOUNTING
 # ------------------------------------------------------------------
-# We mount SocketIO as an ASGI app but we define the path explicitly 
-# to ensure it doesn't block standard HTTP GET/POST requests.
 app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path="/socket.io")
