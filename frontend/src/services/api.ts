@@ -10,7 +10,7 @@ import {
 } from '@types';
 
 // Syncing with the Render URL
-const API_URL = import.meta.env.VITE_API_URL || 'https://intelligent-email-assistant-7za8.onrender.com';
+const API_URL = 'https://intelligent-email-assistant-7za8.onrender.com';
 
 const api = axios.create({
     baseURL: API_URL,
@@ -66,6 +66,6 @@ export const apiService = {
     },
 
     getGoogleAuthUrl: (): string => {
-        return `${API_URL}/auth/google/login`;
+        return `${API_URL}/api/auth/google`;
     }
 };
