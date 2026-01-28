@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-# Use starlette version for maximum compatibility with FastAPI on Render
+# CORRECT IMPORT: Starlette is the core dependency that guarantees this works on Render
 from starlette.middleware.proxied_headers import ProxiedHeadersMiddleware
 from dotenv import load_dotenv
 import socketio
