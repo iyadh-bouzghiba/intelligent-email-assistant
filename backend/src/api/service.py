@@ -20,6 +20,7 @@ from src.data.store import PersistenceManager
 load_dotenv()
 
 # --- HARDENED REAL-TIME ENGINE (Optimized for Render) ---
+# Requirement 1: Socket.io Alignment
 sio = socketio.AsyncServer(
     async_mode='asgi',
     cors_allowed_origins='*',
@@ -47,19 +48,21 @@ assistant = EmailAssistant()
 # ------------------------------------------------------------------
 # SOCKET.IO HANDSHAKE (Clears the "Transmission Alert")
 # ------------------------------------------------------------------
-@sio.event
+# Requirement 2: Explicit Handshake with "stable" status
+@sio.on("connect")
 async def connect(sid, environ):
     print(f"📡 Sentinel Connection Authenticated: {sid}")
+    # Force the frontend to recognize the link as 'stable' immediately
     await sio.emit('connection_status', {
         'status': 'stable', 
-        'transmission': 'encrypted',
-        'latency': 'minimal'
+        'transmission': 'encrypted'
     }, to=sid)
 
 # ------------------------------------------------------------------
 # OMNIPRESENT ROUTE HANDLERS
 # ------------------------------------------------------------------
 async def get_system_heartbeat():
+    """Returns the exact payload the Sentinel Frontend requires to clear alerts."""
     return {
         "status": "connected",
         "system": "operational",
@@ -68,6 +71,7 @@ async def get_system_heartbeat():
         "timestamp": datetime.now().isoformat()
     }
 
+# Handle both root and /api prefixed requests detected in your logs
 @app.get("/process")
 @app.get("/accounts")
 @app.get("/health")
@@ -83,7 +87,9 @@ async def api_health():
 
 @api_router.get("/threads")
 async def list_threads():
+    """Aggregated Intel Feed from all accounts."""
     threads_list = []
+    # Force a refresh of the internal assistant threads
     current_threads = getattr(assistant, 'threads', {})
     
     for thread_id, thread in current_threads.items():
@@ -97,11 +103,12 @@ async def list_threads():
             "thread_id": thread_id,
             "account_id": getattr(thread, "account_id", "primary"),
             "summary": overview_text,
-            "overview": overview_text,
+            "overview": overview_text, # Duplicate for schema safety
             "confidence_score": getattr(summary_obj, 'confidence_score', 0.95) if summary_obj else 0,
             "timestamp": getattr(thread, "last_updated", datetime.now().isoformat())
         })
 
+    # Emergency Fallback: If no real emails are synced yet, display a system status message
     if not threads_list:
         return {
             "count": 1,
@@ -128,6 +135,7 @@ async def startup_event():
         if data:
             assistant.threads = data.get("threads", {})
         
+        # Check for GMAIL_CREDENTIALS env var
         if os.getenv("GMAIL_CREDENTIALS"):
             print("🔐 GMAIL_CREDENTIALS found. Initializing multi-account sync...")
             asyncio.create_task(assistant.process_all_accounts())
@@ -141,4 +149,6 @@ async def startup_event():
 async def root():
     return {"message": "Sentinel Core v2.0 Live"}
 
+# Requirement 3: The Proxy Fix - Explicit path wrapping
+# CRITICAL: This MUST be the last line for Render's entry point
 app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path="/socket.io")
