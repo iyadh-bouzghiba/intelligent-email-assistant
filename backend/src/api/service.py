@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, Request, HTTPException, Response, APIRouter
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 import socketio
 
@@ -20,10 +21,12 @@ from src.data.store import PersistenceManager
 load_dotenv()
 
 # --- HARDENED REAL-TIME ENGINE (Optimized for Render) ---
-# Requirement 1: Socket.io Alignment
+# Requirement 1: Socket.io Alignment - PRESERVED
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins='*',
+    # Requirement: Strict Origin + Force Upgrades
+    cors_allowed_origins=["https://intelligent-email-frontend.onrender.com"],
+    allow_upgrades=True,
     ping_timeout=60,
     ping_interval=25,
     logger=True,
@@ -32,10 +35,21 @@ sio = socketio.AsyncServer(
 
 app = FastAPI(title="Executive Brain - Sentinel Core")
 
-# --- PERMISSIVE CORS POLICY ---
+# --- MIDDLEWARE INJECTION: CACHE BUSTING ---
+class CacheControlMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+app.add_middleware(CacheControlMiddleware)
+
+# --- MIDDLEWARE INJECTION: HARDENED CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex='https://.*\.onrender\.com', # Dynamic Subdomain Handling
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,7 +62,6 @@ assistant = EmailAssistant()
 # ------------------------------------------------------------------
 # SOCKET.IO HANDSHAKE (Clears the "Transmission Alert")
 # ------------------------------------------------------------------
-# Requirement 2: Explicit Handshake with "stable" status
 @sio.on("connect")
 async def connect(sid, environ):
     print(f"📡 Sentinel Connection Authenticated: {sid}")
@@ -77,6 +90,11 @@ async def get_system_heartbeat():
 @app.get("/health")
 async def health_check():
     return await get_system_heartbeat()
+
+# Requirement 3: Explicit /socket.io/ route for Proxy Health
+@app.get("/socket.io/")
+async def socket_health_check():
+    return Response(status_code=200) 
 
 api_router = APIRouter(prefix="/api")
 
@@ -137,6 +155,8 @@ async def startup_event():
         
         # Check for GMAIL_CREDENTIALS env var
         if os.getenv("GMAIL_CREDENTIALS"):
+            # Requirement 4: Explicit Log Message
+            print("SYNC_START") 
             print("🔐 GMAIL_CREDENTIALS found. Initializing multi-account sync...")
             asyncio.create_task(assistant.process_all_accounts())
         else:
@@ -147,8 +167,12 @@ async def startup_event():
 
 @app.get("/")
 async def root():
-    return {"message": "Sentinel Core v2.0 Live"}
+    return {
+        "status": "online", 
+        "version": "v2.1.0-STABLE", 
+        "engine": "Sentinel"
+    }
 
-# Requirement 3: The Proxy Fix - Explicit path wrapping
 # CRITICAL: This MUST be the last line for Render's entry point
+# Requirement: Ensure the proxy middleware is the final wrap - PRESERVED
 app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path="/socket.io")
