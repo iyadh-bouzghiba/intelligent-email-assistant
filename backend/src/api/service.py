@@ -11,12 +11,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 import socketio
 
-# --- Core Logic Imports ---
-from src.core import EmailAssistant
-from src.api.models import (
+# --- Package Normalization Imports ---
+from backend.src.core import EmailAssistant
+from backend.src.api.models import (
     SummaryResponse, AnalyzeRequest, DraftReplyRequest, DraftReplyResponse,
 )
-from src.data.store import PersistenceManager
+from backend.src.data.store import PersistenceManager
 
 load_dotenv()
 
@@ -60,10 +60,10 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
 app.add_middleware(CacheControlMiddleware)
 
 # ------------------------------------------------------------------
-# GLOBAL PROJECT STATE
+# GLOBAL PROJECT STATE (Deferred Init)
 # ------------------------------------------------------------------
 persistence = PersistenceManager()
-assistant = EmailAssistant()
+assistant: Optional[EmailAssistant] = None # Defer to prevent import errors
 
 # ------------------------------------------------------------------
 # SOCKET.IO HANDSHAKE
@@ -108,6 +108,19 @@ api_router = APIRouter(prefix="/api")
 
 @api_router.get("/threads")
 async def list_threads():
+    if not assistant:
+        # Skeletal Mode / Early Boot
+        return {
+            "count": 0,
+            "threads": [{
+                "thread_id": "BOOT",
+                "summary": "System Initializing...",
+                "overview": "Waiting for Brain startup sequence.",
+                "confidence_score": 0.0,
+                "timestamp": datetime.now().isoformat(), 
+            }]
+        }
+
     threads_list = []
     current_threads = getattr(assistant, "threads", {})
 
@@ -146,7 +159,12 @@ app.include_router(api_router)
 # ------------------------------------------------------------------
 @app.on_event("startup")
 async def startup_event():
+    global assistant
     try:
+        # Safe Initialization during Startup
+        # This prevents 'ImportError' if .env is missing during static analysis
+        assistant = EmailAssistant()
+        
         data = persistence.load()
         if data:
             assistant.threads = data.get("threads", {})
@@ -161,7 +179,7 @@ async def startup_event():
         print(f"⚠️ Startup warning: {e}")
 
 # ------------------------------------------------------------------
-# FINAL ASGI WRAP
+# FINAL ASGI WRAP (Must be last)
 # ------------------------------------------------------------------
 app = socketio.ASGIApp(
     sio,

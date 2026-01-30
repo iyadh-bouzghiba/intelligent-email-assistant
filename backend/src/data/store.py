@@ -1,72 +1,112 @@
 import json
 import os
 import shutil
+from pathlib import Path
 from typing import Dict, Any, Optional
-from src.data.models import ThreadState
+from backend.src.data.models import ThreadState
 
 class PersistenceManager:
     """
     Manages local persistence of application state (Tokens, Watch State, Threads).
-    Saves to a JSON file to ensure data survives server restarts.
+    Supports Multi-Tenant Partitioning (Phase 1: Default Tenant Shim).
     """
 
-    def __init__(self, storage_path: str = "data/store.json"):
-        self.storage_path = storage_path
+    def __init__(self, tenant_id: str = "default"):
+        self.tenant_id = tenant_id
+        
+        # Cloud-Safe Path Resolution
+        # backend/src/data/store.py -> backend/data
+        current_file = Path(__file__).resolve()
+        project_root = current_file.parent.parent.parent
+        self.base_dir = project_root / "data"
+        
+        # Legacy Path (Backward Compatibility)
+        self.legacy_path = self.base_dir / "store.json"
+        
+        # New Partitioned Path: /data/tenants/{tenant_id}/store.json
+        self.tenant_dir = self.base_dir / "tenants" / tenant_id
+        self.storage_path = self.tenant_dir / "store.json"
+        
         self._ensure_storage_dir()
 
     def _ensure_storage_dir(self):
-        dirname = os.path.dirname(self.storage_path)
-        if dirname and not os.path.exists(dirname):
-            os.makedirs(dirname, exist_ok=True)
+        """Ensures the tenant-specific directory exists."""
+        if not os.path.exists(self.tenant_dir):
+            os.makedirs(self.tenant_dir, exist_ok=True)
 
     def load(self) -> Dict[str, Any]:
         """
-        Loads the entire state from the JSON store.
-        Returns a dict with 'tokens', 'watch_state', and 'threads'.
+        Loads state with Migration Logic:
+        1. Try loading from Tenant Partition.
+        2. If missing, Fallback to Legacy Store.
+        3. Return empty state if neither exists.
         """
-        if not os.path.exists(self.storage_path):
-            return {
-                "tokens": {},
-                "watch_state": {},
-                "threads": {}
-            }
+        # 1. Try Tenant Store (Primary)
+        if os.path.exists(self.storage_path):
+            return self._load_from_file(self.storage_path)
+        
+        # 2. Fallback to Legacy Store (Migration)
+        if os.path.exists(self.legacy_path):
+            print(f"📦 [Tenant:{self.tenant_id}] Migrating data from legacy store...")
+            data = self._load_from_file(self.legacy_path)
+            # Auto-save to new format immediately to complete lazy migration
+            self.save(
+                tokens=data.get("tokens", {}),
+                watch_state=data.get("watch_state", {}),
+                threads=data.get("threads", {})  # Only pass dicts here, logic handles deserialization issues
+            )
+            return data
 
+        # 3. New Tenant, No Legacy Data
+        return {
+            "tokens": {},
+            "watch_state": {},
+            "threads": {}
+        }
+
+    def _load_from_file(self, path: str) -> Dict[str, Any]:
+        """Helper to read and validate a JSON store."""
         try:
-            with open(self.storage_path, "r", encoding="utf-8") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 raw_data = json.load(f)
             
-            # integrity checks
+            # Structuring
             valid_state = {
                 "tokens": raw_data.get("tokens", {}),
                 "watch_state": raw_data.get("watch_state", {}),
                 "threads": {}
             }
 
-            # Re-hydrate Pydantic models for threads
+            # Re-hydrate Pydantic models (Robustness)
             raw_threads = raw_data.get("threads", {})
             for tid, t_data in raw_threads.items():
                 try:
-                    # Assuming ThreadState can be validated from the dict
+                    # We store them as dicts in memory in store.py usually? 
+                    # Wait, store.py 'load' contract returns Dict[str, Any]
+                    # But service.py expects 'threads' to be objects? 
+                    # Let's check previous implementation. 
+                    # Previous implementation re-hydrated to ThreadState objects.
                     valid_state["threads"][tid] = ThreadState.model_validate(t_data)
                 except Exception as e:
                     print(f"[WARN] Failed to load thread {tid}: {e}")
 
             return valid_state
-
         except Exception as e:
-            print(f"[ERROR] Failed to load persistence file: {e}")
+            print(f"[ERROR] Failed to load store from {path}: {e}")
             return {"tokens": {}, "watch_state": {}, "threads": {}}
 
-    def save(self, tokens: Dict, watch_state: Dict, threads: Dict[str, ThreadState]):
+    def save(self, tokens: Dict, watch_state: Dict, threads: Dict[str, Any]):
         """
-        Saves the current state to the JSON store.
+        Saves state to the Tenant Partition.
         """
         try:
             # Serialize threads
             serialized_threads = {}
             for tid, thread_obj in threads.items():
-                # model_dump(mode='json') ensures datetime etc are serialized
-                serialized_threads[tid] = thread_obj.model_dump(mode='json')
+                if hasattr(thread_obj, 'model_dump'):
+                    serialized_threads[tid] = thread_obj.model_dump(mode='json')
+                else:
+                    serialized_threads[tid] = thread_obj # Already dict
 
             data = {
                 "tokens": tokens,
@@ -74,7 +114,7 @@ class PersistenceManager:
                 "threads": serialized_threads
             }
 
-            # Atomic write (write to temp then rename)
+            # Atomic write to Tenant Partition
             temp_path = f"{self.storage_path}.tmp"
             with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
@@ -82,7 +122,7 @@ class PersistenceManager:
             shutil.move(temp_path, self.storage_path)
 
         except Exception as e:
-            print(f"[ERROR] Failed to save persistence file: {e}")
+            print(f"[ERROR] Failed to save tenant store: {e}")
 
 
 class UserDataStore:
