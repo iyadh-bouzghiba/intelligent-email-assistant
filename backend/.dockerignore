@@ -1,0 +1,80 @@
+# Docker ignore file - Excludes unnecessary files from Docker build context
+# This speeds up builds and reduces image size
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git
+.git/
+.gitignore
+
+# Test and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+tests/
+*.test.py
+test_*.py
+
+# Documentation
+*.md
+docs/
+*.txt
+!requirements.txt
+
+# Backup and temporary files
+src_backup/
+*.bak
+*.tmp
+*.log
+logs/
+
+# Development tools
+.mypy_cache/
+.ruff_cache/
+.black/
+
+# Database files (should be external)
+*.db
+*.sqlite
+*.sqlite3
+
+# Credentials and secrets (CRITICAL - never include in image)
+*.pem
+*.key
+*.crt
+client_secrets.json
+credentials.json
+keys.json
+secret_keys.json
+.env
+.env.*
+!.env.example
+
+# OS-specific
+Thumbs.db
+.DS_Store
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
