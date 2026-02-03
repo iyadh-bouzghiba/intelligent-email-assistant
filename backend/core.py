@@ -4,7 +4,7 @@ from datetime import datetime
 
 from backend.services.gmail_engine import run_engine
 from backend.services.summarizer import Summarizer
-from backend.src.data.models import ThreadState, ThreadSummary
+from backend.data.models import ThreadState, ThreadSummary
 
 class EmailAssistant:
     def __init__(self):
