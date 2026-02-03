@@ -1,4 +1,4 @@
-import { io, Socket } from 'socket.io-client';
+import { io, Socket } from "socket.io-client";
 
 interface ThreadAnalyzedData {
     thread_id: string;
@@ -16,43 +16,60 @@ class WebSocketService {
     private socket: Socket | null = null;
     private listeners: Map<string, Function[]> = new Map();
 
-    connect(url: string = 'http://localhost:8000') {
+    private getSocketUrl(): string {
+        const url = import.meta.env.VITE_SOCKET_URL;
+
+        if (!url) {
+            throw new Error("❌ VITE_SOCKET_URL is missing. Deployment blocked.");
+        }
+
+        // Normalize trailing slash to prevent //socket.io bug
+        return url.replace(/\/$/, "");
+    }
+
+    connect() {
         if (this.socket?.connected) {
-            console.log('[WebSocket] Already connected');
+            console.log("[WebSocket] Already connected");
             return;
         }
 
-        this.socket = io(url, {
-            transports: ['websocket', 'polling'],
+        const SOCKET_URL = this.getSocketUrl();
+
+        this.socket = io(SOCKET_URL, {
+            path: "/socket.io",
+            transports: ["websocket"],
+            secure: true,
             reconnection: true,
+            reconnectionAttempts: 5,
             reconnectionDelay: 1000,
-            reconnectionAttempts: 5
+            timeout: 20000,
         });
 
-        this.socket.on('connect', () => {
-            console.log('[WebSocket] Connected to server');
+        this.socket.on("connect", () => {
+            console.log("[WebSocket] Connected:", this.socket?.id);
         });
 
-        this.socket.on('disconnect', () => {
-            console.log('[WebSocket] Disconnected from server');
+        this.socket.on("disconnect", (reason) => {
+            console.warn("[WebSocket] Disconnected:", reason);
         });
 
-        this.socket.on('connection_established', (data) => {
-            console.log('[WebSocket] Connection established:', data);
+        this.socket.on("connect_error", (error) => {
+            console.error("[WebSocket] Connection error:", error.message);
         });
 
-        this.socket.on('thread_analyzed', (data: ThreadAnalyzedData) => {
-            console.log('[WebSocket] Thread analyzed:', data);
-            this.emit('thread_analyzed', data);
+        this.socket.on("connection_established", (data) => {
+            console.log("[WebSocket] Server handshake:", data);
         });
 
-        this.socket.on('connect_error', (error) => {
-            console.error('[WebSocket] Connection error:', error);
+        this.socket.on("thread_analyzed", (data: ThreadAnalyzedData) => {
+            console.log("[WebSocket] Thread analyzed:", data);
+            this.emit("thread_analyzed", data);
         });
     }
 
     disconnect() {
         if (this.socket) {
+            this.socket.removeAllListeners();
             this.socket.disconnect();
             this.socket = null;
         }
@@ -67,19 +84,19 @@ class WebSocketService {
 
     off(event: string, callback: Function) {
         const eventListeners = this.listeners.get(event);
-        if (eventListeners) {
-            const index = eventListeners.indexOf(callback);
-            if (index > -1) {
-                eventListeners.splice(index, 1);
-            }
+        if (!eventListeners) return;
+
+        const index = eventListeners.indexOf(callback);
+        if (index > -1) {
+            eventListeners.splice(index, 1);
         }
     }
 
     private emit(event: string, data: any) {
         const eventListeners = this.listeners.get(event);
-        if (eventListeners) {
-            eventListeners.forEach(callback => callback(data));
-        }
+        if (!eventListeners) return;
+
+        eventListeners.forEach((callback) => callback(data));
     }
 
     isConnected(): boolean {

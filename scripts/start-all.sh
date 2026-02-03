@@ -78,7 +78,7 @@ fi
 
 # Start backend in background
 echo -e "${BLUE}→${NC} Launching backend server..."
-nohup python -m uvicorn src.api.service:app --host 0.0.0.0 --port 8000 --reload \
+nohup python -m uvicorn src.api.service:sio_app --host 0.0.0.0 --port 8000 --reload \
     > logs/backend.log 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > .backend.pid
