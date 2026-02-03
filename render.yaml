@@ -30,9 +30,10 @@ services:
     runtime: python
     region: oregon
     plan: starter
-    buildCommand: cd backend && pip install -r requirements.txt
-    startCommand: cd backend && python -m backend.src.infrastructure.worker_entry
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 1 --timeout 120 api.service:sio_app
     healthCheckPath: /health
+    rootDirectory: backend
     envVars:
       # --- Encryption & Security ---
       - key: FERNET_KEY
@@ -77,12 +78,12 @@ services:
         value: api
 
       # --- OAuth Flow Configuration ---
-      - key: OAUTH_REDIRECT_BASE_URL
-        sync: false
       - key: BASE_URL
         sync: false
-      - key: REDIRECT_URI
+      - key: GOOGLE_REDIRECT_URI
         sync: false
+      - key: ENVIRONMENT
+        value: production
 
       # --- Application Config ---
       - key: LOG_LEVEL
@@ -95,26 +96,38 @@ services:
 # ============================================================================
 # DEPLOYMENT NOTES:
 #
-# 1. Backend Service URL will be: https://email-assistant-backend.onrender.com
-# 2. Frontend Service URL will be: https://email-assistant-frontend.onrender.com
+# 1. Current Service URLs:
+#    - Backend: https://intelligent-email-assistant-7za8.onrender.com
+#    - Frontend: https://intelligent-email-frontend.onrender.com
 #
-# 3. Set these environment variables in Render Dashboard:
-#    - VITE_API_BASE = https://email-assistant-backend.onrender.com
-#    - VITE_SOCKET_URL = https://email-assistant-backend.onrender.com
-#    - FRONTEND_URL = https://email-assistant-frontend.onrender.com
-#    - OAUTH_REDIRECT_BASE_URL = https://email-assistant-backend.onrender.com
-#    - BASE_URL = https://email-assistant-backend.onrender.com
-#    - REDIRECT_URI = https://email-assistant-backend.onrender.com/auth/google/callback
+# 2. Required Environment Variables in Render Dashboard (Backend):
+#    - GOOGLE_CLIENT_ID = (from Google Cloud Console)
+#    - GOOGLE_CLIENT_SECRET = (from Google Cloud Console)
+#    - GOOGLE_REDIRECT_URI = https://intelligent-email-assistant-7za8.onrender.com/auth/callback/google
+#    - BASE_URL = https://intelligent-email-assistant-7za8.onrender.com
+#    - FRONTEND_URL = https://intelligent-email-frontend.onrender.com
+#    - JWT_SECRET_KEY = (generate random secure key)
+#    - MISTRAL_API_KEY = (from Mistral AI)
+#    - SUPABASE_URL = (from Supabase)
+#    - SUPABASE_ANON_KEY = (from Supabase)
+#    - SUPABASE_SERVICE_KEY = (from Supabase)
+#    - DATABASE_URL = (PostgreSQL connection string)
+#    - ENVIRONMENT = production
 #
-# 4. Generate FERNET_KEY locally and add to Render:
-#    python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# 3. Required Environment Variables in Render Dashboard (Frontend):
+#    - VITE_API_BASE = https://intelligent-email-assistant-7za8.onrender.com
+#    - VITE_SOCKET_URL = https://intelligent-email-assistant-7za8.onrender.com
 #
-# 5. Copy all secrets from backend/.env to Render environment variables
+# 4. Google Cloud Console Configuration:
+#    - Authorized JavaScript Origins:
+#      * https://intelligent-email-frontend.onrender.com
+#    - Authorized Redirect URIs:
+#      * https://intelligent-email-assistant-7za8.onrender.com/auth/callback/google
 #
-# 6. Health check endpoint /health must return 200 for service to be healthy
+# 5. Health check endpoint /health must return {"status": "ok"}
 #
-# 7. Free tier limitations:
-#    - Services spin down after 15 minutes of inactivity
-#    - Cold start time: ~30 seconds
-#    - Recommend upgrading to Starter plan for production workloads
+# 6. Package Structure:
+#    - Backend root directory: backend/
+#    - Start command runs from backend/ with proper Python module imports
+#    - All imports use: from backend.module import ...
 # ============================================================================
