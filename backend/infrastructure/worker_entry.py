@@ -34,52 +34,126 @@ from backend.infrastructure.worker import run_worker_loop, WORKER_HEARTBEAT
 
 def validate_startup():
     """
-    Startup validation - Fail-fast on critical configuration errors.
+    FAIL-FAST STARTUP VALIDATION - Deployment Safety Contract
 
-    Validates:
-    - Python package structure (imports resolve correctly)
-    - Required environment variables exist
-    - Critical modules are importable
+    This function implements a ZERO-TOLERANCE validation policy that:
+    - Fails immediately if 'src' appears anywhere in module resolution paths
+    - Verifies backend package is importable (prevents ModuleNotFoundError)
+    - Confirms execution mode is package-based (-m flag)
+    - Validates Python version compatibility
+    - Checks package context integrity
 
-    Exits with status 1 if any validation fails.
+    Exits with status 1 if ANY validation fails.
+    Prevents silent failures by enforcing strict architectural contracts.
     """
-    print("[BOOT] [VALIDATION] Starting startup checks...")
-    errors = []
-
-    # Check critical imports
-    try:
-        from backend.api import service
-        from backend.infrastructure import control_plane
-        from backend.core import EmailAssistant
-        print("[OK] [VALIDATION] All critical modules importable")
-    except ImportError as e:
-        errors.append(f"Import validation failed: {e}")
-        print(f"[FAIL] [VALIDATION] Import error: {e}")
-
-    # Check Python version
     import sys
+    print("[BOOT] [VALIDATION] Starting FAIL-FAST startup checks...")
+    errors = []
+    warnings = []
+
+    # ========== CRITICAL: 'src' PATH CONTAMINATION CHECK ==========
+    # If 'src' appears in sys.path, we risk importing from deleted/old modules
+    # This is the #1 cause of ModuleNotFoundError in this project
+    print("[BOOT] [VALIDATION] Checking for 'src' path contamination...")
+    for path in sys.path:
+        if 'src' in path and 'site-packages' not in path:
+            errors.append(f"FORBIDDEN PATH DETECTED: sys.path contains 'src' reference: {path}")
+            print(f"[FAIL] [VALIDATION] Forbidden 'src' in sys.path: {path}")
+
+    if not errors:
+        print("[OK] [VALIDATION] No 'src' contamination in sys.path")
+
+    # ========== PACKAGE CONTEXT VERIFICATION ==========
+    # Ensure we're running as a package module (via -m flag)
+    print(f"[BOOT] [VALIDATION] Package context: __package__={__package__}")
+    if not __package__:
+        errors.append("Not executed as package module (missing -m flag)")
+        print("[FAIL] [VALIDATION] Not executed via -m flag")
+        print(f"[FAIL] [VALIDATION] Current __package__: {__package__}")
+        print(f"[FAIL] [VALIDATION] Current __name__: {__name__}")
+    else:
+        print(f"[OK] [VALIDATION] Package execution confirmed: {__package__}")
+
+    # ========== BACKEND PACKAGE IMPORTABILITY ==========
+    # Verify 'backend' package is on sys.path and importable
+    print("[BOOT] [VALIDATION] Testing backend package import...")
+    try:
+        import backend
+        backend_path = backend.__file__ if hasattr(backend, '__file__') else backend.__path__
+        print(f"[OK] [VALIDATION] backend package found at: {backend_path}")
+    except ImportError as e:
+        errors.append(f"backend package not importable: {e}")
+        print(f"[FAIL] [VALIDATION] Cannot import backend: {e}")
+
+    # ========== CRITICAL MODULE IMPORTS ==========
+    # Test imports of critical application modules
+    print("[BOOT] [VALIDATION] Testing critical module imports...")
+    critical_modules = [
+        ("backend.api.service", "Main API service"),
+        ("backend.infrastructure.control_plane", "Control plane"),
+        ("backend.core", "Core logic"),
+        ("backend.config", "Configuration"),
+    ]
+
+    for module_name, description in critical_modules:
+        try:
+            __import__(module_name)
+            print(f"[OK] [VALIDATION] {module_name} ({description})")
+        except ImportError as e:
+            errors.append(f"{description} import failed: {e}")
+            print(f"[FAIL] [VALIDATION] Cannot import {module_name}: {e}")
+
+    # ========== PYTHON VERSION CHECK ==========
+    print(f"[BOOT] [VALIDATION] Python version: {sys.version}")
     if sys.version_info < (3, 9):
         errors.append(f"Python 3.9+ required, found {sys.version_info.major}.{sys.version_info.minor}")
-        print(f"[FAIL] [VALIDATION] Unsupported Python version: {sys.version}")
+        print(f"[FAIL] [VALIDATION] Unsupported Python version")
+    else:
+        print(f"[OK] [VALIDATION] Python {sys.version_info.major}.{sys.version_info.minor} supported")
 
-    # Check package execution mode
-    if not __package__:
-        errors.append("Not executed as package module")
-        print("[WARN] [VALIDATION] Not executed via -m flag (may cause import issues)")
+    # ========== ENVIRONMENT DIAGNOSTICS ==========
+    print("[BOOT] [VALIDATION] Environment diagnostics:")
+    print(f"[INFO] Working directory: {os.getcwd()}")
+    print(f"[INFO] sys.path entries: {len(sys.path)}")
+    for idx, path in enumerate(sys.path[:5]):
+        print(f"[INFO]   [{idx}] {path}")
 
-    # Fail fast if errors found
+    # ========== FAIL-FAST EXIT ==========
     if errors:
-        print("\n" + "="*70)
-        print("[FAIL] [CRITICAL] Startup validation FAILED. Cannot proceed.")
-        print("="*70)
-        for error in errors:
-            print(f"  - {error}")
-        print("="*70)
-        print("[TIP] Fix errors above and restart")
-        print("[TIP] Run via: python -m backend.infrastructure.worker_entry")
+        print("\n" + "="*80)
+        print("🚨 [CRITICAL] STARTUP VALIDATION FAILED - CANNOT PROCEED 🚨")
+        print("="*80)
+        print("\nCRITICAL ERRORS:")
+        for idx, error in enumerate(errors, 1):
+            print(f"  {idx}. {error}")
+        print("\n" + "="*80)
+        print("DEPLOYMENT CONTRACT VIOLATION DETECTED")
+        print("="*80)
+        print("\n💡 RESOLUTION STEPS:")
+        print("  1. Verify Dockerfile uses: CMD [\"python\", \"-m\", \"backend.infrastructure.worker_entry\"]")
+        print("  2. Ensure backend/ contains __init__.py")
+        print("  3. Confirm no 'src/' directory exists in backend/")
+        print("  4. Check that 'pip install -e .' was run (if using editable install)")
+        print("\n🔧 CORRECT EXECUTION:")
+        print("  python -m backend.infrastructure.worker_entry")
+        print("\n" + "="*80)
         sys.exit(1)
 
-    print("[OK] [VALIDATION] All startup checks passed")
+    if warnings:
+        print("\n" + "⚠"*40)
+        print("WARNINGS (non-fatal):")
+        for warning in warnings:
+            print(f"  - {warning}")
+        print("⚠"*40 + "\n")
+
+    print("="*80)
+    print("✅ [VALIDATION] ALL STARTUP CHECKS PASSED - SYSTEM READY")
+    print("="*80)
+    print(f"[OK] Package Context: {__package__}")
+    print(f"[OK] Execution Mode: Module (-m flag)")
+    print(f"[OK] Import Resolution: backend.* imports working")
+    print(f"[OK] Path Integrity: No 'src' contamination")
+    print("="*80)
 
 
 # Run validation before proceeding

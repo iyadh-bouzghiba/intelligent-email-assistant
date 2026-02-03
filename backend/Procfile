@@ -1,1 +1,7 @@
-web: gunicorn -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 1 --timeout 120 api.service:sio_app
+# ============================================================================
+# RENDER PROCFILE - CANONICAL BOOT CONTRACT
+# ============================================================================
+# BOOT: python -m backend.infrastructure.worker_entry
+# This enforces package-based execution with built-in validation
+# ============================================================================
+web: python -m backend.infrastructure.worker_entry

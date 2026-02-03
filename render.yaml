@@ -27,13 +27,12 @@ services:
   # -------------------------------------------------------------------------
   - type: web
     name: email-assistant-backend
-    runtime: python
+    runtime: docker
     region: oregon
     plan: starter
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 1 --timeout 120 api.service:sio_app
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     healthCheckPath: /health
-    rootDirectory: backend
     envVars:
       # --- Encryption & Security ---
       - key: FERNET_KEY
