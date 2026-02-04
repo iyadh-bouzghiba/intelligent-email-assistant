@@ -190,22 +190,22 @@ def start_worker():
 
 
 if __name__ == "__main__":
-    # Port 8888 for local development (Google OAuth configured)
-    # Render will override with PORT env var (typically 10000)
+    # Render provides PORT; default 8888 for local dev
     port = int(os.getenv("PORT", "8888"))
-    
-    if WORKER_MODE:
-        print("[START] [BOOT] Running in FREE Render Web Worker Mode")
 
-        # Start processing in a background daemon thread
+    if WORKER_MODE:
+        # HYBRID MODE: background worker + full API in one process.
+        # Render free tier allows only one web service; this pattern keeps
+        # both the email-sync worker loop and all API/OAuth/WebSocket routes
+        # alive on a single dyno.
+        print("[START] [BOOT] Running in Hybrid Mode (API + Background Worker)")
         t = threading.Thread(target=start_worker, daemon=True)
         t.start()
-
-        # Start FastAPI to satisfy Render's HTTP requirement + provide health telemetry
-        print(f"[NET] [BOOT] Worker Health server listening on 0.0.0.0:{port}")
-        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info", timeout_keep_alive=120)
     else:
-        print("[START] [BOOT] Running in API Mode")
-        from backend.api.service import sio_app
-        print(f"[NET] [BOOT] API server listening on 0.0.0.0:{port}")
-        uvicorn.run(sio_app, host="0.0.0.0", port=port, log_level="info", timeout_keep_alive=120)
+        print("[START] [BOOT] Running in API-only Mode")
+
+    # Both modes serve the main API (sio_app).
+    # /health and /healthz are on sio_app; Render health check hits /healthz.
+    from backend.api.service import sio_app
+    print(f"[NET] [BOOT] API server listening on 0.0.0.0:{port}")
+    uvicorn.run(sio_app, host="0.0.0.0", port=port, log_level="info", timeout_keep_alive=120)

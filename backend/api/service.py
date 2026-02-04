@@ -161,6 +161,11 @@ async def health():
     """Render survival health check"""
     return {"status": "ok"}
 
+@app.get("/healthz")
+async def healthz():
+    """Cloud-standard liveness probe (Kubernetes / Render compatible)"""
+    return {"status": "ok"}
+
 
 @app.get("/debug-config")
 async def debug_config():

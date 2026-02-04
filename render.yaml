@@ -31,8 +31,8 @@ services:
     region: oregon
     plan: starter
     dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
-    healthCheckPath: /health
+    dockerContext: .
+    healthCheckPath: /healthz
     envVars:
       # --- Encryption & Security ---
       - key: FERNET_KEY
@@ -84,13 +84,29 @@ services:
       - key: ENVIRONMENT
         value: production
 
+      # --- Redis (rate limiting, token cache, metrics) ---
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        value: 6379
+
+      # --- Secret File Paths (mounted via Render Secret Files) ---
+      - key: GMAIL_CREDENTIALS_PATH
+        value: /etc/secrets/gmail_credentials.json
+
+      # --- Pub/Sub (Gmail push notifications) ---
+      - key: PUBSUB_TOPIC_ID
+        sync: false
+      - key: PUBSUB_SUBSCRIPTION_ID
+        sync: false
+
       # --- Application Config ---
       - key: LOG_LEVEL
         value: INFO
       - key: FRONTEND_URL
         sync: false
       - key: WORKER_MODE
-        value: false
+        value: "true"
 
 # ============================================================================
 # DEPLOYMENT NOTES:

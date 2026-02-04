@@ -1,0 +1,66 @@
+# ============================================================================
+# ROOT .dockerignore — build context is project root (dockerContext: .)
+# Keeps the context small and keeps secrets / legacy code out of the image.
+# ============================================================================
+
+# --- frontend (separate static-site service) ---
+frontend/
+node_modules/
+
+# --- git / IDE ---
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+
+# --- Python cache ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# --- virtual environments ---
+.venv/
+venv/
+ENV/
+
+# --- secrets & credentials (NEVER in image) ---
+backend/secrets/
+*.pem
+*.key
+*.crt
+.env
+.env.*
+!.env.example
+client_secrets.json
+credentials.json
+
+# --- legacy / backup (contains stale src.* references) ---
+backend/src_backup/
+backend/tools/
+backend/docker-compose.yml
+
+# --- documentation (session artifacts) ---
+*.md
+!backend/README.md
+
+# --- test & coverage ---
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- build artifacts ---
+dist/
+build/
+*.egg-info/
+
+# --- IDE / tooling caches ---
+.mypy_cache/
+.ruff_cache/
+
+# --- misc session / dev files ---
+validate_package.py
+.claudeignore
+.claude/
