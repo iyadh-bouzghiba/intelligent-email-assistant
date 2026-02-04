@@ -12,6 +12,7 @@ Bootstrap:
     No manual sys.path manipulation needed.
 """
 import os
+import sys
 
 import asyncio
 import json
@@ -163,7 +164,14 @@ async def health():
 
 @app.get("/healthz")
 async def healthz():
-    """Cloud-standard liveness probe (Kubernetes / Render compatible)"""
+    """Render liveness probe — API-only.
+
+    Deliberately stateless: returns 200 as long as the process is alive and
+    uvicorn is serving.  Worker heartbeat is NOT reflected here; worker
+    survivability is handled by the daemon thread + restart wrapper in
+    worker_entry.py (start_worker).  The WORKER_HEARTBEAT /healthz defined
+    in worker_entry.py is dead code — only sio_app (this file) is served.
+    """
     return {"status": "ok"}
 
 

@@ -39,6 +39,11 @@ COPY --from=builder /root/.local /home/appuser/.local
 # Context is project root, so 'backend/' maps directly to /app/backend/.
 COPY --chown=appuser:appuser backend/ ./backend/
 
+# PersistenceManager resolves its store path to /app/data/ at runtime.
+# /app is owned by root (created by WORKDIR); create and chown data/ here
+# so appuser can write tenants/<id>/store.json after the USER switch.
+RUN mkdir -p /app/data && chown appuser:appuser /app/data
+
 USER appuser
 
 ENV PATH=/home/appuser/.local/bin:$PATH

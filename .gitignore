@@ -29,6 +29,12 @@ frontend/.next/
 # Protects the dynamic token vault from being pushed to GitHub
 backend/data/credentials/*.json
 
+# Credential files — never in version control
+backend/secrets/
+
+# Legacy backup — contains stale src.* references, excluded from Docker too
+backend/src_backup/
+
 # Protects any local development database logs
 *.log
 
