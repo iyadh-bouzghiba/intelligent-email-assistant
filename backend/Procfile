@@ -1,7 +1,0 @@
-# ============================================================================
-# RENDER PROCFILE - CANONICAL BOOT CONTRACT
-# ============================================================================
-# BOOT: python -m backend.infrastructure.worker_entry
-# This enforces package-based execution with built-in validation
-# ============================================================================
-web: python -m backend.infrastructure.worker_entry

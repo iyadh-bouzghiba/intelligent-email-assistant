@@ -26,11 +26,17 @@ setup(
     author_email="",
     python_requires=">=3.9",
 
-    # Package discovery
-    packages=find_packages(
-        where=".",
-        exclude=["tests*", "*.tests", "*.tests.*", "tests.*", "src_backup*"]
-    ),
+    # Package discovery — maps 'backend' package to current directory.
+    # When run from backend/ (e.g. in Docker or local dev), this makes
+    # 'import backend.api' resolve to ./api/, matching the project-wide
+    # import convention used everywhere in the codebase.
+    package_dir={"backend": "."},
+    packages=["backend"] + [
+        "backend." + p for p in find_packages(
+            where=".",
+            exclude=["tests*", "*.tests", "*.tests.*", "tests.*", "src_backup*"]
+        )
+    ],
 
     # Include package data
     include_package_data=True,

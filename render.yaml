@@ -26,7 +26,7 @@ services:
   # BACKEND — Web Service (FastAPI + Socket.IO + Python 3.11)
   # -------------------------------------------------------------------------
   - type: web
-    name: email-assistant-backend
+    name: intelligent-email-assistant
     runtime: docker
     region: oregon
     plan: starter

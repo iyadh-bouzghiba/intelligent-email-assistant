@@ -6,83 +6,67 @@
 # BOOT CONTRACT: python -m backend.infrastructure.worker_entry
 # NO sys.path HACKS | NO WORKDIR TRICKS | FAIL-FAST VALIDATION
 #
-# This Dockerfile enforces package-based execution and prevents import errors
-# by installing the backend as a proper Python package via setup.py
+# PACKAGE RESOLUTION:
+#   Docker context = ./backend/   (render.yaml: dockerContext: ./backend)
+#   COPY . ./backend/  ->  /app/backend/__init__.py, /app/backend/api/, ...
+#   PYTHONPATH=/app    ->  'import backend' resolves to /app/backend/
+#   Third-party deps handled in builder stage. No pip install -e . needed.
 # ============================================================================
 
 # ===== BUILDER STAGE =====
-# Compile dependencies in isolated environment to minimize final image size
 FROM python:3.11-slim as builder
 
 WORKDIR /build
 
-# Install build dependencies for Python packages with C extensions
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    make \
-    libffi-dev \
+    gcc g++ make libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (Docker layer caching optimization)
 COPY requirements.txt .
-
-# Install dependencies to user directory
 RUN pip install --no-cache-dir --user -r requirements.txt
 
-# ===== FINAL STAGE =====
-# Minimal runtime image without build tools
+# ===== RUNTIME STAGE =====
 FROM python:3.11-slim
 
-# Create non-root user for security
 RUN useradd --create-home --shell /bin/bash appuser
 
-# Set working directory
 WORKDIR /app
 
-# Copy compiled dependencies from builder stage
+# Third-party deps from builder
 COPY --from=builder /root/.local /home/appuser/.local
 
-# Copy entire backend package
-COPY --chown=appuser:appuser . .
+# CRITICAL: Preserve the 'backend' directory name inside /app.
+# Docker context is ./backend/, so 'COPY . ./backend/' produces:
+#   /app/backend/__init__.py
+#   /app/backend/api/service.py
+#   /app/backend/infrastructure/worker_entry.py
+#   ...
+# Combined with PYTHONPATH=/app, 'from backend.xxx' imports resolve correctly.
+COPY --chown=appuser:appuser . ./backend/
 
-# Switch to appuser before installing package
 USER appuser
 
-# Install backend package in user space
-# This creates the 'backend' package that can be imported
-RUN pip install --user --no-cache-dir -e .
-
-# Verify package installation (fail-fast if broken)
-RUN python -c "import backend; print(f'✅ Backend package installed: {backend.__file__}')" || \
-    (echo "❌ ERROR: Backend package installation failed" && exit 1)
-
-# Set PATH to include user-installed binaries
 ENV PATH=/home/appuser/.local/bin:$PATH
-
-# Python configuration for optimal Docker performance
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app
 
-# Expose port (Render will override with $PORT env var)
 EXPOSE 8000
 
-# Health check using pure Python (no external dependencies)
+# ===== BUILD-TIME VERIFICATION (fail-fast) =====
+# Proves the package directory structure is correct before the image ships.
+RUN python -c "import backend; print('backend: ' + str(backend.__file__)); import backend.api; print('backend.api: OK'); import backend.infrastructure; print('backend.infrastructure: OK')" || \
+    (echo "ERROR: /app/backend/ package structure broken" && exit 1)
+
+# Health check (pure Python)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import http.client, os; \
-                   port = os.getenv('PORT', '8000'); \
-                   conn = http.client.HTTPConnection('localhost', int(port)); \
+                   conn = http.client.HTTPConnection('localhost', int(os.getenv('PORT','8000'))); \
                    conn.request('GET', '/health'); \
-                   r = conn.getresponse(); \
-                   exit(0 if r.status == 200 else 1)" || exit 1
+                   exit(0 if conn.getresponse().status == 200 else 1)" || exit 1
 
-# ===== BOOT CONTRACT ENFORCEMENT =====
-# CANONICAL ENTRYPOINT - DO NOT MODIFY
-# This command:
-# - Executes backend as a Python module (-m flag)
-# - Automatically resolves 'from backend.xxx' imports
-# - Triggers validate_startup() before serving requests
-# - Respects $PORT environment variable from Render
-# ============================================================================
+# ===== BOOT CONTRACT ENTRYPOINT =====
+# -m adds WORKDIR (/app) to sys.path automatically.
+# PYTHONPATH=/app is also set for belt-and-suspenders.
+# worker_entry.py runs validate_startup() before serving traffic.
 CMD ["python", "-m", "backend.infrastructure.worker_entry"]
