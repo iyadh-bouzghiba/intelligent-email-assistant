@@ -7,8 +7,6 @@ from datetime import datetime
 from backend.services.gmail_engine import run_engine
 from backend.services.summarizer import Summarizer
 from backend.data.models import ThreadState, ThreadSummary
-from backend.infrastructure.credential_store import CredentialStore
-from backend.infrastructure.persistence import persistence
 
 
 def _load_token_data() -> dict:
@@ -16,6 +14,10 @@ def _load_token_data() -> dict:
     Returns empty dict on any failure; run_engine will warn and return []."""
     # PRIMARY: Read from CredentialStore (matches OAuth callback write path)
     try:
+        from backend.auth.credential_store import CredentialStore
+        from backend.data.store import PersistenceManager
+
+        persistence = PersistenceManager()
         credential_store = CredentialStore(persistence)
         tokens = credential_store.load_credentials("default")
         if tokens:
