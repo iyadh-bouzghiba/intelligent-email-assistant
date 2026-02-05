@@ -112,14 +112,14 @@ services:
 # DEPLOYMENT NOTES:
 #
 # 1. Current Service URLs:
-#    - Backend: https://intelligent-email-assistant-7za8.onrender.com
+#    - Backend: https://intelligent-email-assistant.onrender.com
 #    - Frontend: https://intelligent-email-frontend.onrender.com
 #
 # 2. Required Environment Variables in Render Dashboard (Backend):
 #    - GOOGLE_CLIENT_ID = (from Google Cloud Console)
 #    - GOOGLE_CLIENT_SECRET = (from Google Cloud Console)
-#    - GOOGLE_REDIRECT_URI = https://intelligent-email-assistant-7za8.onrender.com/auth/callback/google
-#    - BASE_URL = https://intelligent-email-assistant-7za8.onrender.com
+#    - GOOGLE_REDIRECT_URI = https://intelligent-email-assistant.onrender.com/auth/callback/google
+#    - BASE_URL = https://intelligent-email-assistant.onrender.com
 #    - FRONTEND_URL = https://intelligent-email-frontend.onrender.com
 #    - JWT_SECRET_KEY = (generate random secure key)
 #    - MISTRAL_API_KEY = (from Mistral AI)
@@ -130,14 +130,14 @@ services:
 #    - ENVIRONMENT = production
 #
 # 3. Required Environment Variables in Render Dashboard (Frontend):
-#    - VITE_API_BASE = https://intelligent-email-assistant-7za8.onrender.com
-#    - VITE_SOCKET_URL = https://intelligent-email-assistant-7za8.onrender.com
+#    - VITE_API_BASE = https://intelligent-email-assistant.onrender.com
+#    - VITE_SOCKET_URL = https://intelligent-email-assistant.onrender.com
 #
 # 4. Google Cloud Console Configuration:
 #    - Authorized JavaScript Origins:
 #      * https://intelligent-email-frontend.onrender.com
 #    - Authorized Redirect URIs:
-#      * https://intelligent-email-assistant-7za8.onrender.com/auth/callback/google
+#      * https://intelligent-email-assistant.onrender.com/auth/callback/google
 #
 # 5. Health check endpoint /health must return {"status": "ok"}
 #
