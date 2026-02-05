@@ -9,12 +9,32 @@ const FALLBACK_URL = "http://localhost:8000";
 
 // Fail-safe resolution with trailing slash normalization
 const rawApiUrl = PROD_URL || FALLBACK_URL;
-export const API_BASE_URL = rawApiUrl.replace(/\/$/, "");
+const normalizedApiUrl = rawApiUrl.replace(/\/$/, "");
+
+// Drift guard: validate canonical backend or localhost only (production)
+const isCanonicalApi = normalizedApiUrl.includes("intelligent-email-assistant-3e1a.onrender.com");
+const isLocalApi = normalizedApiUrl.startsWith("http://localhost");
+
+if (!isCanonicalApi && !isLocalApi && import.meta.env.PROD) {
+    throw new Error(`❌ Invalid API URL: ${normalizedApiUrl}. Expected canonical backend (3e1a) or localhost.`);
+}
+
+export const API_BASE_URL = normalizedApiUrl;
 
 // WebSocket URL resolution with trailing slash normalization
 const SOCKET_PROD_URL = import.meta.env.VITE_SOCKET_URL;
 const rawSocketUrl = SOCKET_PROD_URL || FALLBACK_URL;
-export const SOCKET_BASE_URL = rawSocketUrl.replace(/\/$/, "");
+const normalizedSocketUrl = rawSocketUrl.replace(/\/$/, "");
+
+// Drift guard: validate canonical backend or localhost only (production)
+const isCanonicalSocket = normalizedSocketUrl.includes("intelligent-email-assistant-3e1a.onrender.com");
+const isLocalSocket = normalizedSocketUrl.startsWith("http://localhost");
+
+if (!isCanonicalSocket && !isLocalSocket && import.meta.env.PROD) {
+    throw new Error(`❌ Invalid socket URL: ${normalizedSocketUrl}. Expected canonical backend (3e1a) or localhost.`);
+}
+
+export const SOCKET_BASE_URL = normalizedSocketUrl;
 
 /**
  * Resilient API fetch with timeout and error handling

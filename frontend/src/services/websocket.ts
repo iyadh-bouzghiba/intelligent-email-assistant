@@ -23,6 +23,14 @@ class WebSocketService {
             throw new Error("❌ VITE_SOCKET_URL is missing. Deployment blocked.");
         }
 
+        // Drift guard: validate canonical backend or localhost only
+        const isCanonical = url.includes("intelligent-email-assistant-3e1a.onrender.com");
+        const isLocalDev = url.startsWith("http://localhost");
+
+        if (!isCanonical && !isLocalDev && import.meta.env.PROD) {
+            throw new Error(`❌ Invalid socket URL: ${url}. Expected canonical backend (3e1a) or localhost.`);
+        }
+
         // Normalize trailing slash to prevent //socket.io bug
         return url.replace(/\/$/, "");
     }
