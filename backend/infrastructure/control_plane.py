@@ -10,6 +10,7 @@ class ControlPlane:
     _last_fetch = 0
     _cache_ttl = 60 # Seconds
     schema_state = "uninitialized"  # ok | mismatch | uninitialized
+    store = None                    # class-level default closes the __new__ race window
 
     def __new__(cls):
         if cls._instance is None:

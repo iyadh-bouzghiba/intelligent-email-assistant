@@ -293,7 +293,7 @@ async def list_emails_root():
     if not store:
         return []
     try:
-        return store.get_emails().data
+        return (await asyncio.to_thread(store.get_emails)).data
     except Exception as e:
         print(f"[WARN] /emails fetch error: {e}")
         return []
@@ -312,7 +312,7 @@ async def list_emails():
         return []
         
     try:
-        response = store.get_emails()
+        response = await asyncio.to_thread(store.get_emails)
         return response.data
     except Exception as e:
         print(f"[WARN] Supabase fetch error: {e}")
@@ -407,7 +407,7 @@ async def export_data(tenant_id: str = "primary"):
         
         # In a real multi-tenant system, we'd filter every query by tenant_id
         # For now, we fetch emails (which now have tenant_id)
-        emails = store.get_emails(limit=1000).data
+        emails = (await asyncio.to_thread(store.get_emails, limit=1000)).data
         filtered = [e for e in emails if e.get('tenant_id') == tenant_id]
         
         return {
