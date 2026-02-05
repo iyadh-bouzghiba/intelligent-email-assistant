@@ -160,7 +160,7 @@ async def get_system_heartbeat():
 @app.get("/health")
 async def health():
     """Render survival health check"""
-    return {"status": "ok"}
+    return {"status": "ok", "schema": ControlPlane.schema_state}
 
 @app.get("/healthz")
 async def healthz():
@@ -172,7 +172,7 @@ async def healthz():
     worker_entry.py (start_worker).  The WORKER_HEARTBEAT /healthz defined
     in worker_entry.py is dead code — only sio_app (this file) is served.
     """
-    return {"status": "ok"}
+    return {"status": "ok", "schema": ControlPlane.schema_state}
 
 
 @app.get("/")
@@ -183,6 +183,14 @@ async def root():
 def debug_allowed():
     """Returns True only when DEBUG_ENABLED=true is explicitly set."""
     return os.getenv("DEBUG_ENABLED", "false").lower() == "true"
+
+def require_schema_ok():
+    """Runtime write-gate: 503 when schema is not verified."""
+    if ControlPlane.schema_state != "ok":
+        raise HTTPException(
+            status_code=503,
+            detail=f"Schema state: {ControlPlane.schema_state}. Writes disabled until schema is verified."
+        )
 
 @app.get("/debug-config")
 async def debug_config():
@@ -376,11 +384,13 @@ async def get_thread(thread_id: str):
 @api_router.post("/threads/{thread_id}/analyze")
 async def analyze_thread(thread_id: str):
     """Stub: trigger on-demand analysis for a thread."""
+    require_schema_ok()
     return {"thread_id": thread_id, "status": "queued", "message": "Analysis scheduled"}
 
 @api_router.post("/threads/{thread_id}/draft")
 async def draft_thread_reply(thread_id: str):
     """Stub: trigger draft-reply generation for a thread."""
+    require_schema_ok()
     return {"thread_id": thread_id, "status": "queued", "draft": None, "message": "Draft generation scheduled"}
 
 @api_router.get("/export")
@@ -533,11 +543,10 @@ async def startup_event():
         expected_version = control.get_supported_schema_version()
 
         if not schema_verified:
-            print(f"[FAIL] [CRITICAL] Schema Mismatch. Expected {expected_version}.")
-            print(f"[FAIL] [FATAL] Database schema verification FAILED. Application will NOT start.")
-            print(f"💡 [ACTION] Run schema verification: python -m backend.scripts.verify_db")
-            print(f"💡 [ACTION] Apply golden SQL: backend/sql/setup_schema.sql")
-            sys.exit(1)  # FAIL-FAST: Exit immediately on schema mismatch
+            print(f"[FATAL] [SCHEMA] Mismatch detected. Expected {expected_version}. State: {ControlPlane.schema_state}.")
+            print(f"[WARN] [SCHEMA] Writes disabled. Read paths and API remain operational.")
+            print(f"💡 [ACTION] Run: python -m backend.scripts.verify_db")
+            print(f"💡 [ACTION] Apply: backend/sql/setup_schema.sql")
         else:
             print(f"[OK] [SYSTEM] Database verified at {expected_version}. Full API routes mounted.")
             print(f"   📍 Available endpoints:")

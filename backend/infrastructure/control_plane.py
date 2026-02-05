@@ -9,11 +9,16 @@ class ControlPlane:
     _policy_cache = {}
     _last_fetch = 0
     _cache_ttl = 60 # Seconds
+    schema_state = "uninitialized"  # ok | mismatch | uninitialized
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(ControlPlane, cls).__new__(cls)
-            cls._instance.store = SupabaseStore()
+            try:
+                cls._instance.store = SupabaseStore()
+            except Exception as e:
+                print(f"[WARN] [CONTROLPLANE] Persistence layer unavailable: {e}")
+                cls._instance.store = None
         return cls._instance
 
     def _get_policy(self) -> Dict[str, Any]:
@@ -21,6 +26,13 @@ class ControlPlane:
         now = time.time()
         if now - self._last_fetch < self._cache_ttl and self._policy_cache:
             return self._policy_cache
+
+        if not self.store:
+            return self._policy_cache or {
+                "worker_enabled": True,
+                "max_emails_per_cycle": 50,
+                "tenant_quota_enabled": False
+            }
 
         try:
             # Fetch global_policy from system_config table
@@ -55,24 +67,36 @@ class ControlPlane:
         return "v3"
 
     def verify_schema(self) -> bool:
-        """Validates that the database schema matches the expected version."""
+        """Validates DB schema and sets schema_state. Never raises."""
+        if not self.store:
+            print("[WARN] [CONTROLPLANE] Schema verification skipped: persistence layer unavailable")
+            ControlPlane.schema_state = "uninitialized"
+            return False
+
         try:
             response = self.store.client.table("schema_version") \
                 .select("version") \
                 .order("applied_at", desc=True) \
                 .limit(1) \
                 .execute()
-            
+
             if response.data:
                 db_version = response.data[0].get("version")
-                return db_version == self.get_supported_schema_version()
+                if db_version == self.get_supported_schema_version():
+                    ControlPlane.schema_state = "ok"
+                    return True
+
+            ControlPlane.schema_state = "mismatch"
+            return False
         except Exception as e:
             print(f"[WARN] Schema verification failed: {e}")
-        
-        return False
+            ControlPlane.schema_state = "uninitialized"
+            return False
 
     def log_audit(self, action: str, resource: str, metadata: Optional[Dict[str, Any]] = None, tenant_id: str = "primary"):
-        """Compliance logging utility."""
+        """Compliance logging utility. Silently skips when store is unavailable."""
+        if not self.store:
+            return
         try:
             self.store.client.table("audit_log").insert({
                 "tenant_id": tenant_id,

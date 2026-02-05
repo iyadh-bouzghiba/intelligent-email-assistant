@@ -20,10 +20,12 @@ def run_worker_loop():
     control = ControlPlane()
 
     # PHASE 4: DEPLOYMENT SAFETY CONTRACT
-    if not control.verify_schema():
-        print(f"[FAIL] [CRITICAL] Schema Mismatch. Expected {control.get_supported_schema_version()}. Fail-safe: Dormant.")
+    control.verify_schema()  # sets ControlPlane.schema_state
+    if ControlPlane.schema_state != "ok":
+        print(f"[WARN] [WORKER] Schema state: {ControlPlane.schema_state}. Writes disabled. Worker idle.")
         while True:
-            time.sleep(3600)
+            WORKER_HEARTBEAT["last_cycle"] = time.time()
+            time.sleep(60)
 
     while True:
         try:
