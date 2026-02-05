@@ -7,9 +7,9 @@ Deployed on Render with Git-based CI/CD.
 
 ## 🚀 Live Demo
 
-- **Base URL:** https://intelligent-email-assistant-2npf.onrender.com
-- **Swagger Docs:** https://intelligent-email-assistant-2npf.onrender.com/docs
-- **Health Check:** https://intelligent-email-assistant-2npf.onrender.com/health
+- **Base URL:** https://intelligent-email-assistant-3e1a.onrender.com
+- **Swagger Docs:** https://intelligent-email-assistant-3e1a.onrender.com/docs
+- **Health Check:** https://intelligent-email-assistant-3e1a.onrender.com/health
 
 ---
 

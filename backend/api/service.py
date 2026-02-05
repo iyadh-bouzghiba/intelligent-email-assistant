@@ -199,7 +199,7 @@ async def debug_config():
     CRITICAL: Verifies redirect URI matches Google Cloud Console.
 
     Expected LOCAL: http://localhost:8000/auth/callback/google
-    Expected PROD: https://intelligent-email-assistant-2npf.onrender.com/auth/callback/google
+    Expected PROD: https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google
     """
     if not debug_allowed():
         raise HTTPException(status_code=404)
@@ -470,7 +470,7 @@ async def google_oauth_callback(code: str, state: str = None):
 
     CANONICAL CALLBACK ROUTE: /auth/callback/google
     LOCAL: http://localhost:8000/auth/callback/google
-    PROD: https://intelligent-email-assistant-2npf.onrender.com/auth/callback/google
+    PROD: https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google
     """
     from backend.config import Config
     

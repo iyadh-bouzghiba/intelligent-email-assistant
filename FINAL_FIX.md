@@ -216,13 +216,13 @@ Look for:
 
 ### 3. Test Health Endpoint
 ```bash
-curl https://intelligent-email-assistant-7za8.onrender.com/health
+curl https://intelligent-email-assistant-3e1a.onrender.com/health
 # Expected: {"status":"ok"}
 ```
 
 ### 4. Test OAuth Flow
 ```bash
-curl -I https://intelligent-email-assistant-7za8.onrender.com/auth/google
+curl -I https://intelligent-email-assistant-3e1a.onrender.com/auth/google
 # Expected: 307 Redirect to Google
 ```
 
@@ -344,12 +344,12 @@ If this deployment fails:
 
 2. **Verify Endpoints**:
    ```bash
-   curl https://intelligent-email-assistant-7za8.onrender.com/health
-   curl https://intelligent-email-assistant-7za8.onrender.com/debug-config
+   curl https://intelligent-email-assistant-3e1a.onrender.com/health
+   curl https://intelligent-email-assistant-3e1a.onrender.com/debug-config
    ```
 
 3. **Test OAuth**:
-   - Visit: `https://intelligent-email-assistant-7za8.onrender.com/auth/google`
+   - Visit: `https://intelligent-email-assistant-3e1a.onrender.com/auth/google`
    - Should redirect to Google consent screen
    - After authorization, should redirect to frontend
 

@@ -111,9 +111,9 @@ Set all of these in the Render dashboard for the backend service:
 | LLM_MODE | api |
 | JWT_ALGORITHM | HS256 |
 | JWT_EXPIRE_MINUTES | 60 |
-| BASE_URL | https://intelligent-email-assistant-7za8.onrender.com |
+| BASE_URL | https://intelligent-email-assistant-3e1a.onrender.com |
 | FRONTEND_URL | https://intelligent-email-frontend.onrender.com |
-| GOOGLE_REDIRECT_URI | https://intelligent-email-assistant-7za8.onrender.com/auth/callback/google |
+| GOOGLE_REDIRECT_URI | https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google |
 | GOOGLE_CLIENT_ID | (from Google Cloud Console) |
 | GOOGLE_CLIENT_SECRET | (from Google Cloud Console) |
 | GCP_PROJECT_ID | (from Google Cloud Console) |

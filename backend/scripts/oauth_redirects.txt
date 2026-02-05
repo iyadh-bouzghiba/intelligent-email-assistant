@@ -1,0 +1,89 @@
+================================================================================
+OAUTH REDIRECT URIS — PRODUCTION CONFIGURATION
+================================================================================
+
+Service Name: email-assistant-backend
+Base URL: https://intelligent-email-assistant-3e1a.onrender.com
+
+--------------------------------------------------------------------------------
+GOOGLE OAUTH REDIRECT (Gmail Integration)
+--------------------------------------------------------------------------------
+
+Redirect URI:
+https://intelligent-email-assistant-3e1a.onrender.com/auth/google/callback
+
+Configuration Steps:
+1. Go to: https://console.cloud.google.com/apis/credentials
+2. Select your OAuth 2.0 Client ID
+3. Under "Authorized redirect URIs", add:
+   https://intelligent-email-assistant-3e1a.onrender.com/auth/google/callback
+4. Save changes
+5. Verify GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Render environment variables
+
+--------------------------------------------------------------------------------
+MICROSOFT OAUTH REDIRECT (Outlook Integration)
+--------------------------------------------------------------------------------
+
+Redirect URI:
+https://intelligent-email-assistant-3e1a.onrender.com/auth/microsoft/callback
+
+Configuration Steps:
+1. Go to: https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
+2. Select your App Registration
+3. Navigate to "Authentication" → "Platform configurations" → "Web"
+4. Under "Redirect URIs", add:
+   https://intelligent-email-assistant-3e1a.onrender.com/auth/microsoft/callback
+5. Save changes
+6. Verify OUTLOOK_CLIENT_ID and OUTLOOK_CLIENT_SECRET in Render environment variables
+
+--------------------------------------------------------------------------------
+LOCAL DEVELOPMENT REDIRECTS
+--------------------------------------------------------------------------------
+
+For local testing, also configure these URIs:
+
+Google:
+http://localhost:8000/auth/google/callback
+
+Microsoft:
+http://localhost:8000/auth/microsoft/callback
+
+--------------------------------------------------------------------------------
+ENVIRONMENT VARIABLE CHECKLIST
+--------------------------------------------------------------------------------
+
+Backend Service (Render):
+☐ OAUTH_REDIRECT_BASE_URL=https://intelligent-email-assistant-3e1a.onrender.com
+☐ BASE_URL=https://intelligent-email-assistant-3e1a.onrender.com
+☐ REDIRECT_URI=https://intelligent-email-assistant-3e1a.onrender.com/auth/google/callback
+☐ FRONTEND_URL=https://intelligent-email-frontend.onrender.com
+
+Frontend Service (Render):
+☐ VITE_API_BASE=https://intelligent-email-assistant-3e1a.onrender.com
+☐ VITE_SOCKET_URL=https://intelligent-email-assistant-3e1a.onrender.com
+
+================================================================================
+VERIFICATION CHECKLIST
+================================================================================
+
+After configuring OAuth providers:
+
+1. Test Google OAuth flow:
+   - Visit: https://intelligent-email-assistant-3e1a.onrender.com/auth/google
+   - Verify redirect to Google login
+   - Verify callback succeeds (no 404)
+   - Check tokens are stored encrypted
+
+2. Test Microsoft OAuth flow:
+   - Visit: https://intelligent-email-assistant-3e1a.onrender.com/auth/microsoft
+   - Verify redirect to Microsoft login
+   - Verify callback succeeds (no 404)
+   - Check tokens are stored encrypted
+
+3. Verify frontend can connect:
+   - Open: https://intelligent-email-frontend.onrender.com
+   - Check browser console for API connection
+   - Verify no CORS errors
+   - Test email fetching
+
+================================================================================

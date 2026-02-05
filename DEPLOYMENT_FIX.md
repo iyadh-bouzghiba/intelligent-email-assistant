@@ -50,8 +50,8 @@ Ensure these environment variables are set in your Render backend service:
 #### Required Variables:
 - [ ] `GOOGLE_CLIENT_ID` = (from Google Cloud Console - keep existing value)
 - [ ] `GOOGLE_CLIENT_SECRET` = (from Google Cloud Console - keep existing value)
-- [ ] `GOOGLE_REDIRECT_URI` = `https://intelligent-email-assistant-7za8.onrender.com/auth/callback/google`
-- [ ] `BASE_URL` = `https://intelligent-email-assistant-7za8.onrender.com`
+- [ ] `GOOGLE_REDIRECT_URI` = `https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google`
+- [ ] `BASE_URL` = `https://intelligent-email-assistant-3e1a.onrender.com`
 - [ ] `FRONTEND_URL` = `https://intelligent-email-frontend.onrender.com`
 - [ ] `ENVIRONMENT` = `production`
 - [ ] `JWT_SECRET_KEY` = (keep existing value or generate new secure key)
@@ -72,7 +72,7 @@ Ensure these URLs are configured in your OAuth 2.0 Client:
 
 #### Authorized Redirect URIs:
 - [ ] `http://localhost:8000/auth/callback/google` (local development)
-- [ ] `https://intelligent-email-assistant-7za8.onrender.com/auth/callback/google` (production)
+- [ ] `https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google` (production)
 
 **Remove any deprecated URIs:**
 - [ ] No URIs with `/auth/google/callback` pattern
@@ -96,21 +96,21 @@ Ensure these URLs are configured in your OAuth 2.0 Client:
 3. **Verify Deployment:**
    ```bash
    # Test health endpoint
-   curl https://intelligent-email-assistant-7za8.onrender.com/health
+   curl https://intelligent-email-assistant-3e1a.onrender.com/health
    # Expected: {"status":"ok"}
 
    # Test debug config
-   curl https://intelligent-email-assistant-7za8.onrender.com/debug-config
+   curl https://intelligent-email-assistant-3e1a.onrender.com/debug-config
    # Expected: JSON with correct URLs
 
    # Test OAuth callback route exists
-   curl -I https://intelligent-email-assistant-7za8.onrender.com/auth/callback/google
+   curl -I https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google
    # Expected: 422 (route exists, missing code param)
    # NOT 404 (route doesn't exist)
    ```
 
 4. **Test OAuth Flow:**
-   - Visit: `https://intelligent-email-assistant-7za8.onrender.com/auth/google`
+   - Visit: `https://intelligent-email-assistant-3e1a.onrender.com/auth/google`
    - Should redirect to Google consent screen
    - After authorization, should redirect to frontend with `?auth=success`
 
@@ -133,8 +133,8 @@ Starting application...
 
 ### Issue: "redirect_uri_mismatch"
 **Solution:**
-1. Verify Google Console has: `https://intelligent-email-assistant-7za8.onrender.com/auth/callback/google`
-2. Verify Render env has: `GOOGLE_REDIRECT_URI=https://intelligent-email-assistant-7za8.onrender.com/auth/callback/google`
+1. Verify Google Console has: `https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google`
+2. Verify Render env has: `GOOGLE_REDIRECT_URI=https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google`
 3. Wait 5-15 minutes for Google propagation
 
 ### Issue: Build fails with import errors
