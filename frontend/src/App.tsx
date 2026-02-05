@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '@services';
+import { websocketService } from '@services/websocket';
 import { Sparkles, RefreshCw, Mail, Shield, AlertCircle, Clock, CheckCircle2, User, ChevronRight, Brain } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Briefing } from '@types';
@@ -87,8 +88,22 @@ export const App = () => {
 
   useEffect(() => {
     fetchEmails(); // Initial load
-    const interval = setInterval(fetchEmails, 30000); // 30s Polling Protocol
-    return () => clearInterval(interval);
+
+    // Realtime updates via WebSocket
+    const handleEmailsUpdated = (data: { count: number; timestamp: string }) => {
+      console.log("[STRATEGY] Realtime update received:", data);
+      fetchEmails(); // Refresh email list
+    };
+
+    websocketService.on("emails_updated", handleEmailsUpdated);
+
+    // Fallback polling (30s) for redundancy
+    const interval = setInterval(fetchEmails, 30000);
+
+    return () => {
+      websocketService.off("emails_updated", handleEmailsUpdated);
+      clearInterval(interval);
+    };
   }, []);
 
   const getPriorityStyles = (priority: string) => {

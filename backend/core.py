@@ -7,17 +7,33 @@ from datetime import datetime
 from backend.services.gmail_engine import run_engine
 from backend.services.summarizer import Summarizer
 from backend.data.models import ThreadState, ThreadSummary
+from backend.infrastructure.credential_store import CredentialStore
+from backend.infrastructure.persistence import persistence
 
 
 def _load_token_data() -> dict:
-    """Load OAuth token from the path declared by GMAIL_CREDENTIALS_PATH.
+    """Load OAuth token from CredentialStore (primary) or GMAIL_CREDENTIALS_PATH (fallback).
     Returns empty dict on any failure; run_engine will warn and return []."""
+    # PRIMARY: Read from CredentialStore (matches OAuth callback write path)
+    try:
+        credential_store = CredentialStore(persistence)
+        tokens = credential_store.load_credentials("default")
+        if tokens:
+            print("[OK] [CORE] Loaded Gmail credentials from CredentialStore (default)")
+            return tokens
+    except Exception as e:
+        print(f"[WARN] [CORE] Failed to load from CredentialStore: {e}")
+
+    # FALLBACK: Read from file (legacy path)
     path = os.getenv("GMAIL_CREDENTIALS_PATH", "")
     if not path:
+        print("[WARN] [CORE] No credentials available. OAuth flow required.")
         return {}
     try:
         with open(path) as f:
-            return json.load(f)
+            tokens = json.load(f)
+            print(f"[OK] [CORE] Loaded Gmail credentials from file: {path}")
+            return tokens
     except Exception as e:
         print(f"[WARN] [CORE] Failed to load Gmail credentials from {path}: {e}")
         return {}

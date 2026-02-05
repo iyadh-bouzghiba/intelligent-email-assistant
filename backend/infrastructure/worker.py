@@ -4,6 +4,14 @@ from datetime import datetime
 from backend.core import EmailAssistant
 from backend.infrastructure.control_plane import ControlPlane
 
+# Socket.IO for realtime notifications
+try:
+    from backend.api.service import sio
+    SOCKETIO_AVAILABLE = True
+except ImportError:
+    SOCKETIO_AVAILABLE = False
+    print("[WARN] [WORKER] Socket.IO not available - realtime updates disabled")
+
 # Shared operational heartbeat - accessible by health check server
 WORKER_HEARTBEAT = {"last_cycle": None}
 
@@ -83,6 +91,18 @@ def run_worker_loop():
             if emails:
                 control.log_audit("ingestion_complete", "supabase", {"count": len(emails)})
                 print(f"[WORKER] Supabase write complete: {len(emails)} emails ingested")
+
+                # Emit realtime notification to connected clients
+                if SOCKETIO_AVAILABLE:
+                    try:
+                        sio.emit("emails_updated", {
+                            "count": len(emails),
+                            "timestamp": datetime.utcnow().isoformat()
+                        })
+                        print(f"[WORKER] Socket.IO event emitted: emails_updated (count={len(emails)})")
+                    except Exception as e:
+                        print(f"[WARN] [WORKER] Socket.IO emission failed: {e}")
+
             print("[WORKER] Cycle complete — sleeping 60s")
             time.sleep(60)
 

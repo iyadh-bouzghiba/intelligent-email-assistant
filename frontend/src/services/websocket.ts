@@ -73,6 +73,11 @@ class WebSocketService {
             console.log("[WebSocket] Thread analyzed:", data);
             this.emit("thread_analyzed", data);
         });
+
+        this.socket.on("emails_updated", (data: { count: number; timestamp: string }) => {
+            console.log("[WebSocket] Emails updated:", data);
+            this.emit("emails_updated", data);
+        });
     }
 
     disconnect() {
