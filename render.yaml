@@ -10,7 +10,7 @@ services:
   - type: static
     name: email-assistant-frontend
     runtime: node
-    buildCommand: cd frontend && npm install && npm run build
+    buildCommand: cd frontend && npm ci && npm run build
     publishDir: frontend/dist
     routes:
       - type: rewrite

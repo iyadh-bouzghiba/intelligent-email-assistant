@@ -6,7 +6,6 @@ import { Briefing } from '@types';
 
 const BRAND_NAME = "EXECUTIVE BRAIN";
 const SUBTITLE = "Strategic Intelligence Feed";
-const API_HOST = "intelligent-email-assistant-7za8.onrender.com";
 const ITEMS_PER_PAGE = 5;
 
 export const App = () => {
@@ -49,51 +48,37 @@ export const App = () => {
     }
   };
 
-  const fetchBriefing = async (emailOverride?: string) => {
-    const targetEmail = emailOverride || activeEmail;
-    setLoading(true);
-    setError(null);
-    setCurrentPage(1);
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
+  const fetchEmails = async () => {
+    // Note: We avoid setting full loading:true during background polling for smoothness
     try {
-      // Parallel fetch: Briefing + Accounts
-      const [briefingData, accountsData] = await Promise.all([
-        apiService.getBriefing(targetEmail || undefined),
+      const [emailData, accountsData] = await Promise.all([
+        apiService.listEmails(),
         apiService.listAccounts()
       ]);
 
-      clearTimeout(timeoutId);
+      // Map DB schema to UI Briefing model
+      const mapped: Briefing[] = (emailData || []).map((e: any) => ({
+        account: accountsData.accounts?.[0] || 'Primary',
+        subject: e.subject || 'No Subject',
+        sender: e.sender || 'Unknown',
+        date: new Date(e.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
+        priority: 'Medium',
+        category: 'General',
+        should_alert: false,
+        summary: e.body || 'Email content delivered. Awaiting strategic processing.',
+        action: 'Review Pending'
+      }));
 
-      // Handle Authentication Issues
-      if (briefingData.error === "Authentication Required" || briefingData.error === "Authentication Invalid") {
-        setBriefings([]);
-        setAccount("Disconnected");
-        return;
+      setBriefings(mapped);
+      setAccounts(accountsData.accounts || []);
+      if (accountsData.accounts?.[0] && !activeEmail) {
+        setAccount(accountsData.accounts[0]);
       }
-
-      // Process Briefings
-      briefingData.briefings.forEach((b: Briefing) => {
-        if (b.should_alert) triggerSentinelAlert(b);
-      });
-
-      setBriefings(briefingData.briefings);
-      setAccount(briefingData.account);
-
-      // Update Accounts List
-      setAccounts(accountsData.accounts);
-      if (!activeEmail && accountsData.accounts.length > 0 && !emailOverride) {
-        // Auto-select first account if none active
-        setActiveEmail(accountsData.accounts[0]);
-      }
+      setError(null);
     } catch (err: any) {
-      clearTimeout(timeoutId);
-      if (err.name === 'AbortError') {
-        setError('Request Timeout: Intelligence processing delay.');
-      } else {
-        setError(`Connection Failure: ${API_HOST} is unreachable.`);
+      console.warn("📡 [STRATEGY] Link degraded, maintaining last known state.");
+      if (briefings.length === 0) {
+        setError("Connection Failure: API is unreachable.");
       }
     } finally {
       setLoading(false);
@@ -101,7 +86,9 @@ export const App = () => {
   };
 
   useEffect(() => {
-    fetchBriefing();
+    fetchEmails(); // Initial load
+    const interval = setInterval(fetchEmails, 30000); // 30s Polling Protocol
+    return () => clearInterval(interval);
   }, []);
 
   const getPriorityStyles = (priority: string) => {
@@ -144,8 +131,10 @@ export const App = () => {
             <div>
               <h1 className="text-white font-bold tracking-tight text-lg">{BRAND_NAME}</h1>
               <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <p className="text-[10px] text-slate-500 uppercase tracking-[0.2em] font-bold">Sentinel Active</p>
+                <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${error ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                <p className={`text-[10px] uppercase tracking-[0.2em] font-bold ${error ? 'text-rose-500' : 'text-slate-500'}`}>
+                  {error ? 'Sentinel Offline' : 'Sentinel Active'}
+                </p>
               </div>
             </div>
           </div>
@@ -168,7 +157,7 @@ export const App = () => {
                     key={email}
                     onClick={() => {
                       setActiveEmail(email);
-                      fetchBriefing(email);
+                      fetchEmails();
                     }}
                     className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${activeEmail === email || account.includes(email)
                       ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'
@@ -187,7 +176,7 @@ export const App = () => {
             </div>
 
             <button
-              onClick={() => fetchBriefing()}
+              onClick={() => { setLoading(true); fetchEmails(); }}
               disabled={loading}
               className="group flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
             >
@@ -257,7 +246,7 @@ export const App = () => {
                 <h4 className="font-bold text-base">Transmission Alert</h4>
                 <p className="text-sm opacity-90">{error}</p>
               </div>
-              <button onClick={() => fetchBriefing()} className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 transition-colors text-xs font-black uppercase tracking-widest">
+              <button onClick={() => fetchEmails()} className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 transition-colors text-xs font-black uppercase tracking-widest">
                 Re-Connect
               </button>
             </motion.div>
