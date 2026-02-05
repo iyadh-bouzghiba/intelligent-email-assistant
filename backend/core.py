@@ -1,22 +1,40 @@
 from typing import Dict, List, Any
 import asyncio
+import json
+import os
 from datetime import datetime
 
 from backend.services.gmail_engine import run_engine
 from backend.services.summarizer import Summarizer
 from backend.data.models import ThreadState, ThreadSummary
 
+
+def _load_token_data() -> dict:
+    """Load OAuth token from the path declared by GMAIL_CREDENTIALS_PATH.
+    Returns empty dict on any failure; run_engine will warn and return []."""
+    path = os.getenv("GMAIL_CREDENTIALS_PATH", "")
+    if not path:
+        return {}
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[WARN] [CORE] Failed to load Gmail credentials from {path}: {e}")
+        return {}
+
+
 class EmailAssistant:
     def __init__(self):
         self.brain = Summarizer()
         self.threads: Dict[str, ThreadState] = {}
+        self._token_data = _load_token_data()
 
     def process_emails(self):
         """
         Legacy Logic for the API to fetch and summarize emails.
         Now enhanced to include thread context for the platform adapter.
         """
-        emails = run_engine({})
+        emails = run_engine(self._token_data)
         if not emails:
             return []
         
