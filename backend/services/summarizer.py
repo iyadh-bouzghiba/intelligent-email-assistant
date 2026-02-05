@@ -5,14 +5,22 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Summarizer:
+    _demo_warned = False
+
     def __init__(self):
         api_key = os.getenv("MISTRAL_API_KEY")
-        if not api_key:
-            raise ValueError("MISTRAL_API_KEY not found in .env")
-        self.client = Mistral(api_key=api_key)
-        self.model = "mistral-tiny" # Defaulting to tiny for reliability during testing
+        self.client = None
+        self.model = "mistral-tiny"
+        if api_key:
+            self.client = Mistral(api_key=api_key)
+        elif not Summarizer._demo_warned:
+            print("[WARN] [SUMMARIZER] MISTRAL_API_KEY not set — demo mode active. AI summarization disabled until key is provided.")
+            Summarizer._demo_warned = True
 
     def summarize(self, email_data):
+        if not self.client:
+            return "SUMMARY: AI summarization unavailable (demo mode).\nACTION: Set MISTRAL_API_KEY to enable.\nPRIORITY: Medium"
+
         prompt = f"""
         Role: Executive Assistant AI.
         Objective: Analyze the email and extract key intelligence.

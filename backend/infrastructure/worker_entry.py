@@ -184,8 +184,7 @@ def start_worker():
         try:
             run_worker_loop()
         except Exception as e:
-            print(f"[WORKER] FATAL LOOP CRASH: {e}")
-            print("[WORKER] Restarting loop in 30s")
+            print(f"[WARN] [WORKER] Loop crashed, restarting in 30s: {e}")
             time.sleep(30)
 
 

@@ -175,6 +175,11 @@ async def healthz():
     return {"status": "ok"}
 
 
+@app.get("/")
+async def root():
+    """Root — minimal liveness signal for browsers and probes."""
+    return {"status": "ok", "service": "Executive Brain - Sentinel Core"}
+
 def debug_allowed():
     """Returns True only when DEBUG_ENABLED=true is explicitly set."""
     return os.getenv("DEBUG_ENABLED", "false").lower() == "true"
