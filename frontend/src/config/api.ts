@@ -69,7 +69,7 @@ export const apiFetch = async (path: string, options: RequestInit = {}) => {
  * Call this at app initialization to fail-fast on misconfiguration
  */
 export const validateEnvironment = () => {
-  if (!PROD_URL && process.env.NODE_ENV === 'production') {
+  if (!PROD_URL && import.meta.env.PROD) {
     console.warn("⚠️ VITE_API_BASE not set. Falling back to:", FALLBACK_URL);
   }
 
