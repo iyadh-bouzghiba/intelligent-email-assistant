@@ -2,7 +2,6 @@ import os
 import time
 from datetime import datetime
 from backend.core import EmailAssistant
-from backend.infrastructure.supabase_store import SupabaseStore
 from backend.infrastructure.control_plane import ControlPlane
 
 # Shared operational heartbeat - accessible by health check server
@@ -67,7 +66,7 @@ def run_worker_loop():
                     
                     print(f"[WORKER] Ingesting: {email.get('subject', 'No Subject')} ({m_id})")
                     
-                    assistant.store.save_email(
+                    control.store.save_email(
                         subject=email.get('subject', 'No Subject'),
                         sender=email.get('sender', 'Unknown'),
                         date=date_val,
@@ -81,8 +80,9 @@ def run_worker_loop():
                     print(f"[WORKER] Batch commit complete. Cooling for 500ms...")
                     time.sleep(0.5)
             
-            control.log_audit("ingestion_complete", "supabase", {"count": len(emails)})
-            print("[WORKER] Supabase write success")
+            if emails:
+                control.log_audit("ingestion_complete", "supabase", {"count": len(emails)})
+                print(f"[WORKER] Supabase write complete: {len(emails)} emails ingested")
             print("[WORKER] Cycle complete — sleeping 60s")
             time.sleep(60)
 

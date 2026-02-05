@@ -175,10 +175,10 @@ async def healthz():
     return {"status": "ok", "schema": ControlPlane.schema_state}
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     """Root — minimal liveness signal for browsers and probes."""
-    return {"status": "ok", "service": "Executive Brain - Sentinel Core"}
+    return {"status": "ok", "service": "Intelligent Email Assistant"}
 
 def debug_allowed():
     """Returns True only when DEBUG_ENABLED=true is explicitly set."""
