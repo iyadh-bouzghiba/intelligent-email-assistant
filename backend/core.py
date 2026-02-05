@@ -16,7 +16,7 @@ class EmailAssistant:
         Legacy Logic for the API to fetch and summarize emails.
         Now enhanced to include thread context for the platform adapter.
         """
-        emails = run_engine()
+        emails = run_engine({})
         if not emails:
             return []
         

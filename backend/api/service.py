@@ -20,7 +20,7 @@ import time
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
-from fastapi import FastAPI, Request, Response, APIRouter
+from fastapi import FastAPI, HTTPException, Request, Response, APIRouter
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -175,6 +175,10 @@ async def healthz():
     return {"status": "ok"}
 
 
+def debug_allowed():
+    """Returns True only when DEBUG_ENABLED=true is explicitly set."""
+    return os.getenv("DEBUG_ENABLED", "false").lower() == "true"
+
 @app.get("/debug-config")
 async def debug_config():
     """
@@ -184,6 +188,8 @@ async def debug_config():
     Expected LOCAL: http://localhost:8000/auth/callback/google
     Expected PROD: https://intelligent-email-assistant-2npf.onrender.com/auth/callback/google
     """
+    if not debug_allowed():
+        raise HTTPException(status_code=404)
     from backend.config import Config
     port = os.getenv("PORT", "8000")
     base_url = os.getenv("BASE_URL", "http://localhost:8000").rstrip("/")
@@ -211,6 +217,8 @@ async def debug_imports():
 
     Use this to troubleshoot ModuleNotFoundError issues.
     """
+    if not debug_allowed():
+        raise HTTPException(status_code=404)
     import sys
     from pathlib import Path
 
@@ -249,6 +257,33 @@ async def debug_imports():
 async def list_accounts_route():
     """Returns valid accounts list for frontend synchronization."""
     return {"accounts": ["primary-access@gmail.com"]}
+
+# ------------------------------------------------------------------
+# FRONTEND BRIDGE ROUTES
+# ------------------------------------------------------------------
+@app.get("/process")
+async def process_briefing():
+    """Bridge: frontend GET /process \u2192 assistant.process_emails()."""
+    if not assistant:
+        return {"briefings": [], "account": "primary", "error": "System initializing"}
+    try:
+        briefings = await asyncio.to_thread(assistant.process_emails)
+        return {"briefings": briefings, "account": "primary", "error": None}
+    except Exception as e:
+        print(f"[WARN] /process error: {e}")
+        return {"briefings": [], "account": "primary", "error": str(e)}
+
+@app.get("/emails")
+async def list_emails_root():
+    """Bridge: frontend GET /emails \u2192 /api/emails (Supabase source of truth)."""
+    store = safe_get_store()
+    if not store:
+        return []
+    try:
+        return store.get_emails().data
+    except Exception as e:
+        print(f"[WARN] /emails fetch error: {e}")
+        return []
 
 # ------------------------------------------------------------------
 # API ROUTES
@@ -316,6 +351,32 @@ async def list_threads():
         }
 
     return {"count": len(threads_list), "threads": threads_list}
+
+@api_router.get("/threads/{thread_id}")
+async def get_thread(thread_id: str):
+    """Stub: single-thread detail view."""
+    if not assistant:
+        return {"thread_id": thread_id, "status": "initializing"}
+    thread = getattr(assistant, "threads", {}).get(thread_id)
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    summary_obj = getattr(thread, "current_summary", None)
+    return {
+        "thread_id": thread_id,
+        "overview": getattr(summary_obj, "overview", None) or "No summary yet",
+        "confidence_score": getattr(summary_obj, "confidence_score", 0.0) if summary_obj else 0.0,
+        "timestamp": getattr(thread, "last_updated", datetime.now().isoformat()),
+    }
+
+@api_router.post("/threads/{thread_id}/analyze")
+async def analyze_thread(thread_id: str):
+    """Stub: trigger on-demand analysis for a thread."""
+    return {"thread_id": thread_id, "status": "queued", "message": "Analysis scheduled"}
+
+@api_router.post("/threads/{thread_id}/draft")
+async def draft_thread_reply(thread_id: str):
+    """Stub: trigger draft-reply generation for a thread."""
+    return {"thread_id": thread_id, "status": "queued", "draft": None, "message": "Draft generation scheduled"}
 
 @api_router.get("/export")
 async def export_data(tenant_id: str = "primary"):
