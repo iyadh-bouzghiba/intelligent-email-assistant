@@ -28,7 +28,7 @@ class WebSocketService {
         const isLocalDev = url.startsWith("http://localhost");
 
         if (!isCanonical && !isLocalDev && import.meta.env.PROD) {
-            throw new Error(`❌ Invalid socket URL: ${url}. Expected canonical backend (3e1a) or localhost.`);
+            throw new Error("❌ Invalid VITE_SOCKET_URL. Update Render env var to canonical backend (3e1a).");
         }
 
         // Normalize trailing slash to prevent //socket.io bug

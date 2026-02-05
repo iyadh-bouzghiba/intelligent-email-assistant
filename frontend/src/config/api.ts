@@ -16,7 +16,7 @@ const isCanonicalApi = normalizedApiUrl.includes("intelligent-email-assistant-3e
 const isLocalApi = normalizedApiUrl.startsWith("http://localhost");
 
 if (!isCanonicalApi && !isLocalApi && import.meta.env.PROD) {
-    throw new Error(`❌ Invalid API URL: ${normalizedApiUrl}. Expected canonical backend (3e1a) or localhost.`);
+    throw new Error("❌ Invalid VITE_API_BASE. Update Render env var to canonical backend (3e1a).");
 }
 
 export const API_BASE_URL = normalizedApiUrl;
@@ -31,7 +31,7 @@ const isCanonicalSocket = normalizedSocketUrl.includes("intelligent-email-assist
 const isLocalSocket = normalizedSocketUrl.startsWith("http://localhost");
 
 if (!isCanonicalSocket && !isLocalSocket && import.meta.env.PROD) {
-    throw new Error(`❌ Invalid socket URL: ${normalizedSocketUrl}. Expected canonical backend (3e1a) or localhost.`);
+    throw new Error("❌ Invalid VITE_SOCKET_URL. Update Render env var to canonical backend (3e1a).");
 }
 
 export const SOCKET_BASE_URL = normalizedSocketUrl;
