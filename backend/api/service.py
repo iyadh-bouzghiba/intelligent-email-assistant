@@ -62,7 +62,10 @@ app.add_middleware(
 # ------------------------------------------------------------------
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins=[],           # handled by FastAPI
+    cors_allowed_origins=[
+        "https://intelligent-email-frontend.onrender.com",
+        "http://localhost:5173",
+    ],
     transports=["websocket"],          # 🔥 CRITICAL FIX
     ping_timeout=20,
     ping_interval=10,
