@@ -1,6 +1,7 @@
 import os
 from mistralai import Mistral
 from dotenv import load_dotenv
+from .ai_state import AIState
 
 load_dotenv()
 
@@ -18,6 +19,11 @@ class Summarizer:
             Summarizer._demo_warned = True
 
     def summarize(self, email_data):
+        # AIState gate — no provider call when state != ACTIVE
+        state = AIState.state()
+        if state != AIState.ACTIVE:
+            return "SUMMARY: AI summarization unavailable (demo mode).\nACTION: Set MISTRAL_API_KEY to enable.\nPRIORITY: Medium"
+
         if not self.client:
             return "SUMMARY: AI summarization unavailable (demo mode).\nACTION: Set MISTRAL_API_KEY to enable.\nPRIORITY: Medium"
 
@@ -47,6 +53,7 @@ class Summarizer:
             )
             return chat_response.choices[0].message.content
         except Exception as e:
+            AIState.transition_to_degraded(str(e))
             return f"SUMMARY: Error processing email.\nACTION: Check Mistral API.\nPRIORITY: Medium"
 
 if __name__ == "__main__":
