@@ -50,7 +50,14 @@ def run_worker_loop():
             
             # Fetch emails via the domain assistant
             emails = assistant.process_emails()
-            
+
+            # Detect auth error and enter quiet mode
+            if isinstance(emails, dict) and emails.get("__auth_error__") == "invalid_grant":
+                print("[WARN] [WORKER] Gmail auth invalid. Re-auth required at /auth/google")
+                print("[WORKER] Entering quiet mode: 10 minute backoff")
+                time.sleep(600)  # 10 minutes
+                continue
+
             if emails:
                 # Enforce cycle quota
                 max_emails = control.max_emails_per_cycle()

@@ -93,6 +93,10 @@ def run_engine(token_data: dict):
         return emails_data
 
     except Exception as e:
+        error_str = str(e).lower()
+        if "invalid_grant" in error_str or "invalid_client" in error_str:
+            print(f"[WARN] [GMAIL] Re-auth required: token expired/revoked")
+            return {"__auth_error__": "invalid_grant"}
         print(f"❌ Error during execution: {str(e)}")
         return []
 

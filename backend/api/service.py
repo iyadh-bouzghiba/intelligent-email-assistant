@@ -305,7 +305,6 @@ async def list_emails_root():
 # API ROUTES
 # ------------------------------------------------------------------
 api_router = APIRouter(prefix="/api")
-app.include_router(api_router)
 
 @api_router.get("/emails")
 async def list_emails():
@@ -422,6 +421,9 @@ async def export_data(tenant_id: str = "primary"):
     except Exception as e:
         print(f"[FAIL] Export failed: {e}")
         return {"error": "Export failed"}
+
+# Include API router after all routes are defined
+app.include_router(api_router)
 
 
 # ------------------------------------------------------------------

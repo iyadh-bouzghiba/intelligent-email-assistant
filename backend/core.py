@@ -53,9 +53,14 @@ class EmailAssistant:
         Now enhanced to include thread context for the platform adapter.
         """
         emails = run_engine(self._token_data)
+
+        # Pass through auth errors
+        if isinstance(emails, dict) and "__auth_error__" in emails:
+            return emails
+
         if not emails:
             return []
-        
+
         results = []
         for email in emails:
             summary = self.brain.summarize(email)
