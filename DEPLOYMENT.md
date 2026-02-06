@@ -67,9 +67,15 @@ Render will create two services:
 
 In the Render dashboard, navigate to **Backend Service → Environment** and add:
 
+**Generate FERNET_KEY first:**
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+Then set in Render (NEVER commit to git):
+
 **Critical (Required):**
 ```bash
-FERNET_KEY=REMOVED
+FERNET_KEY=<paste_generated_key_here>
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_KEY=your_supabase_service_key_here
 GOOGLE_CLIENT_ID=your_google_client_id_here

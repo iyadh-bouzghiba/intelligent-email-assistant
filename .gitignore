@@ -40,3 +40,8 @@ backend/src_backup/
 
 # Prevents OS-specific thumbnail caches
 Thumbs.db
+
+# Session/status files that may contain secrets
+SESSION_STATUS.md
+*_SECRETS.md
+*.secret.md
