@@ -100,6 +100,10 @@ class CredentialStore:
 
         return decrypted_creds
 
+    def load_credentials(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Alias for get_credentials() - maintains backwards compatibility."""
+        return self.get_credentials(user_id)
+
     def delete_credentials(self, user_id: str):
         """
         Removes credentials for a user (e.g. on logout).

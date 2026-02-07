@@ -20,6 +20,8 @@ export const App = () => {
   const [showSentinelToast, setShowSentinelToast] = useState(false);
   const [accounts, setAccounts] = useState<string[]>([]);
   const [activeEmail, setActiveEmail] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [backoffDelay, setBackoffDelay] = useState(0);
 
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) return;
@@ -86,23 +88,81 @@ export const App = () => {
     }
   };
 
+  const autoSync = async () => {
+    // Single-flight lock
+    if (syncing) return;
+
+    // Only run when tab is visible
+    if (document.visibilityState !== 'visible') return;
+
+    setSyncing(true);
+
+    try {
+      // Preflight health check
+      await apiService.checkHealth();
+
+      // Execute sync
+      const result = await apiService.syncNow();
+
+      if (result.status === 'done' && result.count && result.count > 0) {
+        console.log(`[AUTO-SYNC] Fetched ${result.count} new emails`);
+        // Refetch emails to update UI
+        await fetchEmails();
+        // Reset backoff on success
+        setBackoffDelay(0);
+      } else if (result.status === 'auth_required') {
+        console.warn('[AUTO-SYNC] Auth required, skipping');
+      }
+    } catch (error) {
+      console.warn('[AUTO-SYNC] Failed, applying exponential backoff', error);
+      // Exponential backoff: 0s → 10s → 30s → 60s (capped)
+      setBackoffDelay(prev => Math.min(prev === 0 ? 10000 : prev * 2, 60000));
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   useEffect(() => {
     fetchEmails(); // Initial load
 
     // Realtime updates via WebSocket
-    const handleEmailsUpdated = (data: { count: number; timestamp: string }) => {
+    const handleEmailsUpdated = (data: { count_new: number }) => {
       console.log("[STRATEGY] Realtime update received:", data);
       fetchEmails(); // Refresh email list
     };
 
+    const handleSummaryReady = (data: { count_summarized: number }) => {
+      console.log("[STRATEGY] Summaries ready:", data);
+      // Could refetch thread data if needed
+    };
+
     websocketService.on("emails_updated", handleEmailsUpdated);
+    websocketService.on("summary_ready", handleSummaryReady);
+
+    // Auto-sync scheduler (120s interval, respects visibility + backoff)
+    const SYNC_INTERVAL = 120000; // 120s
+    const autoSyncInterval = setInterval(() => {
+      autoSync();
+    }, SYNC_INTERVAL);
+
+    // Visibility change handler
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Reset backoff when tab becomes visible again
+        setBackoffDelay(0);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     // Fallback polling (30s) for redundancy
-    const interval = setInterval(fetchEmails, 30000);
+    const fallbackInterval = setInterval(fetchEmails, 30000);
 
     return () => {
       websocketService.off("emails_updated", handleEmailsUpdated);
-      clearInterval(interval);
+      websocketService.off("summary_ready", handleSummaryReady);
+      clearInterval(autoSyncInterval);
+      clearInterval(fallbackInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
@@ -350,12 +410,32 @@ export const App = () => {
                   </div>
 
                   <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between">
-                    <button
-                      onClick={() => alert(`Strategic context expansion for "${item.subject}" is coming soon.`)}
-                      className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-[0.2em] flex items-center gap-2 transition-all group/btn"
-                    >
-                      Deep Dive <ChevronRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {item.summary.includes('Awaiting strategic processing') && (
+                        <button
+                          onClick={async () => {
+                            const thread_id = `${item.subject}_${item.sender}`.replace(/\s/g, '_').substring(0, 50);
+                            console.log('[SUMMARIZE] Requesting summary for:', thread_id);
+                            const result = await apiService.summarizeThread(thread_id);
+                            if (result.status === 'done') {
+                              await fetchEmails();
+                            } else if (result.status === 'skipped_no_key') {
+                              alert('AI summarization requires MISTRAL_API_KEY to be configured.');
+                            }
+                          }}
+                          className="text-[10px] font-black text-indigo-500 hover:text-indigo-400 uppercase tracking-[0.2em] flex items-center gap-2 transition-all group/btn"
+                        >
+                          <Sparkles size={14} className="group-hover/btn:rotate-12 transition-transform" />
+                          Summarize Thread
+                        </button>
+                      )}
+                      <button
+                        onClick={() => alert(`Strategic context expansion for "${item.subject}" is coming soon.`)}
+                        className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-[0.2em] flex items-center gap-2 transition-all group/btn"
+                      >
+                        Deep Dive <ChevronRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
+                      </button>
+                    </div>
                     <div className="flex items-center -space-x-2">
                       <div className="w-8 h-8 rounded-full bg-slate-800 border-2 border-[#0f172a] shadow-inner" />
                       <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-600 border-2 border-[#0f172a] flex items-center justify-center text-[10px] font-black text-white shadow-lg">AI</div>

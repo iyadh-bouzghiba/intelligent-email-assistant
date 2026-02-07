@@ -9,8 +9,7 @@ class OAuthManager:
         self.client_config = client_config
         self.redirect_uri = redirect_uri
         self.scopes = [
-            'https://www.googleapis.com/auth/gmail.readonly',
-            'https://www.googleapis.com/auth/gmail.modify'
+            'https://www.googleapis.com/auth/gmail.readonly'
         ]
 
     def get_authorization_url(self) -> str:
@@ -26,7 +25,8 @@ class OAuthManager:
         authorization_url, state = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true',
-            prompt='consent'
+            prompt='consent',
+            response_type='code'
         )
         return authorization_url
 
