@@ -312,13 +312,82 @@ async def list_emails():
     store = safe_get_store()
     if not store:
         return []
-        
+
     try:
         response = await asyncio.to_thread(store.get_emails)
         return response.data
     except Exception as e:
         print(f"[WARN] Supabase fetch error: {e}")
         return []
+
+
+@api_router.post("/sync-now")
+async def sync_now():
+    """
+    User-driven Gmail sync endpoint.
+    Executes ONE Gmail fetch + store cycle immediately.
+
+    Returns status-only (no email contents):
+    - {"status": "auth_required"} if no valid credentials
+    - {"status": "no_new"} if no new emails found
+    - {"status": "done", "count": N} if stored N emails
+    - {"status": "error"} on failure (no secrets leaked)
+    """
+    try:
+        # Load credentials from CredentialStore (primary) or fallback
+        from backend.services.gmail_engine import run_engine
+
+        credential_store = CredentialStore(persistence)
+        token_data = credential_store.load_credentials("default")
+
+        # No credentials or file fallback
+        if not token_data:
+            path = os.getenv("GMAIL_CREDENTIALS_PATH", "")
+            if path:
+                try:
+                    with open(path) as f:
+                        token_data = json.load(f)
+                except Exception:
+                    pass
+
+        if not token_data or 'token' not in token_data:
+            return {"status": "auth_required"}
+
+        # Execute Gmail fetch
+        emails = await asyncio.to_thread(run_engine, token_data)
+
+        # Handle auth errors
+        if isinstance(emails, dict) and "__auth_error__" in emails:
+            return {"status": "auth_required"}
+
+        if not emails:
+            return {"status": "no_new"}
+
+        # Store emails in Supabase
+        store = safe_get_store()
+        if not store:
+            return {"status": "error"}
+
+        stored_count = 0
+        for email in emails:
+            try:
+                await asyncio.to_thread(
+                    store.save_email,
+                    subject=email.get("subject", "No Subject"),
+                    sender=email.get("sender", "Unknown"),
+                    date=email.get("date", "Unknown"),
+                    body=email.get("body", ""),
+                    tenant_id="primary"
+                )
+                stored_count += 1
+            except Exception as e:
+                print(f"[WARN] [SYNC] Failed to store email: {e}")
+
+        return {"status": "done", "count": stored_count}
+
+    except Exception as e:
+        print(f"[ERROR] [SYNC] Sync failed: {e}")
+        return {"status": "error"}
 
 
 @api_router.get("/threads")
@@ -512,13 +581,23 @@ async def google_oauth_callback(code: str, state: str = None):
 
         oauth_manager = OAuthManager(client_config, redirect_uri)
 
+        # Load existing credentials to preserve refresh_token if needed
+        credential_store = CredentialStore(persistence)
+        existing_creds = credential_store.load_credentials("default")
+
         # Exchange code for tokens
         tokens = oauth_manager.exchange_code_for_tokens(code)
 
-        print(f"[OK] [OAuth] Tokens received for user")
+        # OAuth Determinism: Preserve refresh_token if new response lacks it
+        if not tokens.get('refresh_token') and existing_creds and existing_creds.get('refresh_token'):
+            tokens['refresh_token'] = existing_creds['refresh_token']
+            print(f"[OK] [OAuth] Preserved existing refresh_token (new response lacked it)")
+
+        # Log token presence without exposing values
+        has_refresh = 'yes' if tokens.get('refresh_token') else 'no'
+        print(f"[OK] [OAuth] Tokens received: refresh_token_present={has_refresh}")
 
         # Store tokens encrypted via CredentialStore
-        credential_store = CredentialStore(persistence)
         credential_store.save_credentials("default", tokens)
 
         print(f"[OK] [OAuth] Tokens encrypted and stored")
