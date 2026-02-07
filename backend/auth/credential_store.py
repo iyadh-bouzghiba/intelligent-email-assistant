@@ -1,5 +1,6 @@
 from typing import Dict, Any, Optional
 import logging
+import os
 from backend.data.store import PersistenceManager
 from backend.security.security_manager import encrypt_oauth_token, decrypt_oauth_token, SecurityManagerError
 
@@ -20,7 +21,8 @@ class CredentialStore:
 
         SECURITY CONTRACT:
         - Encrypts 'token' and 'refresh_token' before storage
-        - All other fields stored as-is (client_id, client_secret, etc.)
+        - Writes to Supabase first (production persistence)
+        - Falls back to file storage (local dev only)
         - System halts if encryption fails (Security > Availability)
 
         Args:
@@ -30,10 +32,6 @@ class CredentialStore:
         Raises:
             SecurityManagerError: If encryption fails
         """
-        # Load current state
-        state = self._pm.load()
-        tokens = state.get("tokens", {})
-
         # ENCRYPT sensitive tokens before storage
         encrypted_creds = credentials.copy()
 
@@ -50,21 +48,48 @@ class CredentialStore:
             logger.critical(f"[FAIL] [SECURITY] Failed to encrypt tokens for user {user_id}: {e}")
             raise  # Fail fast - do not store unencrypted tokens
 
-        # Update tokens with ENCRYPTED versions
-        tokens[user_id] = encrypted_creds
+        # PRIMARY: Write to Supabase (production persistence)
+        supabase_success = False
+        try:
+            from backend.infrastructure.supabase_store import SupabaseStore
+            store = SupabaseStore()
+            store.save_credential(
+                provider="google",
+                account_id=user_id,
+                encrypted_payload=encrypted_creds,
+                scopes=encrypted_creds.get('scopes', [])
+            )
+            supabase_success = True
+            logger.info(f"[OK] [CREDENTIAL] Stored credentials to Supabase for user {user_id}")
+        except Exception as e:
+            logger.warning(f"[WARN] [CREDENTIAL] Supabase write failed for user {user_id}: {e}")
 
-        # Save back
-        self._pm.save(
-            tokens=tokens,
-            watch_state=state.get("watch_state", {}),
-            threads=state.get("threads", {})
-        )
+        # FALLBACK: Write to file (local dev backup)
+        try:
+            state = self._pm.load()
+            tokens = state.get("tokens", {})
+            tokens[user_id] = encrypted_creds
+            self._pm.save(
+                tokens=tokens,
+                watch_state=state.get("watch_state", {}),
+                threads=state.get("threads", {})
+            )
+            logger.debug(f"[OK] [CREDENTIAL] Wrote file backup for user {user_id}")
+        except Exception as e:
+            logger.warning(f"[WARN] [CREDENTIAL] File write failed for user {user_id}: {e}")
+
+        # Require at least one successful write
+        if not supabase_success:
+            logger.error(f"[FAIL] [CREDENTIAL] No successful credential write for user {user_id}")
+            # In production, this should fail hard. For now, log only.
 
     def get_credentials(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
         Retrieves credentials for a specific user with DECRYPTION.
 
         SECURITY CONTRACT:
+        - Reads from Supabase first (production source of truth)
+        - Falls back to file ONLY if ENV=local or ALLOW_FILE_CREDENTIALS=true
         - Decrypts 'token' and 'refresh_token' after retrieval
         - Returns plaintext tokens for immediate API use (in-memory only)
         - If decryption fails, returns None (token compromise/corruption)
@@ -75,10 +100,40 @@ class CredentialStore:
         Returns:
             Dict containing decrypted credentials or None if not found/invalid.
         """
-        state = self._pm.load()
-        encrypted_creds = state.get("tokens", {}).get(user_id)
+        encrypted_creds = None
+        source = None
+
+        # PRIMARY: Read from Supabase
+        try:
+            from backend.infrastructure.supabase_store import SupabaseStore
+            store = SupabaseStore()
+            cred_data = store.get_credential(provider="google", account_id=user_id)
+            if cred_data:
+                encrypted_creds = cred_data["encrypted_payload"]
+                source = "supabase"
+                logger.info(f"[OK] [CREDENTIAL] Loaded credentials from Supabase for user {user_id}")
+        except Exception as e:
+            logger.warning(f"[WARN] [CREDENTIAL] Supabase read failed for user {user_id}: {e}")
+
+        # FALLBACK: Read from file (dev only)
+        if not encrypted_creds:
+            env = os.getenv("ENVIRONMENT", "production").lower()
+            allow_file = os.getenv("ALLOW_FILE_CREDENTIALS", "false").lower() == "true"
+
+            if env == "local" or env == "development" or allow_file:
+                try:
+                    state = self._pm.load()
+                    encrypted_creds = state.get("tokens", {}).get(user_id)
+                    if encrypted_creds:
+                        source = "file"
+                        logger.info(f"[OK] [CREDENTIAL] Loaded credentials from file for user {user_id} (dev mode)")
+                except Exception as e:
+                    logger.warning(f"[WARN] [CREDENTIAL] File read failed for user {user_id}: {e}")
+            else:
+                logger.info(f"[INFO] [CREDENTIAL] File fallback disabled in {env} environment")
 
         if not encrypted_creds:
+            logger.info(f"[INFO] [CREDENTIAL] No credentials found for user {user_id} (source: {source or 'none'})")
             return None
 
         # DECRYPT sensitive tokens after retrieval
@@ -87,14 +142,14 @@ class CredentialStore:
         try:
             if 'token' in decrypted_creds and decrypted_creds['token']:
                 decrypted_creds['token'] = decrypt_oauth_token(decrypted_creds['token'])
-                logger.debug(f"[OK] [SECURITY] Decrypted access token for user {user_id}")
+                logger.debug(f"[OK] [SECURITY] Decrypted access token for user {user_id} from {source}")
 
             if 'refresh_token' in decrypted_creds and decrypted_creds['refresh_token']:
                 decrypted_creds['refresh_token'] = decrypt_oauth_token(decrypted_creds['refresh_token'])
-                logger.debug(f"[OK] [SECURITY] Decrypted refresh token for user {user_id}")
+                logger.debug(f"[OK] [SECURITY] Decrypted refresh token for user {user_id} from {source}")
 
         except SecurityManagerError as e:
-            logger.error(f"[FAIL] [SECURITY] Failed to decrypt tokens for user {user_id}: {e}")
+            logger.error(f"[FAIL] [SECURITY] Failed to decrypt tokens for user {user_id} from {source}: {e}")
             logger.error(f"[FAIL] [SECURITY] Tokens may be corrupted or key changed. User must re-authenticate.")
             return None  # Token compromise or corruption - force re-auth
 

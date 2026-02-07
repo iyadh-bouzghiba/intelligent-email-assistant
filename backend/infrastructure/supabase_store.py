@@ -70,3 +70,67 @@ class SupabaseStore:
         except Exception as e:
             print(f"[WARN] Supabase email fetch error: {e}")
             return type('obj', (object,), {'data': []})
+
+    def save_credential(self, provider: str, account_id: str, encrypted_payload: dict, scopes: list = None):
+        """
+        Upserts encrypted OAuth credentials to Supabase.
+
+        Args:
+            provider: OAuth provider (e.g., "google")
+            account_id: User/account identifier (e.g., "default")
+            encrypted_payload: Dict with encrypted token/refresh_token and other fields
+            scopes: List of OAuth scopes
+
+        Returns:
+            Supabase response object
+        """
+        import json
+
+        payload = {
+            "provider": provider,
+            "account_id": account_id,
+            "encrypted_payload": json.dumps(encrypted_payload),
+            "scopes": scopes or [],
+            "updated_at": datetime.utcnow().isoformat()
+        }
+
+        try:
+            return self.client.table("credentials").upsert(
+                payload,
+                on_conflict="provider,account_id"
+            ).execute()
+        except Exception as e:
+            print(f"[ERROR] Supabase credential save failed: {e}")
+            raise
+
+    def get_credential(self, provider: str, account_id: str):
+        """
+        Retrieves encrypted OAuth credentials from Supabase.
+
+        Args:
+            provider: OAuth provider (e.g., "google")
+            account_id: User/account identifier (e.g., "default")
+
+        Returns:
+            Dict with encrypted_payload and scopes, or None if not found
+        """
+        import json
+
+        try:
+            response = self.client.table("credentials") \
+                .select("*") \
+                .eq("provider", provider) \
+                .eq("account_id", account_id) \
+                .execute()
+
+            if response.data and len(response.data) > 0:
+                cred = response.data[0]
+                return {
+                    "encrypted_payload": json.loads(cred["encrypted_payload"]),
+                    "scopes": cred.get("scopes", []),
+                    "updated_at": cred.get("updated_at")
+                }
+            return None
+        except Exception as e:
+            print(f"[WARN] Supabase credential fetch error: {e}")
+            return None
