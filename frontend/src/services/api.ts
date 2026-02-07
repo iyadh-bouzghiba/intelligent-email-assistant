@@ -109,4 +109,32 @@ export const apiService = {
     getGoogleAuthUrl: (): string => {
         return `${BASE_URL}/auth/google`;
     },
+
+    // User-driven Gmail sync
+    syncNow: async (): Promise<{ status: string; count?: number }> => {
+        try {
+            const response = await api.post(`${API_ROOT}/sync-now`);
+            return response.data;
+        } catch (error) {
+            console.warn("📡 API: Sync failed, degrading gracefully.");
+            return { status: "error" };
+        }
+    },
+
+    // On-demand thread summarization
+    summarizeThread: async (
+        thread_id: string
+    ): Promise<{ status: string }> => {
+        try {
+            const response = await api.post(
+                `${API_ROOT}/threads/${thread_id}/summarize`
+            );
+            return response.data;
+        } catch (error) {
+            console.warn(
+                `📡 API: Summarization failed for ${thread_id}, degrading gracefully.`
+            );
+            return { status: "error" };
+        }
+    },
 };
