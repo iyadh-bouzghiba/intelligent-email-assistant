@@ -1,5 +1,6 @@
 import os
 import time
+import asyncio
 from datetime import datetime
 from backend.core import EmailAssistant
 from backend.infrastructure.control_plane import ControlPlane
@@ -102,10 +103,11 @@ def run_worker_loop():
                 # Emit realtime notification to connected clients
                 if SOCKETIO_AVAILABLE:
                     try:
-                        sio.emit("emails_updated", {
+                        # Use asyncio.run to properly await the async emit in sync context
+                        asyncio.run(sio.emit("emails_updated", {
                             "count": len(emails),
                             "timestamp": datetime.utcnow().isoformat()
-                        })
+                        }))
                         print(f"[WORKER] Socket.IO event emitted: emails_updated (count={len(emails)})")
                     except Exception as e:
                         print(f"[WARN] [WORKER] Socket.IO emission failed: {e}")
