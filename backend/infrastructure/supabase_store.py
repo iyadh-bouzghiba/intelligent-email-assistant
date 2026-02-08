@@ -86,19 +86,24 @@ class SupabaseStore:
         """
         import json
 
+        # Convert scopes list to comma-separated string for TEXT column
+        scopes_str = ",".join(scopes) if scopes else ""
+
         payload = {
             "provider": provider,
             "account_id": account_id,
             "encrypted_payload": json.dumps(encrypted_payload),
-            "scopes": scopes or [],
+            "scopes": scopes_str,
             "updated_at": datetime.utcnow().isoformat()
         }
 
         try:
-            return self.client.table("credentials").upsert(
+            result = self.client.table("credentials").upsert(
                 payload,
                 on_conflict="provider,account_id"
             ).execute()
+            print(f"[OK] [SUPABASE] Stored credentials (provider={provider}, account_id={account_id})")
+            return result
         except Exception as e:
             print(f"[ERROR] Supabase credential save failed: {e}")
             raise
@@ -125,9 +130,15 @@ class SupabaseStore:
 
             if response.data and len(response.data) > 0:
                 cred = response.data[0]
+
+                # Parse scopes from comma-separated string to list
+                scopes_str = cred.get("scopes", "")
+                scopes = [s.strip() for s in scopes_str.split(",") if s.strip()] if scopes_str else []
+
+                print(f"[OK] [SUPABASE] Loaded credentials (provider={provider}, account_id={account_id})")
                 return {
                     "encrypted_payload": json.loads(cred["encrypted_payload"]),
-                    "scopes": cred.get("scopes", []),
+                    "scopes": scopes,
                     "updated_at": cred.get("updated_at")
                 }
             return None
