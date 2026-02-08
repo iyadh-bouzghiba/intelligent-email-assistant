@@ -10,9 +10,9 @@ from backend.data.models import ThreadState, ThreadSummary
 
 
 def _load_token_data() -> dict:
-    """Load OAuth token from CredentialStore (primary) or GMAIL_CREDENTIALS_PATH (fallback).
+    """Load OAuth token from CredentialStore (Supabase first, file fallback in dev only).
     Returns empty dict on any failure; run_engine will warn and return []."""
-    # PRIMARY: Read from CredentialStore (matches OAuth callback write path)
+    # PRIMARY: Read from CredentialStore (handles Supabase + file fallback with env checks)
     try:
         from backend.auth.credential_store import CredentialStore
         from backend.data.store import PersistenceManager
@@ -21,24 +21,28 @@ def _load_token_data() -> dict:
         credential_store = CredentialStore(persistence)
         tokens = credential_store.load_credentials("default")
         if tokens:
-            print("[OK] [CORE] Loaded Gmail credentials from CredentialStore (default)")
+            print("[OK] [CORE] Loaded Gmail credentials from CredentialStore")
             return tokens
     except Exception as e:
         print(f"[WARN] [CORE] Failed to load from CredentialStore: {e}")
 
-    # FALLBACK: Read from file (legacy path)
-    path = os.getenv("GMAIL_CREDENTIALS_PATH", "")
-    if not path:
-        print("[WARN] [CORE] No credentials available. OAuth flow required.")
-        return {}
-    try:
-        with open(path) as f:
-            tokens = json.load(f)
-            print(f"[OK] [CORE] Loaded Gmail credentials from file: {path}")
-            return tokens
-    except Exception as e:
-        print(f"[WARN] [CORE] Failed to load Gmail credentials from {path}: {e}")
-        return {}
+    # LEGACY FALLBACK: Read from GMAIL_CREDENTIALS_PATH (dev only)
+    env = os.getenv("ENVIRONMENT", "production").lower()
+    allow_file = os.getenv("ALLOW_FILE_CREDENTIALS", "false").lower() == "true"
+
+    if env == "local" or env == "development" or allow_file:
+        path = os.getenv("GMAIL_CREDENTIALS_PATH", "")
+        if path:
+            try:
+                with open(path) as f:
+                    tokens = json.load(f)
+                    print(f"[OK] [CORE] Loaded Gmail credentials from legacy file: {path} (dev mode)")
+                    return tokens
+            except Exception as e:
+                print(f"[WARN] [CORE] Failed to load from legacy file {path}: {e}")
+
+    print("[WARN] [CORE] No credentials available. OAuth flow required via /auth/google")
+    return {}
 
 
 class EmailAssistant:
