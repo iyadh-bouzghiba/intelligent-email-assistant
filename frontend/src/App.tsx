@@ -22,6 +22,7 @@ export const App = () => {
   const [activeEmail, setActiveEmail] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [backoffDelay, setBackoffDelay] = useState(0);
+  const [consecutiveFailures, setConsecutiveFailures] = useState(0);
 
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) return;
@@ -78,10 +79,19 @@ export const App = () => {
         setAccount(accountsData.accounts[0]);
       }
       setError(null);
+      setConsecutiveFailures(0); // Reset on success
     } catch (err: any) {
       console.warn("📡 [STRATEGY] Link degraded, maintaining last known state.");
+      const newFailureCount = consecutiveFailures + 1;
+      setConsecutiveFailures(newFailureCount);
+
       if (briefings.length === 0) {
-        setError("Connection Failure: API is unreachable.");
+        // Show "Waking backend..." for first 5 failures, then show red error
+        if (newFailureCount < 5) {
+          setError("Waking backend… (reconnecting silently)");
+        } else {
+          setError("Connection Failure: API is unreachable after multiple attempts.");
+        }
       }
     } finally {
       setLoading(false);
@@ -108,8 +118,9 @@ export const App = () => {
         console.log(`[AUTO-SYNC] Fetched ${result.count} new emails`);
         // Refetch emails to update UI
         await fetchEmails();
-        // Reset backoff on success
+        // Reset backoff and failures on success
         setBackoffDelay(0);
+        setConsecutiveFailures(0);
       } else if (result.status === 'auth_required') {
         console.warn('[AUTO-SYNC] Auth required, skipping');
       }
@@ -125,10 +136,13 @@ export const App = () => {
   useEffect(() => {
     fetchEmails(); // Initial load
 
+    // Immediate sync on mount (within seconds)
+    autoSync();
+
     // Realtime updates via WebSocket
     const handleEmailsUpdated = (data: { count_new: number }) => {
       console.log("[STRATEGY] Realtime update received:", data);
-      fetchEmails(); // Refresh email list
+      fetchEmails(); // Immediately refetch on socket event
     };
 
     const handleSummaryReady = (data: { count_summarized: number }) => {
@@ -145,11 +159,12 @@ export const App = () => {
       autoSync();
     }, SYNC_INTERVAL);
 
-    // Visibility change handler
+    // Visibility change handler - immediate sync when tab becomes visible
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        // Reset backoff when tab becomes visible again
+        // Reset backoff and trigger immediate sync
         setBackoffDelay(0);
+        autoSync();
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -314,16 +329,22 @@ export const App = () => {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="mb-12 p-6 rounded-3xl bg-rose-500/10 border border-rose-500/20 flex items-center gap-4 text-rose-400 shadow-2xl shadow-rose-900/10"
+              className={`mb-12 p-6 rounded-3xl flex items-center gap-4 shadow-2xl ${
+                consecutiveFailures >= 5
+                  ? 'bg-rose-500/10 border border-rose-500/20 text-rose-400 shadow-rose-900/10'
+                  : 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 shadow-indigo-900/10'
+              }`}
             >
               <AlertCircle size={22} className="flex-shrink-0" />
               <div className="flex-grow">
-                <h4 className="font-bold text-base">Transmission Alert</h4>
+                <h4 className="font-bold text-base">
+                  {consecutiveFailures >= 5 ? 'Transmission Alert' : 'Connecting...'}
+                </h4>
                 <p className="text-sm opacity-90">{error}</p>
               </div>
-              <button onClick={() => fetchEmails()} className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 transition-colors text-xs font-black uppercase tracking-widest">
-                Re-Connect
-              </button>
+              {syncing && (
+                <RefreshCw size={18} className="animate-spin opacity-50" />
+              )}
             </motion.div>
           )}
         </AnimatePresence>
