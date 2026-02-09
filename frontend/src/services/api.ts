@@ -33,7 +33,7 @@ const api = axios.create({
 export const apiService = {
     // Health check — root endpoint
     checkHealth: async (): Promise<HealthStatus> => {
-        const response = await api.get("/health");
+        const response = await api.get("/healthz");
         return response.data;
     },
 
