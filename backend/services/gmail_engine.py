@@ -76,17 +76,34 @@ def run_engine(token_data: dict):
 
             # Extract Metadata
             subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), "No Subject")
-            sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), "Unknown Sender")
-            date = next((h['value'] for h in headers if h['name'].lower() == 'date'), "Unknown Date")
+            sender_raw = next((h['value'] for h in headers if h['name'].lower() == 'from'), "Unknown Sender")
+            date_header = next((h['value'] for h in headers if h['name'].lower() == 'date'), None)
+
+            # Use Gmail internalDate (ms since epoch) as authoritative timestamp
+            internal_date_ms = msg.get('internalDate')
+            if internal_date_ms:
+                from datetime import datetime
+                date_iso = datetime.utcfromtimestamp(int(internal_date_ms) / 1000).isoformat() + 'Z'
+            elif date_header:
+                # Fallback: parse Date header (best-effort)
+                try:
+                    from email.utils import parsedate_to_datetime
+                    parsed_dt = parsedate_to_datetime(date_header)
+                    date_iso = parsed_dt.isoformat()
+                except:
+                    date_iso = datetime.utcnow().isoformat() + 'Z'
+            else:
+                date_iso = datetime.utcnow().isoformat() + 'Z'
 
             # Extract & Clean Body
             raw_body = get_message_body(payload)
             cleaned_body = raw_body.strip()
 
             emails_data.append({
+                "message_id": msg['id'],  # Gmail message ID
                 "subject": subject,
-                "sender": sender,
-                "date": date,
+                "sender": sender_raw,
+                "date": date_iso,  # ISO timestamp
                 "body": cleaned_body
             })
 

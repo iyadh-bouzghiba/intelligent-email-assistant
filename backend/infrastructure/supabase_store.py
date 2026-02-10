@@ -34,8 +34,11 @@ class SupabaseStore:
 
     def save_email(self, subject, sender, date, body=None, message_id=None, tenant_id="primary"):
         """
-        Upserts an email into Supabase. 
+        Upserts an email into Supabase.
         Deduplication is handled by (tenant_id, gmail_message_id) unique index.
+
+        Note: created_at is NOT included in payload - database sets it on INSERT only.
+        updated_at tracks when the record was last synced from Gmail.
         """
         payload = {
             "subject": subject,
@@ -43,28 +46,31 @@ class SupabaseStore:
             "date": date,
             "body": body,
             "tenant_id": tenant_id,
-            "created_at": datetime.utcnow().isoformat()
+            "updated_at": datetime.utcnow().isoformat()
         }
-        
+
         if message_id:
             payload["gmail_message_id"] = message_id
             return self.client.table("emails").upsert(
-                payload, 
+                payload,
                 on_conflict="tenant_id,gmail_message_id"
             ).execute()
-        
+
         # Fallback to legacy deduplication if no message_id provided
         return self.client.table("emails").upsert(
-            payload, 
+            payload,
             on_conflict="subject,date"
         ).execute()
 
     def get_emails(self, limit=50):
-        """Fetches latest emails from the source of truth."""
+        """
+        Fetches latest emails from the source of truth.
+        Orders by 'date' (actual Gmail timestamp) DESC, not created_at.
+        """
         try:
             return self.client.table("emails") \
                 .select("*") \
-                .order("created_at", desc=True) \
+                .order("date", desc=True) \
                 .limit(limit) \
                 .execute()
         except Exception as e:
