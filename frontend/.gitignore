@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# local temp artifacts
+*task_prompts.txt
+*task_search.txt

@@ -21,7 +21,6 @@ export const App = () => {
   const [accounts, setAccounts] = useState<string[]>([]);
   const [activeEmail, setActiveEmail] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [backoffDelay, setBackoffDelay] = useState(0);
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
 
   const requestNotificationPermission = async () => {
@@ -60,18 +59,37 @@ export const App = () => {
         apiService.listAccounts()
       ]);
 
+      // Sort emails by date descending (newest first)
+      const sorted = (emailData || []).sort((a: any, b: any) => {
+        const dateA = Date.parse(a.date ?? a.created_at ?? '0');
+        const dateB = Date.parse(b.date ?? b.created_at ?? '0');
+        return dateB - dateA;
+      });
+
       // Map DB schema to UI Briefing model
-      const mapped: Briefing[] = (emailData || []).map((e: any) => ({
-        account: accountsData.accounts?.[0] || 'Primary',
-        subject: e.subject || 'No Subject',
-        sender: e.sender || 'Unknown',
-        date: new Date(e.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
-        priority: 'Medium',
-        category: 'General',
-        should_alert: false,
-        summary: e.body || 'Email content delivered. Awaiting strategic processing.',
-        action: 'Review Pending'
-      }));
+      const mapped: Briefing[] = sorted.map((e: any) => {
+        const isoDate = e.date ?? e.created_at;
+        let formattedDate = 'Unknown time';
+        try {
+          if (isoDate) {
+            formattedDate = new Date(isoDate).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+          }
+        } catch {
+          // Fallback already set
+        }
+
+        return {
+          account: accountsData.accounts?.[0] || 'Primary',
+          subject: e.subject || 'No Subject',
+          sender: e.sender || 'Unknown',
+          date: formattedDate,
+          priority: 'Medium',
+          category: 'General',
+          should_alert: false,
+          summary: e.body || 'Email content delivered. Awaiting strategic processing.',
+          action: 'Review Pending'
+        };
+      });
 
       setBriefings(mapped);
       setAccounts(accountsData.accounts || []);
@@ -82,17 +100,20 @@ export const App = () => {
       setConsecutiveFailures(0); // Reset on success
     } catch (err: any) {
       console.warn("📡 [STRATEGY] Link degraded, maintaining last known state.");
-      const newFailureCount = consecutiveFailures + 1;
-      setConsecutiveFailures(newFailureCount);
+      setConsecutiveFailures((prev: number) => {
+        const newFailureCount = prev + 1;
 
-      if (briefings.length === 0) {
-        // Show "Waking backend..." for first 5 failures, then show red error
-        if (newFailureCount < 5) {
-          setError("Waking backend… (reconnecting silently)");
-        } else {
-          setError("Connection Failure: API is unreachable after multiple attempts.");
+        if (briefings.length === 0) {
+          // Show "Waking backend..." for first 5 failures, then show red error
+          if (newFailureCount < 5) {
+            setError("Waking backend… (reconnecting silently)");
+          } else {
+            setError("Connection Failure: API is unreachable after multiple attempts.");
+          }
         }
-      }
+
+        return newFailureCount;
+      });
     } finally {
       setLoading(false);
     }
@@ -118,16 +139,13 @@ export const App = () => {
         console.log(`[AUTO-SYNC] Fetched ${result.count} new emails`);
         // Refetch emails to update UI
         await fetchEmails();
-        // Reset backoff and failures on success
-        setBackoffDelay(0);
+        // Reset failures on success
         setConsecutiveFailures(0);
       } else if (result.status === 'auth_required') {
         console.warn('[AUTO-SYNC] Auth required, skipping');
       }
     } catch (error) {
-      console.warn('[AUTO-SYNC] Failed, applying exponential backoff', error);
-      // Exponential backoff: 0s → 10s → 30s → 60s (capped)
-      setBackoffDelay(prev => Math.min(prev === 0 ? 10000 : prev * 2, 60000));
+      console.warn('[AUTO-SYNC] Failed', error);
     } finally {
       setSyncing(false);
     }
@@ -162,8 +180,7 @@ export const App = () => {
     // Visibility change handler - immediate sync when tab becomes visible
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        // Reset backoff and trigger immediate sync
-        setBackoffDelay(0);
+        // Trigger immediate sync
         autoSync();
       }
     };
