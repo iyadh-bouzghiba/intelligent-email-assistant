@@ -76,17 +76,24 @@ def run_worker_loop():
                 batch = emails[i : i + batch_size]
                 
                 for email in batch:
+                    # INGEST-FIX-02: Robust gmail_id extraction with fallback chain
+                    m_id = email.get('message_id') or email.get('id')
+
+                    # CRITICAL: Never ingest emails without valid Gmail ID (breaks dedup contract)
+                    if not m_id:
+                        print(f"[WORKER] SKIP: Missing gmail_id for subject: {email.get('subject', 'No Subject')}")
+                        continue
+
                     # Deduplication key originates from source-of-truth date
                     date_val = email.get('date') or datetime.utcnow().isoformat()
-                    m_id = email.get('message_id')
-                    
-                    print(f"[WORKER] Ingesting: {email.get('subject', 'No Subject')} ({m_id})")
-                    
+
+                    print(f"[WORKER] Ingesting: {email.get('subject', 'No Subject')} (gmail_id={m_id})")
+
                     control.store.save_email(
                         subject=email.get('subject', 'No Subject'),
                         sender=email.get('sender', 'Unknown'),
                         date=date_val,
-                        body=email.get('summary', ''),
+                        body=email.get('body', ''),  # INGEST-FIX-02: Use Gmail body, not AI summary
                         message_id=m_id,
                         tenant_id="primary"
                     )
