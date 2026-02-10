@@ -68,12 +68,21 @@ class EmailAssistant:
         results = []
         for email in emails:
             summary = self.brain.summarize(email)
-            t_id = email.get('threadId', email.get('id', 'unknown'))
-            
+
+            # INGEST-FIX-02: Robust ID extraction with fallback chain
+            # Gmail engine returns "message_id", but defend against upstream changes
+            message_id = email.get('message_id') or email.get('id')
+            thread_id = email.get('threadId') or email.get('thread_id') or message_id or 'unknown'
+
+            # Preserve ALL Gmail fields for worker persistence
             results.append({
-                "thread_id": t_id,
+                "thread_id": thread_id,
+                "message_id": message_id,  # Gmail message ID (required for dedup)
                 "subject": email.get('subject', 'No Subject'),
-                "summary": summary
+                "sender": email.get('sender', 'Unknown'),
+                "date": email.get('date'),  # ISO timestamp from Gmail
+                "body": email.get('body', ''),  # Email content
+                "summary": summary  # AI-generated summary
             })
         return results
 
