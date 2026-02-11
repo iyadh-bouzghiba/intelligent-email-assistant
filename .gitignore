@@ -1,47 +1,66 @@
-# Common
+# =========================================================
+# COMMON: Dependencies / Build outputs / Caches
+# =========================================================
 node_modules/
+dist/
+build/
 .venv/
 __pycache__/
 *.pyc
-.env
-dist/
-build/
+.pytest_cache/
 .DS_Store
+Thumbs.db
 
-# Backend Specific
-backend/.env
+# Logs
+*.log
+
+# =========================================================
+# ENV / SECRETS (Never commit)
+# =========================================================
+# Root env variants
+.env*
+!.env.example
+
+# Backend env variants
+backend/.env*
+!backend/.env.example
+
+# Frontend env variants
+frontend/.env*
+!frontend/.env.example
+
+# =========================================================
+# BACKEND: Local artifacts / Secrets
+# =========================================================
 backend/assistant.db
-backend/.pytest_cache/
+backend/logs/
+backend/secrets/
 backend/client_secrets.json
 backend/credentials.json
 backend/keys.json
-backend/logs/
 backend/secret_keys.json
 
-# Frontend Specific
-frontend/.env
-frontend/dist/
-frontend/.next/
-
-# ==========================================
-# MASTER SHIELDS (Added for Multi-Account Security)
-# ==========================================
 # Protects the dynamic token vault from being pushed to GitHub
 backend/data/credentials/*.json
-
-# Credential files — never in version control
-backend/secrets/
 
 # Legacy backup — contains stale src.* references, excluded from Docker too
 backend/src_backup/
 
-# Protects any local development database logs
-*.log
+# =========================================================
+# FRONTEND: Build artifacts
+# =========================================================
+frontend/dist/
+frontend/.next/
 
-# Prevents OS-specific thumbnail caches
-Thumbs.db
-
-# Session/status files that may contain secrets
+# =========================================================
+# PROJECT: Session/status files that may contain secrets
+# =========================================================
 SESSION_STATUS.md
 *_SECRETS.md
 *.secret.md
+
+# =========================================================
+# LOCAL DIAGNOSTICS / SCRATCH (Never commit)
+# =========================================================
+non_ascii_scan.txt
+test_e3c.ps1

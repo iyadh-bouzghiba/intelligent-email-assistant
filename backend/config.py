@@ -100,7 +100,7 @@ class Config:
         if warnings:
             print(
                 f"\n{'='*70}\n"
-                f"⚠️  WARNING: Optional environment variables not set:\n"
+                f"[WARN] Optional environment variables not set:\n"
                 f"{chr(10).join('  - ' + var for var in warnings)}\n"
                 f"Some features may be limited.\n"
                 f"{'='*70}\n"
@@ -132,16 +132,3 @@ class Config:
         else:
             # In development, always use the canonical localhost path on port 8000
             return "http://localhost:8000/auth/callback/google"
-
-
-# Validate configuration on module import
-# This ensures the app fails immediately if misconfigured
-try:
-    Config.validate()
-    print("✅ Configuration validated successfully")
-except RuntimeError as e:
-    print(str(e))
-    # In production, we want to fail hard
-    # In development, we can continue with warnings
-    if Config.is_production():
-        raise

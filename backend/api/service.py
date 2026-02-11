@@ -27,6 +27,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 import socketio
 
+from backend.config import Config
 from backend.core import EmailAssistant
 from backend.api.models import (
     SummaryResponse, AnalyzeRequest, DraftReplyRequest, DraftReplyResponse,
@@ -58,7 +59,7 @@ app.add_middleware(
 )
 
 # ------------------------------------------------------------------
-# SOCKET.IO (WEBSOCKET ONLY — RENDER SAFE)
+# SOCKET.IO (WEBSOCKET ONLY - RENDER SAFE)
 # ------------------------------------------------------------------
 sio = socketio.AsyncServer(
     async_mode="asgi",
@@ -66,7 +67,7 @@ sio = socketio.AsyncServer(
         "https://intelligent-email-frontend.onrender.com",
         "http://localhost:5173",
     ],
-    transports=["websocket"],          # 🔥 CRITICAL FIX
+    transports=["websocket"],          # [!] CRITICAL FIX
     ping_timeout=20,
     ping_interval=10,
     logger=True,
@@ -115,7 +116,7 @@ assistant: Optional[EmailAssistant] = None # Defer to prevent import errors
 # ------------------------------------------------------------------
 @sio.on("connect")
 async def connect(sid, environ):
-    print(f"📡 Sentinel Connection Authenticated: {sid}")
+    print(f"[SOCKET] Sentinel Connection Authenticated: {sid}")
     await sio.emit(
         "connection_status",
         {"status": "stable", "transmission": "encrypted"},
@@ -167,20 +168,20 @@ async def health():
 
 @app.get("/healthz")
 async def healthz():
-    """Render liveness probe — API-only.
+    """Render liveness probe - API-only.
 
     Deliberately stateless: returns 200 as long as the process is alive and
     uvicorn is serving.  Worker heartbeat is NOT reflected here; worker
     survivability is handled by the daemon thread + restart wrapper in
     worker_entry.py (start_worker).  The WORKER_HEARTBEAT /healthz defined
-    in worker_entry.py is dead code — only sio_app (this file) is served.
+    in worker_entry.py is dead code - only sio_app (this file) is served.
     """
     return {"status": "ok", "schema": ControlPlane.schema_state}
 
 
 @app.api_route("/", methods=["GET", "HEAD"])
 async def root():
-    """Root — minimal liveness signal for browsers and probes."""
+    """Root - minimal liveness signal for browsers and probes."""
     return {"status": "ok", "service": "Intelligent Email Assistant"}
 
 def debug_allowed():
@@ -658,7 +659,7 @@ async def google_oauth_init():
     oauth_manager = OAuthManager(client_config, redirect_uri)
     auth_url = oauth_manager.get_authorization_url()
 
-    print(f"🔐 [OAuth] Redirecting to Google: {auth_url}")
+    print(f"[SECURE] [OAuth] Redirecting to Google: {auth_url}")
     return RedirectResponse(url=auth_url)
 
 
@@ -745,46 +746,73 @@ async def google_oauth_callback(code: str, state: str = None):
 @app.on_event("startup")
 async def startup_event():
     global assistant
+
+    # ENV-BOOT-01: Fail-fast validation at runtime startup (first executable action)
+    Config.validate()
+
+    # Initialize assistant to None (deterministic state)
+    assistant = None
+
     control = ControlPlane()
 
+    # PHASE 4: DEPLOYMENT SAFETY CONTRACT - Database Schema Verification
     try:
-        # PHASE 4: DEPLOYMENT SAFETY CONTRACT - Database Schema Verification
         schema_verified = control.verify_schema()
-        expected_version = control.get_supported_schema_version()
-
-        if not schema_verified:
-            print(f"[FATAL] [SCHEMA] Mismatch detected. Expected {expected_version}. State: {ControlPlane.schema_state}.")
-            print(f"[WARN] [SCHEMA] Writes disabled. Read paths and API remain operational.")
-            print(f"💡 [ACTION] Run: python -m backend.scripts.verify_db")
-            print(f"💡 [ACTION] Apply: backend/sql/setup_schema.sql")
+    except Exception as e:
+        # verify_schema() exception -> FATAL in production, warn in non-production
+        print(f"[ERROR] [SCHEMA] Schema verification failed: {e}")
+        if Config.is_production():
+            print(f"[FATAL] [PRODUCTION] Aborting startup due to schema verification failure")
+            raise
         else:
-            print(f"[OK] [SYSTEM] Database verified at {expected_version}. Full API routes mounted.")
-            print(f"   📍 Available endpoints:")
-            print(f"      - GET  /health")
-            print(f"      - GET  /debug-config")
-            print(f"      - GET  /accounts")
-            print(f"      - GET  /auth/google")
-            print(f"      - GET  /auth/callback/google")
-            print(f"      - GET  /api/emails")
-            print(f"      - GET  /api/threads")
+            print(f"[WARN] [NON-PROD] Continuing despite schema verification failure")
+            schema_verified = False
 
-        # Safe Initialization during Startup
-        # This prevents 'ImportError' if .env is missing during static analysis
+    # Guard expected_version retrieval (only used for messaging)
+    try:
+        expected_version = control.get_supported_schema_version()
+    except Exception as e:
+        print(f"[WARN] [SCHEMA] Could not determine schema version: {e}")
+        expected_version = "unknown"
+
+    if not schema_verified:
+        # verify_schema() returned False -> non-blocking (read-only/mismatch messaging)
+        print(f"[WARN] [SCHEMA] Mismatch detected. Expected {expected_version}. State: {ControlPlane.schema_state}.")
+        print(f"[WARN] [SCHEMA] Writes disabled. Read paths and API remain operational.")
+        print(f"[TIP] [ACTION] Run: python -m backend.scripts.verify_db")
+        print(f"[TIP] [ACTION] Apply: backend/sql/setup_schema.sql")
+    else:
+        print(f"[OK] [SYSTEM] Database verified at {expected_version}. Full API routes mounted.")
+        print(f"   [-] Available endpoints:")
+        print(f"      - GET  /health")
+        print(f"      - GET  /debug-config")
+        print(f"      - GET  /accounts")
+        print(f"      - GET  /auth/google")
+        print(f"      - GET  /auth/callback/google")
+        print(f"      - GET  /api/emails")
+        print(f"      - GET  /api/threads")
+
+    # EmailAssistant Initialization (FATAL if fails)
+    try:
         assistant = EmailAssistant()
+    except Exception as e:
+        print(f"[FATAL] [STARTUP] EmailAssistant init failed: {e}")
+        raise
 
+    # Persistence load (non-blocking - assistant can function without pre-loaded threads)
+    try:
         data = persistence.load()
         if data:
             assistant.threads = data.get("threads", {})
-
-        if os.getenv("GMAIL_CREDENTIALS_PATH"):
-            print("🔐 [SYSTEM] API running in read-only mode — Worker handles Gmail sync")
-        else:
-            print("[WARN]  [SYSTEM] GMAIL_CREDENTIALS_PATH missing. OAuth flow required.")
-
-        print(f"🚀 [SYSTEM] Startup complete. Ready for requests on port {os.getenv('PORT', '8888')}")
-
     except Exception as e:
-        print(f"[WARN] [STARTUP] Warning: {e}")
+        print(f"[WARN] [PERSIST] Failed to load thread history: {e}")
+
+    if os.getenv("GMAIL_CREDENTIALS_PATH"):
+        print("[SECURE] [SYSTEM] API running in read-only mode - Worker handles Gmail sync")
+    else:
+        print("[WARN]  [SYSTEM] GMAIL_CREDENTIALS_PATH missing. OAuth flow required.")
+
+    print(f"[OK] [SYSTEM] Startup complete. Ready for requests on port {os.getenv('PORT', '8888')}")
 
 # ------------------------------------------------------------------
 # FINAL ASGI WRAP (Must be last)
