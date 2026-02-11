@@ -156,11 +156,6 @@ def validate_startup():
     print("="*80)
 
 
-# Run validation before proceeding
-validate_startup()
-
-WORKER_MODE = os.getenv("WORKER_MODE", "false").lower() == "true"
-
 app = FastAPI(title="Email Assistant - Headless Worker")
 
 @app.get("/healthz")
@@ -188,11 +183,21 @@ def start_worker():
             time.sleep(30)
 
 
-if __name__ == "__main__":
+def main():
+    """
+    Entry point for running the application.
+    Validates startup requirements and launches API server (with optional worker).
+    """
+    # Run validation before proceeding
+    validate_startup()
+
+    # Check worker mode
+    worker_mode = os.getenv("WORKER_MODE", "false").lower() == "true"
+
     # Render provides PORT; default 8888 for local dev
     port = int(os.getenv("PORT", "8888"))
 
-    if WORKER_MODE:
+    if worker_mode:
         # HYBRID MODE: background worker + full API in one process.
         # Render free tier allows only one web service; this pattern keeps
         # both the email-sync worker loop and all API/OAuth/WebSocket routes
@@ -208,3 +213,7 @@ if __name__ == "__main__":
     from backend.api.service import sio_app
     print(f"[NET] [BOOT] API server listening on 0.0.0.0:{port}")
     uvicorn.run(sio_app, host="0.0.0.0", port=port, log_level="info", timeout_keep_alive=120)
+
+
+if __name__ == "__main__":
+    main()
