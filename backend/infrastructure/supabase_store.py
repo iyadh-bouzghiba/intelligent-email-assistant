@@ -151,3 +151,54 @@ class SupabaseStore:
         except Exception as e:
             print(f"[WARN] Supabase credential fetch error: {e}")
             return None
+
+    def get_sync_state(self, tenant_id: str, account_id: str):
+        """
+        Retrieves the last_history_id cursor from gmail_sync_state table.
+
+        Args:
+            tenant_id: Tenant identifier (e.g., "primary")
+            account_id: Gmail account identifier (e.g., "default")
+
+        Returns:
+            String historyId or None if no cursor exists
+        """
+        try:
+            response = self.client.table("gmail_sync_state") \
+                .select("last_history_id") \
+                .eq("tenant_id", tenant_id) \
+                .eq("account_id", account_id) \
+                .execute()
+
+            if response.data and len(response.data) > 0:
+                return response.data[0].get("last_history_id")
+            return None
+        except Exception as e:
+            print(f"[WARN] Supabase sync state fetch error: {e}")
+            return None
+
+    def set_sync_state(self, tenant_id: str, account_id: str, last_history_id: str):
+        """
+        Upserts the last_history_id cursor into gmail_sync_state table.
+
+        Args:
+            tenant_id: Tenant identifier (e.g., "primary")
+            account_id: Gmail account identifier (e.g., "default")
+            last_history_id: Current historyId from Gmail profile
+        """
+        payload = {
+            "tenant_id": tenant_id,
+            "account_id": account_id,
+            "last_history_id": last_history_id,
+            "updated_at": datetime.utcnow().isoformat()
+        }
+
+        try:
+            self.client.table("gmail_sync_state").upsert(
+                payload,
+                on_conflict="tenant_id,account_id"
+            ).execute()
+            print(f"[OK] [SYNC-STATE] Cursor saved: {last_history_id[:8]}... (tenant={tenant_id}, account={account_id})")
+        except Exception as e:
+            print(f"[ERROR] Supabase sync state save failed: {e}")
+            raise
