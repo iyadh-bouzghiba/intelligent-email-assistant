@@ -81,11 +81,27 @@ class GmailClient:
     # HISTORY (Used in Choice B)
     # ------------------------------------------------------------------
 
+    def get_current_history_id(self) -> str:
+        """
+        Get the current historyId from the user's Gmail profile.
+        This is the baseline cursor for incremental sync.
+        """
+        try:
+            response = self.service.users().getProfile(userId="me").execute()
+            hid = response.get("historyId")
+            if not hid:
+                raise RuntimeError("Gmail profile missing historyId")
+            return hid
+        except HttpError as e:
+            raise RuntimeError(
+                f"Gmail profile fetch failed: {e.error_details if hasattr(e, 'error_details') else str(e)}"
+            )
+
     def list_history(
         self,
         start_history_id: str,
         history_types: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> Optional[List[Dict[str, Any]]]:
         """
         Fetch mailbox history since a given historyId.
         Used when Pub/Sub sends a notification.
@@ -111,9 +127,9 @@ class GmailClient:
             return response.get("history", [])
 
         except HttpError as e:
-            # 404 means historyId is too old → full resync needed
+            # 404 means historyId is too old -> full resync needed
             if e.resp.status == 404:
-                return []
+                return None
 
             raise RuntimeError(
                 f"Gmail history fetch failed: {e.error_details if hasattr(e, 'error_details') else str(e)}"

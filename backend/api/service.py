@@ -779,7 +779,8 @@ async def startup_event():
         # verify_schema() returned False -> non-blocking (read-only/mismatch messaging)
         print(f"[WARN] [SCHEMA] Mismatch detected. Expected {expected_version}. State: {ControlPlane.schema_state}.")
         print(f"[WARN] [SCHEMA] Writes disabled. Read paths and API remain operational.")
-        print(f"[TIP] [ACTION] Run: python -m backend.scripts.verify_db")
+        print("[TIP] [ACTION] Schema setup: apply backend/sql/setup_schema.sql in Supabase SQL editor")
+        print("[TIP] [ACTION] Then restart worker (WORKER_MODE=true) to re-check schema and enable writes")
         print(f"[TIP] [ACTION] Apply: backend/sql/setup_schema.sql")
     else:
         print(f"[OK] [SYSTEM] Database verified at {expected_version}. Full API routes mounted.")
