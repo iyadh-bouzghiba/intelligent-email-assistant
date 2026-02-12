@@ -56,11 +56,14 @@ class SupabaseStore:
                 on_conflict="tenant_id,gmail_message_id"
             ).execute()
 
-        # Fallback to legacy deduplication if no message_id provided
-        return self.client.table("emails").upsert(
-            payload,
-            on_conflict="subject,date"
-        ).execute()
+        # Fallback: insert without dedupe if message_id missing
+        subj = subject if isinstance(subject, str) else ("" if subject is None else str(subject))
+        subject_truncated = (subj[:50] + "...") if len(subj) > 50 else subj
+        print(
+            f"[WARN] [SYNC] Missing gmail_message_id; inserting without dedupe "
+            f"(tenant={tenant_id}, subject={subject_truncated}, date={date})"
+        )
+        return self.client.table("emails").insert(payload).execute()
 
     def get_emails(self, limit=50):
         """
