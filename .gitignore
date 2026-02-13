@@ -64,3 +64,11 @@ SESSION_STATUS.md
 # =========================================================
 non_ascii_scan.txt
 test_e3c.ps1
+# HYG-01: Local deterministic artifacts (do not commit)
+apply_*.py
+*.diff.txt
+*.patch
+*.bak.*
+emails.json
+data/
+
