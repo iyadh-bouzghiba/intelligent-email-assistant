@@ -136,7 +136,7 @@ export const App = () => {
       const result = await apiService.syncNow();
 
       if (result.status === 'done' && result.count && result.count > 0) {
-        console.log(`[AUTO-SYNC] Fetched ${result.count} new emails`);
+        console.log(`[AUTO-SYNC] Processed ${result.processed_count ?? result.count} emails`);
         // Refetch emails to update UI
         await fetchEmails();
         // Reset failures on success

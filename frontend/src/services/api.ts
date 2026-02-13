@@ -111,7 +111,7 @@ export const apiService = {
     },
 
     // User-driven Gmail sync
-    syncNow: async (): Promise<{ status: string; count?: number }> => {
+    syncNow: async (): Promise<{ status: string; count?: number; processed_count?: number }> => {
         try {
             const response = await api.post(`${API_ROOT}/sync-now`);
             return response.data;
