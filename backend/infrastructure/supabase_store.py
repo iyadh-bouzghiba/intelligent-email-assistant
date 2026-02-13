@@ -56,14 +56,26 @@ class SupabaseStore:
                 on_conflict="tenant_id,gmail_message_id"
             ).execute()
 
-        # Fallback: insert without dedupe if message_id missing
+        # Fallback: check env flag before inserting without dedupe
+        allow_null_id = os.getenv("ALLOW_NULL_GMAIL_ID", "false").lower() == "true"
+        if allow_null_id:
+            # Legacy unsafe mode: insert without dedup (use only for recovery)
+            subj = subject if isinstance(subject, str) else ("" if subject is None else str(subject))
+            subject_truncated = (subj[:50] + "...") if len(subj) > 50 else subj
+            print(
+                f"[WARN] [SYNC] UNSAFE MODE: Missing gmail_message_id; inserting without dedupe "
+                f"(tenant={tenant_id}, subject={subject_truncated}, date={date})"
+            )
+            return self.client.table("emails").insert(payload).execute()
+
+        # Default: skip insert to prevent DB corruption
         subj = subject if isinstance(subject, str) else ("" if subject is None else str(subject))
         subject_truncated = (subj[:50] + "...") if len(subj) > 50 else subj
         print(
-            f"[WARN] [SYNC] Missing gmail_message_id; inserting without dedupe "
+            f"[WARN] [SYNC] Missing gmail_message_id; SKIPPING insert to prevent corruption "
             f"(tenant={tenant_id}, subject={subject_truncated}, date={date})"
         )
-        return self.client.table("emails").insert(payload).execute()
+        return None
 
     def get_emails(self, limit=50):
         """
