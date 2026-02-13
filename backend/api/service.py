@@ -373,12 +373,21 @@ async def sync_now():
         new_thread_ids = []
         for email in emails:
             try:
+                # Extract Gmail stable ID for deduplication
+                m_id = email.get("message_id") or email.get("id")
+                
+                # Skip emails without Gmail ID to prevent duplicate inserts
+                if not m_id:
+                    print(f"[WARN] [SYNC] Skip email without gmail_message_id: {email.get('subject', 'No Subject')}")
+                    continue
+                
                 await asyncio.to_thread(
                     store.save_email,
                     subject=email.get("subject", "No Subject"),
                     sender=email.get("sender", "Unknown"),
                     date=email.get("date", "Unknown"),
                     body=email.get("body", ""),
+                    message_id=m_id,
                     tenant_id="primary"
                 )
                 stored_count += 1
