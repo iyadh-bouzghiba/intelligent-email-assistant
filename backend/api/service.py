@@ -445,7 +445,7 @@ async def sync_now():
                 except Exception as e:
                     print(f"[WARN] [SYNC] Failed to emit summary event: {e}")
 
-        return {"status": "done", "count": stored_count}
+        return {"status": "done", "count": stored_count, "processed_count": stored_count}
 
     except Exception as e:
         print(f"[ERROR] [SYNC] Sync failed: {e}")
