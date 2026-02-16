@@ -1,5 +1,5 @@
 import google_auth_oauthlib.flow
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 class OAuthManager:
     """
@@ -12,7 +12,7 @@ class OAuthManager:
             'https://www.googleapis.com/auth/gmail.readonly'
         ]
 
-    def get_authorization_url(self) -> str:
+    def get_authorization_url(self, state: Optional[str] = None) -> str:
         """
         Generates the Google OAuth2 authorization URL.
         """
@@ -22,11 +22,15 @@ class OAuthManager:
         )
         flow.redirect_uri = self.redirect_uri
         
-        authorization_url, state = flow.authorization_url(
-            access_type='offline',
-            include_granted_scopes='true',
-            prompt='consent'
-        )
+        auth_kwargs = {
+            "access_type": "offline",
+            "include_granted_scopes": "true",
+            "prompt": "consent",
+        }
+        if state:
+            auth_kwargs["state"] = state
+
+        authorization_url, _ = flow.authorization_url(**auth_kwargs)
         return authorization_url
 
     def exchange_code_for_tokens(self, code: str) -> Dict[str, Any]:

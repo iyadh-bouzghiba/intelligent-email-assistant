@@ -20,7 +20,7 @@ import time
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
-from fastapi import FastAPI, HTTPException, Request, Response, APIRouter
+from fastapi import FastAPI, HTTPException, Request, Response, APIRouter, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -196,6 +196,26 @@ def require_schema_ok():
             detail=f"Schema state: {ControlPlane.schema_state}. Writes disabled until schema is verified."
         )
 
+
+_ACCOUNT_ID_CLEAN_RE = re.compile(r"[^a-zA-Z0-9._-]")
+
+def resolve_account_id(state: Optional[str], account_id: Optional[str]) -> str:
+    """
+    Resolves the effective account_id from OAuth state or query param.
+    Priority:
+    - If state starts with "acc:", extract account_id from state
+    - Else use account_id parameter
+    - Default to "default"
+    Sanitizes output to prevent injection: allows only [a-zA-Z0-9._-]
+    """
+    effective = "default"
+    if state and isinstance(state, str) and state.startswith("acc:"):
+        effective = state[4:]
+    elif account_id:
+        effective = account_id
+    effective = _ACCOUNT_ID_CLEAN_RE.sub("", effective)
+    return effective or "default"
+
 @app.get("/debug-config")
 async def debug_config():
     """
@@ -323,7 +343,7 @@ async def list_emails():
 
 
 @api_router.post("/sync-now")
-async def sync_now():
+async def sync_now(account_id: str = Query("default")):
     """
     User-driven Gmail sync endpoint.
     Executes ONE Gmail fetch + store cycle immediately.
@@ -335,14 +355,16 @@ async def sync_now():
     - {"status": "error"} on failure (no secrets leaked)
     """
     try:
+        effective_account_id = resolve_account_id(None, account_id)
+
         # Load credentials from CredentialStore (primary) or fallback
         from backend.services.gmail_engine import run_engine
 
         credential_store = CredentialStore(persistence)
-        token_data = credential_store.load_credentials("default")
+        token_data = credential_store.load_credentials(effective_account_id)
 
         # No credentials or file fallback
-        if not token_data:
+        if not token_data and effective_account_id == "default":
             path = os.getenv("GMAIL_CREDENTIALS_PATH", "")
             if path:
                 try:
@@ -388,6 +410,7 @@ async def sync_now():
                     date=email.get("date", "Unknown"),
                     body=email.get("body", ""),
                     message_id=m_id,
+                    account_id=effective_account_id,
                     tenant_id="primary"
                 )
                 stored_count += 1
@@ -627,6 +650,42 @@ async def export_data(tenant_id: str = "primary"):
         print(f"[FAIL] Export failed: {e}")
         return {"error": "Export failed"}
 
+
+@api_router.get("/accounts")
+async def list_accounts():
+    """
+    Lists all connected Google accounts (no secrets exposed).
+    Returns account_id, updated_at, scopes.
+    """
+    store = safe_get_store()
+    if not store:
+        return {"accounts": []}
+    try:
+        creds = await asyncio.to_thread(store.list_credentials, "google")
+        accounts = [
+            {
+                "account_id": c.get("account_id"),
+                "connected": True,
+                "updated_at": c.get("updated_at"),
+                "scopes": c.get("scopes", []),
+            }
+            for c in (creds or [])
+        ]
+        return {"accounts": accounts}
+    except Exception as e:
+        print(f"[WARN] [ACCOUNTS] List failed: {e}")
+        return {"accounts": []}
+
+@api_router.post("/accounts/{account_id}/disconnect")
+async def disconnect_account(account_id: str):
+    """
+    Disconnects a Google account by deleting its credentials.
+    """
+    effective_account_id = resolve_account_id(None, account_id)
+    credential_store = CredentialStore(persistence)
+    await asyncio.to_thread(credential_store.delete_credentials, effective_account_id)
+    return {"status": "disconnected", "account_id": effective_account_id}
+
 # Include API router after all routes are defined
 app.include_router(api_router)
 
@@ -635,7 +694,7 @@ app.include_router(api_router)
 # GOOGLE OAUTH ROUTES
 # ------------------------------------------------------------------
 @app.get("/auth/google")
-async def google_oauth_init():
+async def google_oauth_init(account_id: str = Query("default")):
     """
     Initiates Google OAuth flow.
     Redirects user to Google consent screen.
@@ -666,14 +725,16 @@ async def google_oauth_init():
     }
 
     oauth_manager = OAuthManager(client_config, redirect_uri)
-    auth_url = oauth_manager.get_authorization_url()
+    effective_account_id = resolve_account_id(None, account_id)
+    state = f"acc:{effective_account_id}"
+    auth_url = oauth_manager.get_authorization_url(state=state)
 
     print(f"[SECURE] [OAuth] Redirecting to Google: {auth_url}")
     return RedirectResponse(url=auth_url)
 
 
 @app.get("/auth/callback/google")
-async def google_oauth_callback(code: str, state: str = None):
+async def google_oauth_callback(code: str, state: str = None, account_id: str = Query("default")):
     """
     Handles Google OAuth callback.
     Exchanges authorization code for tokens and stores them encrypted.
@@ -717,9 +778,12 @@ async def google_oauth_callback(code: str, state: str = None):
 
         oauth_manager = OAuthManager(client_config, redirect_uri)
 
+        effective_account_id = resolve_account_id(state, account_id)
+        print(f"[OK] [OAuth] Callback for account_id={effective_account_id}")
+
         # Load existing credentials to preserve refresh_token if needed
         credential_store = CredentialStore(persistence)
-        existing_creds = credential_store.load_credentials("default")
+        existing_creds = credential_store.load_credentials(effective_account_id)
 
         # Exchange code for tokens
         tokens = oauth_manager.exchange_code_for_tokens(code)
@@ -734,9 +798,9 @@ async def google_oauth_callback(code: str, state: str = None):
         print(f"[OK] [OAuth] Tokens received: refresh_token_present={has_refresh}")
 
         # Store tokens encrypted via CredentialStore
-        credential_store.save_credentials("default", tokens)
+        credential_store.save_credentials(effective_account_id, tokens)
 
-        print(f"[OK] [OAuth] Tokens encrypted and stored")
+        print(f"[OK] [OAuth] Tokens encrypted and stored for account_id={effective_account_id}")
 
         # Redirect to frontend success page
         return RedirectResponse(url=f"{frontend_url}/?auth=success")

@@ -64,7 +64,7 @@ class CredentialStore:
         except Exception as e:
             logger.warning(f"[WARN] [CREDENTIAL] Supabase write failed for user {user_id}: {e}")
 
-        # FALLBACK: Write to file (local dev backup)
+                # FALLBACK: Write to file (local dev backup)
         try:
             state = self._pm.load()
             tokens = state.get("tokens", {})
@@ -77,6 +77,7 @@ class CredentialStore:
             logger.debug(f"[OK] [CREDENTIAL] Wrote file backup for user {user_id}")
         except Exception as e:
             logger.warning(f"[WARN] [CREDENTIAL] File write failed for user {user_id}: {e}")
+
 
         # Require at least one successful write
         if not supabase_success:
@@ -158,14 +159,23 @@ class CredentialStore:
     def load_credentials(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Alias for get_credentials() - maintains backwards compatibility."""
         return self.get_credentials(user_id)
-
     def delete_credentials(self, user_id: str):
         """
         Removes credentials for a user (e.g. on logout).
         """
+        # PRIMARY: Delete from Supabase (source of truth)
+        try:
+            from backend.infrastructure.supabase_store import SupabaseStore
+            store = SupabaseStore()
+            store.delete_credential(provider="google", account_id=user_id)
+            logger.info(f"[OK] [CREDENTIAL] Deleted credentials from Supabase for user {user_id}")
+        except Exception as e:
+            logger.warning(f"[WARN] [CREDENTIAL] Supabase delete failed for user {user_id}: {e}")
+
+        # FALLBACK: Delete from file storage (dev backup)
         state = self._pm.load()
         tokens = state.get("tokens", {})
-        
+
         if user_id in tokens:
             del tokens[user_id]
             self._pm.save(
@@ -173,3 +183,4 @@ class CredentialStore:
                 watch_state=state.get("watch_state", {}),
                 threads=state.get("threads", {})
             )
+            logger.debug(f"[OK] [CREDENTIAL] Deleted credentials from file for user {user_id}")
