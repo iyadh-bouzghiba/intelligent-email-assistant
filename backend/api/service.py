@@ -1,4 +1,4 @@
-"""
+﻿"""
 Intelligent Email Assistant - API Service
 
 FastAPI application providing:
@@ -16,6 +16,7 @@ import sys
 
 import asyncio
 import json
+import re
 import time
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -896,3 +897,4 @@ sio_app = socketio.ASGIApp(
     other_asgi_app=app,
     socketio_path="/socket.io",
 )
+
