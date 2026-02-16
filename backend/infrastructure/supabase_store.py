@@ -32,7 +32,7 @@ class SupabaseStore:
             print(f"[WARN] Supabase thread fetch error: {e}")
             return type('obj', (object,), {'data': []})
 
-    def save_email(self, subject, sender, date, body=None, message_id=None, tenant_id="primary"):
+    def save_email(self, subject, sender, date, body=None, message_id=None, tenant_id="primary", account_id="default"):
         """
         Upserts an email into Supabase.
         Deduplication is handled by (tenant_id, gmail_message_id) unique index.
@@ -53,7 +53,7 @@ class SupabaseStore:
             payload["gmail_message_id"] = message_id
             return self.client.table("emails").upsert(
                 payload,
-                on_conflict="tenant_id,gmail_message_id"
+                on_conflict="account_id,gmail_message_id"
             ).execute()
 
         # Fallback: check env flag before inserting without dedupe
@@ -217,3 +217,26 @@ class SupabaseStore:
         except Exception as e:
             print(f"[ERROR] Supabase sync state save failed: {e}")
             raise
+
+
+    def list_credentials(self, provider: str):
+        """Lists credentials for provider without exposing encrypted_payload."""
+        try:
+            response = self.client.table("credentials")                 .select("account_id,updated_at,scopes")                 .eq("provider", provider)                 .execute()
+
+            data = response.data or []
+            for cred in data:
+                scopes_str = cred.get("scopes", "") or ""
+                cred["scopes"] = [s.strip() for s in scopes_str.split(",") if s.strip()] if scopes_str else []
+            return data
+        except Exception as e:
+            print(f"[WARN] Supabase credential list error: {e}")
+            return []
+
+    def delete_credential(self, provider: str, account_id: str):
+        """Deletes credentials for provider/account_id from Supabase."""
+        try:
+            self.client.table("credentials")                 .delete()                 .eq("provider", provider)                 .eq("account_id", account_id)                 .execute()
+            print(f"[OK] [SUPABASE] Deleted credentials (provider={provider}, account_id={account_id})")
+        except Exception as e:
+            print(f"[WARN] Supabase credential delete error: {e}")
