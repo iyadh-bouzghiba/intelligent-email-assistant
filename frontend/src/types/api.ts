@@ -71,6 +71,13 @@ export interface BriefingResponse {
     login_url?: string;
 }
 
+export interface AccountInfo {
+    account_id: string;
+    connected: boolean;
+    updated_at?: string | null;
+    scopes?: string[];
+}
+
 export interface AccountsResponse {
-    accounts: string[];
+    accounts: AccountInfo[];
 }
