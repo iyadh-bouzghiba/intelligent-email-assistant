@@ -71,6 +71,10 @@ def _fetch_and_transform_messages(gmail_client, message_ids, assistant):
     for msg_id in message_ids:
         try:
             msg = gmail_client.get_message(msg_id)
+            label_ids = msg.get('labelIds', []) or []
+            if "INBOX" not in label_ids:
+                continue
+
             payload = msg.get('payload', {})
             headers = payload.get('headers', [])
 
