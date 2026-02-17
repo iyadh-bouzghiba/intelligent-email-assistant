@@ -62,7 +62,7 @@ def run_engine(token_data: dict):
     emails_data = []
     try:
         # Query for non-chat, non-newsletter content usually yields more strategic emails
-        query = "-category:promotions -category:social is:unread"
+        query = "in:inbox -category:promotions -category:social is:unread"
         results = service.users().messages().list(userId='me', q=query, maxResults=10).execute()
         messages = results.get('messages', [])
 
@@ -71,6 +71,10 @@ def run_engine(token_data: dict):
 
         for msg_info in messages:
             msg = service.users().messages().get(userId='me', id=msg_info['id']).execute()
+            label_ids = msg.get('labelIds', []) or []
+            if "INBOX" not in label_ids:
+                continue
+
             payload = msg.get('payload', {})
             headers = payload.get('headers', [])
 
