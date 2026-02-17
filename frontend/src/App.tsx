@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '@services';
 import { websocketService } from '@services/websocket';
-import { Sparkles, RefreshCw, Mail, Shield, AlertCircle, Clock, CheckCircle2, User, ChevronRight, Brain } from 'lucide-react';
+import { Sparkles, RefreshCw, Mail, Shield, AlertCircle, Clock, CheckCircle2, User, ChevronRight, Brain, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Briefing } from '@types';
+import { Briefing, AccountInfo } from '@types';
 
 const BRAND_NAME = "EXECUTIVE BRAIN";
 const SUBTITLE = "Strategic Intelligence Feed";
 const ITEMS_PER_PAGE = 5;
+const MAX_CONNECTED_ACCOUNTS = 3;
 
 export const App = () => {
   const [briefings, setBriefings] = useState<Briefing[]>([]);
@@ -18,8 +19,10 @@ export const App = () => {
   const [filterCategory, setFilterCategory] = useState<'All' | 'Security' | 'Financial' | 'General'>('All');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [showSentinelToast, setShowSentinelToast] = useState(false);
-  const [accounts, setAccounts] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [activeEmail, setActiveEmail] = useState<string | null>(null);
+  const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
 
@@ -51,11 +54,12 @@ export const App = () => {
     }
   };
 
-  const fetchEmails = async () => {
+  const fetchEmails = async (overrideAccountId?: string | null) => {
     // Note: We avoid setting full loading:true during background polling for smoothness
+    const accountIdToUse = overrideAccountId !== undefined ? overrideAccountId : activeEmail;
     try {
       const [emailData, accountsData] = await Promise.all([
-        apiService.listEmails(),
+        apiService.listEmails(accountIdToUse ?? undefined),
         apiService.listAccounts()
       ]);
 
@@ -65,6 +69,8 @@ export const App = () => {
         const dateB = Date.parse(b.date ?? b.created_at ?? '0');
         return dateB - dateA;
       });
+
+      const loadedAccounts: AccountInfo[] = accountsData.accounts || [];
 
       // Map DB schema to UI Briefing model
       const mapped: Briefing[] = sorted.map((e: any) => {
@@ -79,7 +85,7 @@ export const App = () => {
         }
 
         return {
-          account: accountsData.accounts?.[0] || 'Primary',
+          account: accountIdToUse || loadedAccounts[0]?.account_id || 'Primary',
           subject: e.subject || 'No Subject',
           sender: e.sender || 'Unknown',
           date: formattedDate,
@@ -92,9 +98,11 @@ export const App = () => {
       });
 
       setBriefings(mapped);
-      setAccounts(accountsData.accounts || []);
-      if (accountsData.accounts?.[0] && !activeEmail) {
-        setAccount(accountsData.accounts[0]);
+      setAccounts(loadedAccounts);
+      const firstConnected = loadedAccounts.find(a => a.connected);
+      if (firstConnected && !activeEmail) {
+        setAccount(firstConnected.account_id);
+        setActiveEmail(firstConnected.account_id);
       }
       setError(null);
       setConsecutiveFailures(0); // Reset on success
@@ -133,7 +141,7 @@ export const App = () => {
       await apiService.checkHealth();
 
       // Execute sync
-      const result = await apiService.syncNow();
+      const result = await apiService.syncNow(activeEmail ?? undefined);
 
       if (result.status === 'done' && result.count && result.count > 0) {
         console.log(`[AUTO-SYNC] Processed ${result.processed_count ?? result.count} emails`);
@@ -215,6 +223,22 @@ export const App = () => {
     }
   };
 
+  const handleDisconnect = async (account_id: string) => {
+    setConfirmDisconnect(null);
+    try {
+      await apiService.disconnectAccount(account_id);
+    } catch {
+      console.warn('[DISCONNECT] Failed to disconnect account:', account_id);
+    }
+    if (activeEmail === account_id) {
+      const next = accounts.find(a => a.connected && a.account_id !== account_id);
+      setActiveEmail(next?.account_id ?? null);
+    }
+    await fetchEmails();
+  };
+
+  const connectedAccounts = accounts.filter(a => a.connected);
+
   const filteredBriefings = filterCategory === 'All'
     ? briefings
     : briefings.filter(b => b.category === filterCategory);
@@ -257,23 +281,56 @@ export const App = () => {
               </button>
             </div>
 
-            {accounts.length > 1 && (
-              <div className="hidden lg:flex items-center gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/5">
-                {accounts.map((email) => (
-                  <button
-                    key={email}
-                    onClick={() => {
-                      setActiveEmail(email);
-                      fetchEmails();
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${activeEmail === email || account.includes(email)
-                      ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'
-                      : 'text-slate-500 hover:text-slate-300'
-                      }`}
-                  >
-                    {email.split('@')[0]}
-                  </button>
-                ))}
+            {connectedAccounts.length > 0 && (
+              <div className="relative hidden lg:block">
+                <button
+                  onClick={() => setShowAccountMenu(v => !v)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.03] border border-white/5 text-[10px] font-bold text-slate-400 hover:text-slate-200 transition-all"
+                >
+                  <User size={12} className="text-indigo-400" />
+                  {(activeEmail ?? connectedAccounts[0]?.account_id ?? '').split('@')[0]}
+                  <ChevronRight size={11} className={`transition-transform duration-200 ${showAccountMenu ? 'rotate-90' : ''}`} />
+                </button>
+                <AnimatePresence>
+                  {showAccountMenu && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-[#0f172a] border border-white/10 shadow-2xl z-[100] overflow-hidden"
+                    >
+                      {connectedAccounts.map((info) => (
+                        <div key={info.account_id} className="flex items-center justify-between px-4 py-3 hover:bg-white/[0.04] transition-colors">
+                          <button
+                            onClick={() => { setActiveEmail(info.account_id); fetchEmails(info.account_id); setShowAccountMenu(false); }}
+                            className={`text-[11px] font-bold truncate flex-1 text-left ${activeEmail === info.account_id ? 'text-indigo-400' : 'text-slate-300'}`}
+                          >
+                            {info.account_id}
+                          </button>
+                          <button
+                            onClick={() => { setShowAccountMenu(false); setConfirmDisconnect(info.account_id); }}
+                            title={`Disconnect ${info.account_id}`}
+                            className="ml-2 p-1 rounded-md text-slate-600 hover:text-rose-400 transition-colors flex-shrink-0"
+                          >
+                            <LogOut size={11} />
+                          </button>
+                        </div>
+                      ))}
+                      <div className="border-t border-white/5 px-4 py-3">
+                        {connectedAccounts.length >= MAX_CONNECTED_ACCOUNTS ? (
+                          <p className="text-[10px] text-slate-500">Max accounts reached. Disconnect one to add another.</p>
+                        ) : (
+                          <a
+                            href={apiService.getGoogleAuthUrl()}
+                            className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
+                          >
+                            + Connect another account
+                          </a>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             )}
 
@@ -481,6 +538,23 @@ export const App = () => {
                   </div>
                 </motion.div>
               ))
+            ) : connectedAccounts.length === 0 && !error ? (
+              <div className="col-span-full py-32 flex flex-col items-center gap-6 text-center">
+                <div className="w-24 h-24 rounded-full bg-white/[0.03] flex items-center justify-center text-slate-600 border border-white/5 relative shadow-inner">
+                  <Mail size={40} className="text-indigo-500/20" />
+                  <div className="absolute inset-0 rounded-full border border-indigo-500/10 animate-ping" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-white mb-2">No Accounts Connected</h3>
+                  <p className="text-slate-500 max-w-xs font-medium mb-6">Connect a Google account to start receiving your strategic intelligence feed.</p>
+                  <a
+                    href={apiService.getGoogleAuthUrl()}
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
+                  >
+                    Connect Google Account
+                  </a>
+                </div>
+              </div>
             ) : !error && (
               <div className="col-span-full py-32 flex flex-col items-center gap-6 text-center">
                 <div className="w-24 h-24 rounded-full bg-white/[0.03] flex items-center justify-center text-slate-600 border border-white/5 relative shadow-inner">
@@ -529,6 +603,51 @@ export const App = () => {
           <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest opacity-50">© 2026 Executive Brain Ecosystem</p>
         </div>
       </footer>
+
+      <AnimatePresence>
+        {confirmDisconnect && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => setConfirmDisconnect(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-[#0f172a] border border-white/10 rounded-3xl p-8 max-w-sm w-full mx-4 shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-2xl bg-rose-500/10 flex items-center justify-center">
+                  <LogOut size={18} className="text-rose-400" />
+                </div>
+                <h3 className="text-white font-black text-lg">Disconnect Account</h3>
+              </div>
+              <p className="text-slate-400 text-sm mb-2">
+                Remove <span className="text-white font-bold">{confirmDisconnect}</span> from your intelligence feed?
+              </p>
+              <p className="text-slate-600 text-xs mb-8">Emails from this account will no longer be synced. You can reconnect at any time.</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmDisconnect(null)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 hover:text-white text-sm font-bold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleDisconnect(confirmDisconnect)}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition-all shadow-lg shadow-rose-900/30"
+                >
+                  Disconnect
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <style>{`
         @keyframes shimmer { 100% { transform: translateX(100%); } }

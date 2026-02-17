@@ -88,20 +88,31 @@ export const apiService = {
         return response.data;
     },
 
-    // Backend maps /accounts at root
+    // Accounts — API namespace
     listAccounts: async (): Promise<AccountsResponse> => {
-        const response = await api.get("/accounts");
+        const response = await api.get(`${API_ROOT}/accounts`);
+        return response.data;
+    },
+
+    disconnectAccount: async (account_id: string): Promise<{ status: string }> => {
+        const response = await api.post(`${API_ROOT}/accounts/${encodeURIComponent(account_id)}/disconnect`);
         return response.data;
     },
 
     // REST Emails — primary source for polling
-    listEmails: async (): Promise<any[]> => {
+    listEmails: async (account_id?: string): Promise<any[]> => {
+        const params = account_id ? { account_id } : {};
         try {
-            const response = await api.get("/emails");
+            const response = await api.get(`${API_ROOT}/emails`, { params });
             return response.data;
-        } catch (error) {
-            console.warn("📡 API: Emails unreachable, degrading gracefully.");
-            return [];
+        } catch {
+            try {
+                const response = await api.get("/emails", { params });
+                return response.data;
+            } catch {
+                console.warn("📡 API: Emails unreachable, degrading gracefully.");
+                return [];
+            }
         }
     },
 
@@ -111,9 +122,11 @@ export const apiService = {
     },
 
     // User-driven Gmail sync
-    syncNow: async (): Promise<{ status: string; count?: number; processed_count?: number }> => {
+    syncNow: async (account_id?: string): Promise<{ status: string; count?: number; processed_count?: number }> => {
         try {
-            const response = await api.post(`${API_ROOT}/sync-now`);
+            const response = await api.post(`${API_ROOT}/sync-now`, null, {
+                params: account_id ? { account_id } : {},
+            });
             return response.data;
         } catch (error) {
             console.warn("📡 API: Sync failed, degrading gracefully.");
