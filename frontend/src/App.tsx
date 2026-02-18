@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiService } from '@services';
 import { websocketService } from '@services/websocket';
 import { Sparkles, RefreshCw, Mail, Shield, AlertCircle, Clock, CheckCircle2, User, ChevronRight, Brain, LogOut } from 'lucide-react';
@@ -24,6 +24,8 @@ export const App = () => {
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const accountButtonRef = useRef<HTMLButtonElement | null>(null);
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
 
   const requestNotificationPermission = async () => {
@@ -206,6 +208,20 @@ export const App = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!showAccountMenu) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const menuEl = accountMenuRef.current;
+      const btnEl = accountButtonRef.current;
+      if (menuEl && menuEl.contains(target)) return;
+      if (btnEl && btnEl.contains(target)) return;
+      setShowAccountMenu(false);
+    };
+    document.addEventListener("mousedown", onMouseDown, true);
+    return () => document.removeEventListener("mousedown", onMouseDown, true);
+  }, [showAccountMenu]);
+
   const getPriorityStyles = (priority: string) => {
     switch (priority) {
       case 'High': return 'text-rose-500 bg-rose-600/20 border-rose-600/30 font-black shadow-[0_0_15px_rgba(225,29,72,0.2)]';
@@ -254,7 +270,7 @@ export const App = () => {
       </div>
 
       <header className="sticky top-0 z-50 border-b border-white/5 bg-[#0f172a]/80 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
               <Brain className="text-white" size={20} />
@@ -270,7 +286,7 @@ export const App = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3 flex-wrap justify-end min-w-0">
             <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/5">
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Sentinel Alerts</span>
               <button
@@ -282,22 +298,39 @@ export const App = () => {
             </div>
 
             {connectedAccounts.length > 0 && (
-              <div className="relative hidden lg:block">
+              <div className="relative">
                 <button
-                  onClick={() => setShowAccountMenu(v => !v)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.03] border border-white/5 text-[10px] font-bold text-slate-400 hover:text-slate-200 transition-all"
+                  ref={accountButtonRef}
+                  onClick={(e) => { e.stopPropagation(); setShowAccountMenu(v => !v); }}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/10 text-slate-200 hover:bg-white/[0.05] transition-all min-w-0"
                 >
-                  <User size={12} className="text-indigo-400" />
-                  {(activeEmail ?? connectedAccounts[0]?.account_id ?? '').split('@')[0]}
+                  <span className="relative inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/[0.05] border border-white/10 text-[11px] font-black text-slate-200 flex-shrink-0">
+                    {((activeEmail ?? connectedAccounts[0]?.account_id ?? '?')[0] || '?').toUpperCase()}
+                    <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-[#0f172a]" />
+                  </span>
+                  <span className="hidden sm:inline text-[11px] font-bold text-slate-300 truncate max-w-[140px]">
+                    {(activeEmail ?? connectedAccounts[0]?.account_id ?? '').split('@')[0]}
+                  </span>
                   <ChevronRight size={11} className={`transition-transform duration-200 ${showAccountMenu ? 'rotate-90' : ''}`} />
                 </button>
                 <AnimatePresence>
                   {showAccountMenu && (
+                    <>
+                    <div
+                      className="fixed inset-0 z-[90] bg-black/40 sm:hidden"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setShowAccountMenu(false);
+                      }}
+                    />
                     <motion.div
+                      ref={accountMenuRef}
+                      onMouseDown={(e) => e.stopPropagation()}
                       initial={{ opacity: 0, y: -6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -6 }}
-                      className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-[#0f172a] border border-white/10 shadow-2xl z-[100] overflow-hidden"
+                      className="fixed left-4 right-4 top-24 w-auto rounded-2xl bg-[#0f172a] border border-white/10 shadow-2xl z-[100] overflow-hidden sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-56"
                     >
                       {connectedAccounts.map((info) => (
                         <div key={info.account_id} className="flex items-center justify-between px-4 py-3 hover:bg-white/[0.04] transition-colors">
@@ -307,13 +340,18 @@ export const App = () => {
                           >
                             {info.account_id}
                           </button>
-                          <button
-                            onClick={() => { setShowAccountMenu(false); setConfirmDisconnect(info.account_id); }}
-                            title={`Disconnect ${info.account_id}`}
-                            className="ml-2 p-1 rounded-md text-slate-600 hover:text-rose-400 transition-colors flex-shrink-0"
-                          >
-                            <LogOut size={11} />
-                          </button>
+                          <div className="ml-2 flex items-center gap-2 flex-shrink-0">
+                            {activeEmail === info.account_id && (
+                              <span className="text-[10px] font-black text-emerald-400">✓</span>
+                            )}
+                            <button
+                              onClick={() => { setShowAccountMenu(false); setConfirmDisconnect(info.account_id); }}
+                              title={`Disconnect ${info.account_id}`}
+                              className="p-1 rounded-md text-slate-600 hover:text-rose-400 transition-colors"
+                            >
+                              <LogOut size={11} />
+                            </button>
+                          </div>
                         </div>
                       ))}
                       <div className="border-t border-white/5 px-4 py-3">
@@ -329,15 +367,11 @@ export const App = () => {
                         )}
                       </div>
                     </motion.div>
+                    </>
                   )}
                 </AnimatePresence>
               </div>
             )}
-
-            <div className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/10">
-              <User size={14} className="text-indigo-400" />
-              <span className="text-sm font-medium text-slate-400 truncate max-w-[150px]">{account}</span>
-            </div>
 
             <button
               onClick={() => { setLoading(true); fetchEmails(); }}
