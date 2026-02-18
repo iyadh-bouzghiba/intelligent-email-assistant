@@ -1,5 +1,10 @@
 import { io, Socket } from "socket.io-client";
 
+const IS_DEV = import.meta.env.DEV;
+const DEV_SOCKET_ENABLED = import.meta.env.VITE_ENABLE_SOCKET_DEV === "1";
+let lastDevErrAt = 0;
+let devSocketNoticeShown = false;
+
 interface ThreadAnalyzedData {
     thread_id: string;
     summary: {
@@ -36,6 +41,14 @@ class WebSocketService {
     }
 
     connect() {
+        if (IS_DEV && !DEV_SOCKET_ENABLED) {
+            if (!devSocketNoticeShown) {
+                devSocketNoticeShown = true;
+                console.warn("[WebSocket] DEV sockets disabled (set VITE_ENABLE_SOCKET_DEV=1 to enable).");
+            }
+            return;
+        }
+
         if (this.socket?.connected) {
             console.log("[WebSocket] Already connected");
             return;
@@ -43,15 +56,25 @@ class WebSocketService {
 
         const SOCKET_URL = this.getSocketUrl();
 
-        this.socket = io(SOCKET_URL, {
+        const isLocalSocket =
+            SOCKET_URL.includes("127.0.0.1:5173") ||
+            SOCKET_URL.includes("localhost:5173");
+
+        const socketOptions = {
             path: "/socket.io",
-            transports: ["websocket"],
             secure: true,
             reconnection: true,
             reconnectionAttempts: 5,
             reconnectionDelay: 1000,
             timeout: 20000,
-        });
+            ...(IS_DEV && isLocalSocket
+                ? { transports: ["websocket"] }
+                : IS_DEV
+                ? { transports: ["polling"], upgrade: false, rememberUpgrade: false }
+                : { transports: ["websocket", "polling"] }),
+        };
+
+        this.socket = io(SOCKET_URL, socketOptions);
 
         this.socket.on("connect", () => {
             console.log("[WebSocket] Connected:", this.socket?.id);
@@ -62,7 +85,12 @@ class WebSocketService {
         });
 
         this.socket.on("connect_error", (error) => {
-            console.error("[WebSocket] Connection error:", error.message);
+            if (IS_DEV) {
+                const now = Date.now();
+                if (now - lastDevErrAt < 5000) return;
+                lastDevErrAt = now;
+            }
+            console.warn("[WebSocket] connect_error:", error?.message ?? error);
         });
 
         this.socket.on("connection_established", (data) => {
