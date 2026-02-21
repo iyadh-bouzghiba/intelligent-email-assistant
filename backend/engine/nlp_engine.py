@@ -3,7 +3,6 @@ import json
 import asyncio
 from typing import Dict, Any, Optional, List
 from mistralai import Mistral
-import tiktoken
 
 class MistralEngine:
     """
@@ -23,6 +22,7 @@ class MistralEngine:
         if self.api_key:
             self.client = Mistral(api_key=self.api_key)
             try:
+                import tiktoken
                 self.token_encoder = tiktoken.get_encoding("cl100k_base")
             except Exception:
                 self.token_encoder = None
