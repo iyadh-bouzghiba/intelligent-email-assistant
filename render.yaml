@@ -108,6 +108,24 @@ services:
       - key: WORKER_MODE
         value: "true"
 
+      # --- AI Summarization Worker ---
+      - key: AI_SUMM_ENABLED
+        value: "true"
+      - key: AI_MODEL
+        value: mistral-small-latest
+      - key: AI_MAX_TOKENS
+        value: 800
+      - key: AI_TEMPERATURE
+        value: 0.3
+      - key: AI_MAX_CHARS
+        value: 4000
+      - key: AI_MAX_ATTEMPTS
+        value: 5
+      - key: AI_JOBS_BATCH
+        value: 5
+      - key: AI_IDLE_SLEEP
+        value: 5
+
 # ============================================================================
 # DEPLOYMENT NOTES:
 #
@@ -121,8 +139,9 @@ services:
 #    - GOOGLE_REDIRECT_URI = https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google
 #    - BASE_URL = https://intelligent-email-assistant-3e1a.onrender.com
 #    - FRONTEND_URL = https://intelligent-email-frontend.onrender.com
+#    - FERNET_KEY = (generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
 #    - JWT_SECRET_KEY = (generate random secure key)
-#    - MISTRAL_API_KEY = (from Mistral AI)
+#    - MISTRAL_API_KEY = (from Mistral AI - REQUIRED for AI summaries)
 #    - SUPABASE_URL = (from Supabase)
 #    - SUPABASE_ANON_KEY = (from Supabase)
 #    - SUPABASE_SERVICE_KEY = (from Supabase)
@@ -145,4 +164,24 @@ services:
 #    - Backend root directory: backend/
 #    - Start command runs from backend/ with proper Python module imports
 #    - All imports use: from backend.module import ...
+#
+# 7. Worker Architecture (Hybrid Mode):
+#    WORKER_MODE=true enables email sync worker (Gmail ingestion)
+#    AI_SUMM_ENABLED=true enables AI summarization worker (Mistral-powered)
+#    Both workers run as daemon threads in single Render web service
+#
+#    Worker Lifecycle:
+#    - Email Worker: Syncs Gmail → writes to emails table
+#    - AI Worker: Claims ai_jobs → calls Mistral → writes to email_ai_summaries
+#
+#    Queue Safety:
+#    - Atomic job claiming via ai_claim_jobs RPC (FOR UPDATE SKIP LOCKED)
+#    - Idempotent enqueue: UNIQUE (job_type, account_id, gmail_message_id)
+#    - Idempotent results: UNIQUE (account_id, gmail_message_id, prompt_version)
+#    - Retry cap: 5 attempts with exponential backoff → dead-letter queue
+#
+#    Monitoring:
+#    - Check ai_jobs table for status='dead' (failed after 5 attempts)
+#    - Monitor email_ai_summaries for new entries (successful summaries)
+#    - Watch logs for [AI-WORKER] lifecycle events
 # ============================================================================
