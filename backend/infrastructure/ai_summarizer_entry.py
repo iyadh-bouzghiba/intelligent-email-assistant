@@ -52,6 +52,13 @@ def get_stable_worker_id() -> str:
 
 def main():
     """Main worker loop."""
+    # Configure logging (critical when called as imported function, not __main__)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",  # Simple format to match worker_entry.py print() style
+        force=True  # Override any existing config
+    )
+
     if not AI_SUMM_ENABLED:
         logger.info("[AI-WORKER] AI_SUMM_ENABLED=false. Worker disabled. Exiting.")
         return
@@ -86,7 +93,7 @@ def main():
 
                 if processed == 0:
                     # No jobs available - idle sleep
-                    logger.debug(f"[AI-WORKER] No jobs claimed. Sleeping {AI_IDLE_SLEEP}s")
+                    logger.info(f"[AI-WORKER] No jobs claimed. Sleeping {AI_IDLE_SLEEP}s")
                     time.sleep(AI_IDLE_SLEEP)
                 else:
                     # Jobs processed - continue immediately
