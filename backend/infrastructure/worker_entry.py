@@ -183,6 +183,21 @@ def start_worker():
             time.sleep(30)
 
 
+def start_ai_worker():
+    """
+    AI Summarization Worker - Processes ai_jobs queue using Mistral.
+    Runs independently from email sync worker.
+    """
+    print("[AI-WORKER] Starting AI Summarization Worker Loop...")
+    # Import here to avoid circular dependencies and fail-fast on missing deps
+    try:
+        from backend.infrastructure.ai_summarizer_entry import main as ai_worker_main
+        ai_worker_main()
+    except Exception as e:
+        print(f"[FATAL] [AI-WORKER] Failed to start: {e}")
+        print("[AI-WORKER] Check MISTRAL_API_KEY and SUPABASE credentials")
+
+
 def main():
     """
     Entry point for running the application.
@@ -193,6 +208,7 @@ def main():
 
     # Check worker mode
     worker_mode = os.getenv("WORKER_MODE", "false").lower() == "true"
+    ai_summ_enabled = os.getenv("AI_SUMM_ENABLED", "false").lower() == "true"
 
     # Render provides PORT; default 8888 for local dev
     port = int(os.getenv("PORT", "8888"))
@@ -207,6 +223,15 @@ def main():
         t.start()
     else:
         print("[START] [BOOT] Running in API-only Mode")
+
+    # AI Summarization Worker (independent from email sync)
+    if ai_summ_enabled:
+        print("[START] [BOOT] AI Summarization enabled - spawning AI worker")
+        ai_thread = threading.Thread(target=start_ai_worker, daemon=True)
+        ai_thread.start()
+        print("[OK] [BOOT] AI Worker thread spawned successfully")
+    else:
+        print("[INFO] [BOOT] AI Summarization disabled (set AI_SUMM_ENABLED=true to enable)")
 
     # Both modes serve the main API (sio_app).
     # /health and /healthz are on sio_app; Render health check hits /healthz.
