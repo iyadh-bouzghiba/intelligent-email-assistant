@@ -281,6 +281,18 @@ export const App = () => {
   };
 
   const connectedAccounts = accounts.filter(a => a.connected);
+  const hasLegacyAccounts = connectedAccounts.some(a => a.account_id === 'default' || a.account_id === 'PRIMARY');
+
+  const handleDisconnectAll = async () => {
+    try {
+      await apiService.disconnectAllAccounts();
+      setAccounts([]);
+      setActiveEmail(null);
+      await fetchEmails();
+    } catch (err) {
+      console.error('[DISCONNECT-ALL] Failed:', err);
+    }
+  };
 
   const filteredBriefings = filterCategory === 'All'
     ? briefings
@@ -423,6 +435,41 @@ export const App = () => {
           >
             <Shield size={16} />
             Sentinel Defense Online
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {hasLegacyAccounts && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="max-w-7xl mx-auto px-6 py-4 mt-4"
+          >
+            <div className="p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-4">
+              <AlertCircle size={24} className="text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="text-white font-bold text-base mb-2">⚠️ Legacy Accounts Detected</h4>
+                <p className="text-amber-200 text-sm mb-4">
+                  Your accounts use the old "default" system. To enable multi-account features with real email addresses and colored avatars, please disconnect and reconnect your accounts.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleDisconnectAll}
+                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold transition-all shadow-lg"
+                  >
+                    Disconnect All & Start Fresh
+                  </button>
+                  <a
+                    href={apiService.getGoogleAuthUrl()}
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-bold transition-all"
+                  >
+                    Reconnect First Account
+                  </a>
+                </div>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

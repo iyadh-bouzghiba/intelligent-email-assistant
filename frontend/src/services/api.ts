@@ -99,6 +99,11 @@ export const apiService = {
         return response.data;
     },
 
+    disconnectAllAccounts: async (): Promise<{ status: string; deleted_count?: number }> => {
+        const response = await api.post(`${API_ROOT}/accounts/disconnect-all`);
+        return response.data;
+    },
+
     // REST Emails — primary source for polling
     listEmails: async (account_id?: string): Promise<any[]> => {
         const params = account_id ? { account_id } : {};
