@@ -687,6 +687,26 @@ async def disconnect_account(account_id: str):
     await asyncio.to_thread(credential_store.delete_credentials, effective_account_id)
     return {"status": "disconnected", "account_id": effective_account_id}
 
+@api_router.post("/accounts/disconnect-all")
+async def disconnect_all_accounts():
+    """
+    MIGRATION HELPER: Disconnects ALL accounts (including legacy "default" accounts).
+    Use this to clean up before reconnecting with real email IDs.
+    """
+    store = safe_get_store()
+    if not store:
+        return {"status": "error", "message": "Store not available"}
+
+    try:
+        # Delete ALL Google credentials from Supabase
+        response = store.client.table("credentials").delete().eq("provider", "google").execute()
+        deleted_count = len(response.data) if response.data else 0
+        print(f"[OK] [CLEANUP] Deleted {deleted_count} Google credentials")
+        return {"status": "success", "deleted_count": deleted_count}
+    except Exception as e:
+        print(f"[ERROR] [CLEANUP] Failed to delete credentials: {e}")
+        return {"status": "error", "message": str(e)}
+
 # Include API router after all routes are defined
 app.include_router(api_router)
 
