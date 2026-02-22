@@ -77,17 +77,23 @@ class SupabaseStore:
         )
         return None
 
-    def get_emails(self, limit=50):
+    def get_emails(self, limit=50, account_id=None):
         """
         Fetches latest emails from the source of truth.
         Orders by 'date' (actual Gmail timestamp) DESC, not created_at.
+
+        Args:
+            limit: Maximum number of emails to return (default: 50)
+            account_id: Filter by specific account (optional)
         """
         try:
-            return self.client.table("emails") \
-                .select("*") \
-                .order("date", desc=True) \
-                .limit(limit) \
-                .execute()
+            query = self.client.table("emails").select("*")
+
+            # Filter by account_id if provided
+            if account_id:
+                query = query.eq("account_id", account_id)
+
+            return query.order("date", desc=True).limit(limit).execute()
         except Exception as e:
             print(f"[WARN] Supabase email fetch error: {e}")
             return type('obj', (object,), {'data': []})
