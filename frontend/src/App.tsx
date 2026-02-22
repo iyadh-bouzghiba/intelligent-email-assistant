@@ -10,6 +10,33 @@ const SUBTITLE = "Strategic Intelligence Feed";
 const ITEMS_PER_PAGE = 5;
 const MAX_CONNECTED_ACCOUNTS = 3;
 
+// Helper function: Generate color based on email
+const getAccountColor = (email: string): string => {
+  const colors = [
+    'from-blue-500 to-indigo-600',
+    'from-purple-500 to-pink-600',
+    'from-emerald-500 to-teal-600',
+    'from-amber-500 to-orange-600',
+    'from-rose-500 to-red-600',
+    'from-cyan-500 to-blue-600',
+  ];
+  const hash = email.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return colors[hash % colors.length];
+};
+
+// Helper function: Get initials from email
+const getEmailInitials = (email: string): string => {
+  if (!email || email === 'default') return '?';
+  const username = email.split('@')[0];
+  if (username.length === 1) return username.toUpperCase();
+  // Take first letter + first letter after dot/underscore
+  const parts = username.split(/[._-]/);
+  if (parts.length > 1) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return username.substring(0, 2).toUpperCase();
+};
+
 export const App = () => {
   const [briefings, setBriefings] = useState<Briefing[]>([]);
   const [account, setAccount] = useState<string>('Syncing...');
@@ -304,8 +331,8 @@ export const App = () => {
                   onClick={(e) => { e.stopPropagation(); setShowAccountMenu(v => !v); }}
                   className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/10 text-slate-200 hover:bg-white/[0.05] transition-all min-w-0"
                 >
-                  <span className="relative inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/[0.05] border border-white/10 text-[11px] font-black text-slate-200 flex-shrink-0">
-                    {((activeEmail ?? connectedAccounts[0]?.account_id ?? '?')[0] || '?').toUpperCase()}
+                  <span className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(activeEmail ?? connectedAccounts[0]?.account_id ?? '')} text-[10px] font-black text-white flex-shrink-0 shadow-lg`}>
+                    {getEmailInitials(activeEmail ?? connectedAccounts[0]?.account_id ?? '')}
                     <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-[#0f172a]" />
                   </span>
                   <span className="hidden sm:inline text-[11px] font-bold text-slate-300 truncate max-w-[140px]">
@@ -333,25 +360,26 @@ export const App = () => {
                       className="fixed left-4 right-4 top-24 w-auto rounded-2xl bg-[#0f172a] border border-white/10 shadow-2xl z-[100] overflow-hidden sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-56"
                     >
                       {connectedAccounts.map((info) => (
-                        <div key={info.account_id} className="flex items-center justify-between px-4 py-3 hover:bg-white/[0.04] transition-colors">
+                        <div key={info.account_id} className={`flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] transition-colors ${activeEmail === info.account_id ? 'bg-indigo-500/10' : ''}`}>
+                          <div className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(info.account_id)} text-[10px] font-black text-white flex-shrink-0 shadow-md`}>
+                            {getEmailInitials(info.account_id)}
+                          </div>
                           <button
                             onClick={() => { setActiveEmail(info.account_id); fetchEmails(info.account_id); setShowAccountMenu(false); }}
                             className={`text-[11px] font-bold truncate flex-1 text-left ${activeEmail === info.account_id ? 'text-indigo-400' : 'text-slate-300'}`}
                           >
-                            {info.account_id}
-                          </button>
-                          <div className="ml-2 flex items-center gap-2 flex-shrink-0">
+                            <div className="truncate">{info.account_id}</div>
                             {activeEmail === info.account_id && (
-                              <span className="text-[10px] font-black text-emerald-400">✓</span>
+                              <div className="text-[9px] font-black text-emerald-400 uppercase tracking-wider mt-0.5">Active</div>
                             )}
-                            <button
-                              onClick={() => { setShowAccountMenu(false); setConfirmDisconnect(info.account_id); }}
-                              title={`Disconnect ${info.account_id}`}
-                              className="p-1 rounded-md text-slate-600 hover:text-rose-400 transition-colors"
-                            >
-                              <LogOut size={11} />
-                            </button>
-                          </div>
+                          </button>
+                          <button
+                            onClick={() => { setShowAccountMenu(false); setConfirmDisconnect(info.account_id); }}
+                            title={`Disconnect ${info.account_id}`}
+                            className="p-1.5 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors flex-shrink-0"
+                          >
+                            <LogOut size={12} />
+                          </button>
                         </div>
                       ))}
                       <div className="border-t border-white/5 px-4 py-3">

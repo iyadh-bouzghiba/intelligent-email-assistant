@@ -798,7 +798,29 @@ async def google_oauth_callback(code: str, state: str = None, account_id: str = 
         has_refresh = 'yes' if tokens.get('refresh_token') else 'no'
         print(f"[OK] [OAuth] Tokens received: refresh_token_present={has_refresh}")
 
-        # Store tokens encrypted via CredentialStore
+        # CRITICAL: Get user's actual Gmail email to use as account_id
+        try:
+            import requests
+            userinfo_response = requests.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {tokens['token']}"},
+                timeout=10
+            )
+            if userinfo_response.status_code == 200:
+                userinfo = userinfo_response.json()
+                user_email = userinfo.get('email')
+                if user_email:
+                    # Use actual email as account_id (overrides "default")
+                    effective_account_id = user_email
+                    print(f"[OK] [OAuth] Retrieved user email: {user_email}")
+                else:
+                    print(f"[WARN] [OAuth] No email in userinfo, using: {effective_account_id}")
+            else:
+                print(f"[WARN] [OAuth] Userinfo fetch failed: {userinfo_response.status_code}")
+        except Exception as e:
+            print(f"[WARN] [OAuth] Failed to fetch userinfo: {e}, using: {effective_account_id}")
+
+        # Store tokens encrypted via CredentialStore (with real email as account_id)
         credential_store.save_credentials(effective_account_id, tokens)
 
         print(f"[OK] [OAuth] Tokens encrypted and stored for account_id={effective_account_id}")
