@@ -329,14 +329,19 @@ async def list_emails_root():
 api_router = APIRouter(prefix="/api")
 
 @api_router.get("/emails")
-async def list_emails():
-    """REST endpoint for stabilized frontend polling. Reads from Supabase Source of Truth."""
+async def list_emails(account_id: Optional[str] = Query(None)):
+    """
+    REST endpoint for stabilized frontend polling. Reads from Supabase Source of Truth.
+
+    Args:
+        account_id: Optional filter by specific account (e.g., user@gmail.com)
+    """
     store = safe_get_store()
     if not store:
         return []
 
     try:
-        response = await asyncio.to_thread(store.get_emails)
+        response = await asyncio.to_thread(store.get_emails, account_id=account_id)
         return response.data
     except Exception as e:
         print(f"[WARN] Supabase fetch error: {e}")
