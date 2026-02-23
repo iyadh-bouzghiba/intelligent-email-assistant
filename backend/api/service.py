@@ -329,14 +329,19 @@ async def list_emails_root():
 api_router = APIRouter(prefix="/api")
 
 @api_router.get("/emails")
-async def list_emails():
-    """REST endpoint for stabilized frontend polling. Reads from Supabase Source of Truth."""
+async def list_emails(account_id: Optional[str] = Query(None)):
+    """
+    REST endpoint for stabilized frontend polling. Reads from Supabase Source of Truth.
+
+    Args:
+        account_id: Optional filter by specific account (e.g., user@gmail.com)
+    """
     store = safe_get_store()
     if not store:
         return []
 
     try:
-        response = await asyncio.to_thread(store.get_emails)
+        response = await asyncio.to_thread(store.get_emails, account_id=account_id)
         return response.data
     except Exception as e:
         print(f"[WARN] Supabase fetch error: {e}")
@@ -687,6 +692,26 @@ async def disconnect_account(account_id: str):
     await asyncio.to_thread(credential_store.delete_credentials, effective_account_id)
     return {"status": "disconnected", "account_id": effective_account_id}
 
+@api_router.post("/accounts/disconnect-all")
+async def disconnect_all_accounts():
+    """
+    MIGRATION HELPER: Disconnects ALL accounts (including legacy "default" accounts).
+    Use this to clean up before reconnecting with real email IDs.
+    """
+    store = safe_get_store()
+    if not store:
+        return {"status": "error", "message": "Store not available"}
+
+    try:
+        # Delete ALL Google credentials from Supabase
+        response = store.client.table("credentials").delete().eq("provider", "google").execute()
+        deleted_count = len(response.data) if response.data else 0
+        print(f"[OK] [CLEANUP] Deleted {deleted_count} Google credentials")
+        return {"status": "success", "deleted_count": deleted_count}
+    except Exception as e:
+        print(f"[ERROR] [CLEANUP] Failed to delete credentials: {e}")
+        return {"status": "error", "message": str(e)}
+
 # Include API router after all routes are defined
 app.include_router(api_router)
 
@@ -798,7 +823,29 @@ async def google_oauth_callback(code: str, state: str = None, account_id: str = 
         has_refresh = 'yes' if tokens.get('refresh_token') else 'no'
         print(f"[OK] [OAuth] Tokens received: refresh_token_present={has_refresh}")
 
-        # Store tokens encrypted via CredentialStore
+        # CRITICAL: Get user's actual Gmail email to use as account_id
+        try:
+            import requests
+            userinfo_response = requests.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {tokens['token']}"},
+                timeout=10
+            )
+            if userinfo_response.status_code == 200:
+                userinfo = userinfo_response.json()
+                user_email = userinfo.get('email')
+                if user_email:
+                    # Use actual email as account_id (overrides "default")
+                    effective_account_id = user_email
+                    print(f"[OK] [OAuth] Retrieved user email: {user_email}")
+                else:
+                    print(f"[WARN] [OAuth] No email in userinfo, using: {effective_account_id}")
+            else:
+                print(f"[WARN] [OAuth] Userinfo fetch failed: {userinfo_response.status_code}")
+        except Exception as e:
+            print(f"[WARN] [OAuth] Failed to fetch userinfo: {e}, using: {effective_account_id}")
+
+        # Store tokens encrypted via CredentialStore (with real email as account_id)
         credential_store.save_credentials(effective_account_id, tokens)
 
         print(f"[OK] [OAuth] Tokens encrypted and stored for account_id={effective_account_id}")
