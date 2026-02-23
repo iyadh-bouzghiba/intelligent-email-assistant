@@ -190,22 +190,16 @@ export const App = () => {
   };
 
   useEffect(() => {
-    // Initial load: Load accounts first, then emails will be loaded via activeEmail useEffect
+    // Initial load: Load accounts but DO NOT auto-select (user must choose)
     const initializeApp = async () => {
       try {
         const accountsData = await apiService.listAccounts();
         const loadedAccounts: AccountInfo[] = accountsData.accounts || [];
         setAccounts(loadedAccounts);
 
-        // Set first connected account as active
-        const firstConnected = loadedAccounts.find(a => a.connected);
-        if (firstConnected) {
-          setAccount(firstConnected.account_id);
-          setActiveEmail(firstConnected.account_id); // This triggers fetchEmails via useEffect
-        } else {
-          // No accounts connected - show empty state
-          setLoading(false);
-        }
+        // CRITICAL: Do NOT auto-select first account - user must explicitly choose
+        // This provides professional UX where user is in control
+        setLoading(false);
       } catch (error) {
         console.warn('[STRATEGY] Failed to load accounts on init', error);
         setLoading(false);
@@ -214,8 +208,7 @@ export const App = () => {
 
     initializeApp();
 
-    // Immediate sync on mount (within seconds)
-    autoSync();
+    // Note: autoSync removed from init - will sync when user selects account
 
     // Realtime updates via WebSocket
     const handleEmailsUpdated = (data: { count_new: number }) => {
@@ -396,13 +389,26 @@ export const App = () => {
                     onClick={(e) => { e.stopPropagation(); setShowAccountMenu(v => !v); }}
                     className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/10 text-slate-200 hover:bg-white/[0.05] transition-all min-w-0"
                   >
-                    <span className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(activeEmail ?? connectedAccounts[0]?.account_id ?? '')} text-[10px] font-black text-white flex-shrink-0 shadow-lg`}>
-                      {getEmailInitials(activeEmail ?? connectedAccounts[0]?.account_id ?? '')}
-                      <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-[#0f172a]" />
-                    </span>
-                    <span className="hidden sm:inline text-[11px] font-bold text-slate-300 truncate max-w-[140px]">
-                      {(activeEmail ?? connectedAccounts[0]?.account_id ?? '').split('@')[0]}
-                    </span>
+                    {activeEmail ? (
+                      <>
+                        <span className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(activeEmail)} text-[10px] font-black text-white flex-shrink-0 shadow-lg`}>
+                          {getEmailInitials(activeEmail)}
+                          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-[#0f172a]" />
+                        </span>
+                        <span className="hidden sm:inline text-[11px] font-bold text-slate-300 truncate max-w-[140px]">
+                          {activeEmail.split('@')[0]}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="relative inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 to-slate-800 text-[10px] font-black text-slate-400 flex-shrink-0 shadow-lg">
+                          ?
+                        </span>
+                        <span className="hidden sm:inline text-[11px] font-bold text-slate-500 truncate">
+                          Select Account
+                        </span>
+                      </>
+                    )}
                     <ChevronRight size={11} className={`transition-transform duration-200 ${showAccountMenu ? 'rotate-90' : ''}`} />
                   </button>
                   <AnimatePresence>
@@ -424,29 +430,55 @@ export const App = () => {
                         exit={{ opacity: 0, y: -6 }}
                         className="fixed left-4 right-4 top-24 w-auto rounded-2xl bg-[#0f172a] border border-white/10 shadow-2xl z-[100] overflow-hidden sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-56"
                       >
-                        {connectedAccounts.map((info) => (
-                          <div key={info.account_id} className={`flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] transition-colors ${activeEmail === info.account_id ? 'bg-indigo-500/10' : ''}`}>
-                            <div className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(info.account_id)} text-[10px] font-black text-white flex-shrink-0 shadow-md`}>
-                              {getEmailInitials(info.account_id)}
-                            </div>
-                            <button
-                              onClick={() => { setActiveEmail(info.account_id); fetchEmails(info.account_id); setShowAccountMenu(false); }}
-                              className={`text-[11px] font-bold truncate flex-1 text-left ${activeEmail === info.account_id ? 'text-indigo-400' : 'text-slate-300'}`}
-                            >
-                              <div className="truncate">{info.account_id}</div>
-                              {activeEmail === info.account_id && (
-                                <div className="text-[9px] font-black text-emerald-400 uppercase tracking-wider mt-0.5">Active</div>
-                              )}
-                            </button>
-                            <button
-                              onClick={() => { setShowAccountMenu(false); setConfirmDisconnect(info.account_id); }}
-                              title={`Disconnect ${info.account_id}`}
-                              className="p-1.5 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors flex-shrink-0"
-                            >
-                              <LogOut size={12} />
-                            </button>
-                          </div>
-                        ))}
+                        {/* CRITICAL: Show active account FIRST, then others */}
+                        {connectedAccounts
+                          .sort((a, b) => {
+                            if (a.account_id === activeEmail) return -1;
+                            if (b.account_id === activeEmail) return 1;
+                            return 0;
+                          })
+                          .map((info) => {
+                            const isActive = activeEmail === info.account_id;
+                            return (
+                              <div key={info.account_id} className={`flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] transition-colors ${isActive ? 'bg-indigo-500/10' : ''}`}>
+                                <div className="relative">
+                                  <div className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(info.account_id)} text-[10px] font-black text-white flex-shrink-0 shadow-md`}>
+                                    {getEmailInitials(info.account_id)}
+                                  </div>
+                                  {/* ONLINE/OFFLINE indicator badge */}
+                                  <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0f172a] ${isActive ? 'bg-emerald-400' : 'bg-slate-600'}`}
+                                        title={isActive ? 'Online (Active)' : 'Offline (Inactive)'} />
+                                </div>
+                                <button
+                                  onClick={async () => {
+                                    setActiveEmail(info.account_id);
+                                    setShowAccountMenu(false);
+                                    setLoading(true);
+                                    // Trigger sync for selected account
+                                    await apiService.syncNow(info.account_id);
+                                    await fetchEmails(info.account_id);
+                                    setLoading(false);
+                                  }}
+                                  className={`text-[11px] font-bold truncate flex-1 text-left ${isActive ? 'text-indigo-400' : 'text-slate-300'}`}
+                                >
+                                  <div className="truncate">{info.account_id}</div>
+                                  {isActive && (
+                                    <div className="text-[9px] font-black text-emerald-400 uppercase tracking-wider mt-0.5">● Online</div>
+                                  )}
+                                  {!isActive && (
+                                    <div className="text-[9px] font-bold text-slate-600 uppercase tracking-wider mt-0.5">○ Offline</div>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => { setShowAccountMenu(false); setConfirmDisconnect(info.account_id); }}
+                                  title={`Disconnect ${info.account_id}`}
+                                  className="p-1.5 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors flex-shrink-0"
+                                >
+                                  <LogOut size={12} />
+                                </button>
+                              </div>
+                            );
+                          })}
                         <div className="border-t border-white/5 px-4 py-3">
                           {connectedAccounts.length >= MAX_CONNECTED_ACCOUNTS ? (
                             <p className="text-[10px] text-slate-500">Max accounts reached. Disconnect one to add another.</p>
@@ -716,6 +748,42 @@ export const App = () => {
                   >
                     Connect Google Account
                   </a>
+                </div>
+              </div>
+            ) : !activeEmail && connectedAccounts.length > 0 ? (
+              /* CRITICAL: Show "Select Account" when accounts exist but none is active */
+              <div className="col-span-full py-32 flex flex-col items-center gap-6 text-center">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-xl">
+                  <Mail size={40} className="text-indigo-400" />
+                  <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-white mb-2">Select Account to Begin</h3>
+                  <p className="text-slate-400 max-w-md font-medium mb-6">
+                    You have {connectedAccounts.length} connected {connectedAccounts.length === 1 ? 'account' : 'accounts'}. Click the account switcher above to select which account to view.
+                  </p>
+                  <div className="flex flex-wrap gap-3 justify-center">
+                    {connectedAccounts.map((acc) => (
+                      <button
+                        key={acc.account_id}
+                        onClick={async () => {
+                          setActiveEmail(acc.account_id);
+                          setLoading(true);
+                          await apiService.syncNow(acc.account_id);
+                          await fetchEmails(acc.account_id);
+                          setLoading(false);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/10 hover:bg-indigo-600/10 hover:border-indigo-500/30 transition-all group"
+                      >
+                        <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(acc.account_id)} text-[10px] font-black text-white shadow-md`}>
+                          {getEmailInitials(acc.account_id)}
+                        </span>
+                        <span className="text-xs font-bold text-slate-300 group-hover:text-indigo-300 transition-colors">
+                          {acc.account_id.split('@')[0]}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             ) : !error && (
