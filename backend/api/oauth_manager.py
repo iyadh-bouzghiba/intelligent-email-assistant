@@ -9,7 +9,9 @@ class OAuthManager:
         self.client_config = client_config
         self.redirect_uri = redirect_uri
         self.scopes = [
-            'https://www.googleapis.com/auth/gmail.readonly'
+            'https://www.googleapis.com/auth/gmail.readonly',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile'
         ]
 
     def get_authorization_url(self, state: Optional[str] = None) -> str:
