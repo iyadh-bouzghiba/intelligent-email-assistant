@@ -305,16 +305,27 @@ export const App = () => {
 
   const handleDisconnect = async (account_id: string) => {
     setConfirmDisconnect(null);
+    console.log(`[DISCONNECT] Disconnecting account: ${account_id}`);
     try {
       await apiService.disconnectAccount(account_id);
-    } catch {
-      console.warn('[DISCONNECT] Failed to disconnect account:', account_id);
+      console.log(`[DISCONNECT] Successfully disconnected: ${account_id}`);
+
+      // CRITICAL: Reload accounts list from backend to reflect disconnect
+      const accountsData = await apiService.listAccounts();
+      const loadedAccounts: AccountInfo[] = accountsData.accounts || [];
+      setAccounts(loadedAccounts);
+      console.log(`[DISCONNECT] Reloaded ${loadedAccounts.length} accounts`);
+
+      // If disconnected account was active, clear active email
+      if (activeEmail === account_id) {
+        setActiveEmail(null);
+        setBriefings([]); // Clear emails since no account is active
+        console.log(`[DISCONNECT] Cleared active account (was ${account_id})`);
+      }
+    } catch (err) {
+      console.error('[DISCONNECT] Failed to disconnect account:', account_id, err);
+      alert(`Failed to disconnect ${account_id}. Please try again.`);
     }
-    if (activeEmail === account_id) {
-      const next = accounts.find(a => a.connected && a.account_id !== account_id);
-      setActiveEmail(next?.account_id ?? null);
-    }
-    await fetchEmails();
   };
 
   const connectedAccounts = accounts.filter(a => a.connected);
@@ -451,13 +462,24 @@ export const App = () => {
                                 </div>
                                 <button
                                   onClick={async () => {
+                                    console.log(`[DROPDOWN] Switching to account: ${info.account_id}`);
                                     setActiveEmail(info.account_id);
                                     setShowAccountMenu(false);
                                     setLoading(true);
-                                    // Trigger sync for selected account
-                                    await apiService.syncNow(info.account_id);
-                                    await fetchEmails(info.account_id);
-                                    setLoading(false);
+                                    try {
+                                      // Trigger sync for selected account
+                                      console.log(`[SYNC] Syncing account: ${info.account_id}`);
+                                      const syncResult = await apiService.syncNow(info.account_id);
+                                      console.log(`[SYNC] Sync result:`, syncResult);
+                                      console.log(`[FETCH] Fetching emails for: ${info.account_id}`);
+                                      await fetchEmails(info.account_id);
+                                      console.log(`[DROPDOWN] Switched to ${info.account_id} successfully`);
+                                    } catch (err) {
+                                      console.error(`[DROPDOWN] Failed to switch to ${info.account_id}:`, err);
+                                      alert(`Failed to load emails for ${info.account_id}. Check console for details.`);
+                                    } finally {
+                                      setLoading(false);
+                                    }
                                   }}
                                   className={`text-[11px] font-bold truncate flex-1 text-left ${isActive ? 'text-indigo-400' : 'text-slate-300'}`}
                                 >
@@ -767,11 +789,22 @@ export const App = () => {
                       <button
                         key={acc.account_id}
                         onClick={async () => {
+                          console.log(`[ACCOUNT-SELECT] Selecting account: ${acc.account_id}`);
                           setActiveEmail(acc.account_id);
                           setLoading(true);
-                          await apiService.syncNow(acc.account_id);
-                          await fetchEmails(acc.account_id);
-                          setLoading(false);
+                          try {
+                            console.log(`[SYNC] Syncing account: ${acc.account_id}`);
+                            const syncResult = await apiService.syncNow(acc.account_id);
+                            console.log(`[SYNC] Sync result:`, syncResult);
+                            console.log(`[FETCH] Fetching emails for: ${acc.account_id}`);
+                            await fetchEmails(acc.account_id);
+                            console.log(`[ACCOUNT-SELECT] Completed for ${acc.account_id}`);
+                          } catch (err) {
+                            console.error(`[ACCOUNT-SELECT] Failed for ${acc.account_id}:`, err);
+                            alert(`Failed to load emails for ${acc.account_id}. Check console for details.`);
+                          } finally {
+                            setLoading(false);
+                          }
                         }}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/10 hover:bg-indigo-600/10 hover:border-indigo-500/30 transition-all group"
                       >
