@@ -851,8 +851,11 @@ async def google_oauth_callback(code: str, state: str = None, account_id: str = 
 
         print(f"[OK] [OAuth] Tokens encrypted and stored for account_id={effective_account_id}")
 
-        # Redirect to frontend success page
-        return RedirectResponse(url=f"{frontend_url}/?auth=success")
+        # Redirect to frontend success page WITH account_id so frontend can auto-activate
+        # CRITICAL: Pass account_id to frontend for immediate activation
+        import urllib.parse
+        encoded_account_id = urllib.parse.quote(effective_account_id)
+        return RedirectResponse(url=f"{frontend_url}/?auth=success&account_id={encoded_account_id}")
 
     except Exception as e:
         print(f"[FAIL] [OAuth] Callback failed: {e}")

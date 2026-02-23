@@ -278,17 +278,42 @@ export const App = () => {
     }
   }, [activeEmail]);
 
-  // Detect OAuth callback success and trigger sync
+  // Detect OAuth callback success and auto-activate the newly connected account
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('success') !== null || window.location.pathname.includes('/auth')) {
-      console.log('[STRATEGY] OAuth callback detected - triggering immediate sync');
-      // Wait a moment for accounts to load, then sync
-      setTimeout(() => {
-        autoSync();
-      }, 1000);
-      // Clean up URL without page reload
+    const authSuccess = urlParams.get('auth') === 'success';
+    const newAccountId = urlParams.get('account_id'); // Backend now passes this
+
+    if (authSuccess) {
+      console.log(`[STRATEGY] OAuth callback detected - new account: ${newAccountId || 'unknown'}`);
+
+      // Clean up URL immediately (before any async operations)
       window.history.replaceState({}, document.title, window.location.pathname);
+
+      // Wait for accounts list to refresh, then auto-activate the new account
+      setTimeout(async () => {
+        try {
+          // Reload accounts from backend
+          const accountsData = await apiService.listAccounts();
+          const loadedAccounts: AccountInfo[] = accountsData.accounts || [];
+          setAccounts(loadedAccounts);
+
+          // Auto-activate the newly connected account
+          if (newAccountId && loadedAccounts.some(a => a.account_id === newAccountId)) {
+            console.log(`[STRATEGY] Auto-activating newly connected account: ${newAccountId}`);
+            setActiveEmail(newAccountId); // This triggers fetchEmails via useEffect
+            setAccount(newAccountId);
+          } else if (loadedAccounts.length > 0) {
+            // Fallback: activate first available account
+            const firstAccount = loadedAccounts[0].account_id;
+            console.log(`[STRATEGY] Fallback: activating first account: ${firstAccount}`);
+            setActiveEmail(firstAccount);
+            setAccount(firstAccount);
+          }
+        } catch (error) {
+          console.error('[STRATEGY] Failed to activate account after OAuth:', error);
+        }
+      }, 1500); // Slightly longer wait to ensure backend credentials are persisted
     }
   }, []);
 
