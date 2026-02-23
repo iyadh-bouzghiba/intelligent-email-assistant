@@ -9,6 +9,7 @@ class OAuthManager:
         self.client_config = client_config
         self.redirect_uri = redirect_uri
         self.scopes = [
+            'openid',  # CRITICAL: Explicitly request to prevent scope mismatch
             'https://www.googleapis.com/auth/gmail.readonly',
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile'
