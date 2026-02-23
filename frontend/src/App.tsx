@@ -164,6 +164,12 @@ export const App = () => {
     // Only run when tab is visible
     if (document.visibilityState !== 'visible') return;
 
+    // CRITICAL: Skip auto-sync if no account is active (prevents "default" auth errors)
+    if (!activeEmail) {
+      console.log('[AUTO-SYNC] Skipped - no account selected');
+      return;
+    }
+
     setSyncing(true);
 
     try {
@@ -171,7 +177,7 @@ export const App = () => {
       await apiService.checkHealth();
 
       // Execute sync
-      const result = await apiService.syncNow(activeEmail ?? undefined);
+      const result = await apiService.syncNow(activeEmail);
 
       if (result.status === 'done' && result.count && result.count > 0) {
         console.log(`[AUTO-SYNC] Processed ${result.processed_count ?? result.count} emails`);
@@ -756,21 +762,62 @@ export const App = () => {
                 </motion.div>
               ))
             ) : connectedAccounts.length === 0 && !error ? (
-              <div className="col-span-full py-32 flex flex-col items-center gap-6 text-center">
-                <div className="w-24 h-24 rounded-full bg-white/[0.03] flex items-center justify-center text-slate-600 border border-white/5 relative shadow-inner">
-                  <Mail size={40} className="text-indigo-500/20" />
-                  <div className="absolute inset-0 rounded-full border border-indigo-500/10 animate-ping" />
+              /* ONBOARDING GUIDE: Professional zero-account state with step-by-step instructions */
+              <div className="col-span-full py-16 flex flex-col items-center gap-8 text-center max-w-4xl mx-auto">
+                <div className="w-28 h-28 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-2xl">
+                  <Mail size={48} className="text-indigo-400" />
+                  <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-pulse" />
                 </div>
-                <div>
-                  <h3 className="text-2xl font-black text-white mb-2">No Accounts Connected</h3>
-                  <p className="text-slate-500 max-w-xs font-medium mb-6">Connect a Google account to start receiving your strategic intelligence feed.</p>
-                  <a
-                    href={apiService.getGoogleAuthUrl()}
-                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
-                  >
-                    Connect Google Account
-                  </a>
+
+                <div className="space-y-3">
+                  <h3 className="text-4xl font-black text-white">Welcome to {BRAND_NAME}</h3>
+                  <p className="text-slate-400 text-lg font-medium max-w-2xl">
+                    Executive-grade email intelligence at your fingertips. Connect your Gmail account to begin.
+                  </p>
                 </div>
+
+                <div className="w-full max-w-2xl bg-white/[0.02] border border-white/5 rounded-3xl p-8 mt-4">
+                  <h4 className="text-lg font-black text-white mb-6 text-left flex items-center gap-2">
+                    <Shield size={20} className="text-indigo-400" />
+                    Quick Start Guide
+                  </h4>
+                  <div className="space-y-5 text-left">
+                    <div className="flex gap-4">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-sm">1</div>
+                      <div className="flex-1">
+                        <p className="text-slate-200 font-bold mb-1">Connect Your Gmail Account</p>
+                        <p className="text-slate-500 text-sm">Click the button below to securely authorize access to your Gmail inbox. Your credentials are encrypted and stored safely.</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-sm">2</div>
+                      <div className="flex-1">
+                        <p className="text-slate-200 font-bold mb-1">Select Your Account</p>
+                        <p className="text-slate-500 text-sm">After connecting, click the account switcher in the top-right corner to activate and view your emails. You can connect up to {MAX_CONNECTED_ACCOUNTS} accounts.</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-sm">3</div>
+                      <div className="flex-1">
+                        <p className="text-slate-200 font-bold mb-1">Your Intelligence Feed Loads</p>
+                        <p className="text-slate-500 text-sm">Emails from your INBOX will sync automatically. Switch between accounts anytime using the dropdown menu.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <a
+                  href={apiService.getGoogleAuthUrl()}
+                  className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-base font-black transition-all shadow-2xl shadow-indigo-600/30 active:scale-95 border border-indigo-400/20"
+                >
+                  <Mail size={20} />
+                  <span>Connect Your First Account</span>
+                  <ChevronRight size={18} />
+                </a>
+
+                <p className="text-slate-600 text-xs font-medium max-w-md">
+                  🔒 Your data is encrypted end-to-end. We only read your INBOX with permissions you grant. You can disconnect anytime.
+                </p>
               </div>
             ) : !activeEmail && connectedAccounts.length > 0 ? (
               /* CRITICAL: Show "Select Account" when accounts exist but none is active */
