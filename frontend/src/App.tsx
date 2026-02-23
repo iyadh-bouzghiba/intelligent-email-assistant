@@ -130,7 +130,9 @@ export const App = () => {
       setBriefings(mapped);
       setAccounts(loadedAccounts);
       const firstConnected = loadedAccounts.find(a => a.connected);
-      if (firstConnected && !activeEmail) {
+      // CRITICAL: Check accountIdToUse (not activeEmail) to avoid race condition
+      // When user explicitly selects an account, we must respect that choice
+      if (firstConnected && !accountIdToUse) {
         setAccount(firstConnected.account_id);
         setActiveEmail(firstConnected.account_id);
       }
