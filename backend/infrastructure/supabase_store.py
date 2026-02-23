@@ -35,10 +35,12 @@ class SupabaseStore:
     def save_email(self, subject, sender, date, body=None, message_id=None, tenant_id="primary", account_id="default"):
         """
         Upserts an email into Supabase.
-        Deduplication is handled by (tenant_id, gmail_message_id) unique index.
+        Deduplication is handled by (account_id, gmail_message_id) unique index.
 
         Note: created_at is NOT included in payload - database sets it on INSERT only.
         updated_at tracks when the record was last synced from Gmail.
+
+        CRITICAL: account_id MUST be included in payload for multi-account isolation.
         """
         payload = {
             "subject": subject,
@@ -46,6 +48,7 @@ class SupabaseStore:
             "date": date,
             "body": body,
             "tenant_id": tenant_id,
+            "account_id": account_id,  # CRITICAL: Required for multi-account email isolation
             "updated_at": datetime.utcnow().isoformat()
         }
 
