@@ -279,42 +279,77 @@ export const App = () => {
   }, [activeEmail]);
 
   // Detect OAuth callback success and auto-activate the newly connected account
+  // CRITICAL: Retry logic with exponential backoff to handle replication delays
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const authSuccess = urlParams.get('auth') === 'success';
-    const newAccountId = urlParams.get('account_id'); // Backend now passes this
+    const newAccountId = urlParams.get('account_id'); // Backend passes URL-decoded email
 
-    if (authSuccess) {
-      console.log(`[STRATEGY] OAuth callback detected - new account: ${newAccountId || 'unknown'}`);
+    if (!authSuccess) return;
 
-      // Clean up URL immediately (before any async operations)
-      window.history.replaceState({}, document.title, window.location.pathname);
+    console.log(`[OAUTH-CALLBACK] Detected - target account: ${newAccountId || 'MISSING'}`);
 
-      // Wait for accounts list to refresh, then auto-activate the new account
-      setTimeout(async () => {
-        try {
-          // Reload accounts from backend
-          const accountsData = await apiService.listAccounts();
-          const loadedAccounts: AccountInfo[] = accountsData.accounts || [];
-          setAccounts(loadedAccounts);
+    // Clean up URL immediately to prevent re-triggering
+    window.history.replaceState({}, document.title, window.location.pathname);
 
-          // Auto-activate the newly connected account
-          if (newAccountId && loadedAccounts.some(a => a.account_id === newAccountId)) {
-            console.log(`[STRATEGY] Auto-activating newly connected account: ${newAccountId}`);
-            setActiveEmail(newAccountId); // This triggers fetchEmails via useEffect
-            setAccount(newAccountId);
-          } else if (loadedAccounts.length > 0) {
-            // Fallback: activate first available account
-            const firstAccount = loadedAccounts[0].account_id;
-            console.log(`[STRATEGY] Fallback: activating first account: ${firstAccount}`);
-            setActiveEmail(firstAccount);
-            setAccount(firstAccount);
-          }
-        } catch (error) {
-          console.error('[STRATEGY] Failed to activate account after OAuth:', error);
-        }
-      }, 1500); // Slightly longer wait to ensure backend credentials are persisted
+    if (!newAccountId) {
+      console.error('[OAUTH-CALLBACK] CRITICAL: account_id parameter missing from callback URL');
+      alert('OAuth completed but account information was lost. Please try connecting again.');
+      return;
     }
+
+    // Retry logic: Poll for account to appear (handles Supabase replication delay)
+    const MAX_RETRIES = 5;
+    const INITIAL_DELAY = 1000; // Start with 1s
+    let retryCount = 0;
+
+    const attemptActivation = async () => {
+      retryCount++;
+      const delay = INITIAL_DELAY * Math.pow(1.5, retryCount - 1); // Exponential backoff
+
+      console.log(`[OAUTH-CALLBACK] Attempt ${retryCount}/${MAX_RETRIES} - checking for account: ${newAccountId}`);
+
+      try {
+        // Reload accounts from backend
+        const accountsData = await apiService.listAccounts();
+        const loadedAccounts: AccountInfo[] = accountsData.accounts || [];
+
+        console.log(`[OAUTH-CALLBACK] Found ${loadedAccounts.length} accounts:`, loadedAccounts.map(a => a.account_id));
+
+        setAccounts(loadedAccounts);
+
+        // CRITICAL: Only activate if EXACT match found (no fallback)
+        const targetAccount = loadedAccounts.find(a => a.account_id === newAccountId);
+
+        if (targetAccount) {
+          console.log(`[OAUTH-CALLBACK] ✅ SUCCESS - Activating: ${newAccountId}`);
+          setActiveEmail(newAccountId);
+          setAccount(newAccountId);
+          return; // Success - stop retrying
+        }
+
+        // Account not found yet - retry if attempts remaining
+        if (retryCount < MAX_RETRIES) {
+          console.log(`[OAUTH-CALLBACK] ⏳ Account not found yet - retrying in ${delay}ms...`);
+          setTimeout(attemptActivation, delay);
+        } else {
+          // Max retries exceeded - show error
+          console.error(`[OAUTH-CALLBACK] ❌ FAILED - Account ${newAccountId} not found after ${MAX_RETRIES} attempts`);
+          alert(`Failed to activate account ${newAccountId}.\n\nThe account was connected but couldn't be activated automatically.\n\nPlease select it manually from the account dropdown.`);
+          // Leave user on account selection screen - don't auto-activate wrong account
+        }
+      } catch (error) {
+        console.error(`[OAUTH-CALLBACK] Attempt ${retryCount} failed:`, error);
+        if (retryCount < MAX_RETRIES) {
+          setTimeout(attemptActivation, delay);
+        } else {
+          alert('Failed to load accounts after OAuth. Please refresh the page.');
+        }
+      }
+    };
+
+    // Start activation attempts
+    attemptActivation();
   }, []);
 
   const getPriorityStyles = (priority: string) => {
