@@ -48,14 +48,18 @@ class OAuthManager:
         
         flow.fetch_token(code=code)
         creds = flow.credentials
-        
-        return {
+
+        result = {
             'token': creds.token,
             'refresh_token': creds.refresh_token,
             'token_uri': creds.token_uri,
             'client_id': creds.client_id,
             'client_secret': creds.client_secret,
             'scopes': creds.scopes,
-            # Helper to get email if possible, though usually requires a separate call or id_token
-            # We will handle email extraction in the service layer where this return is used.
         }
+
+        # Include id_token if present (contains user email in JWT claims)
+        if hasattr(creds, 'id_token') and creds.id_token:
+            result['id_token'] = creds.id_token
+
+        return result
