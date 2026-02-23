@@ -28,7 +28,7 @@ class OAuthManager:
         auth_kwargs = {
             "access_type": "offline",
             "include_granted_scopes": "true",
-            "prompt": "consent",
+            "prompt": "select_account consent",  # CRITICAL: Force account picker + consent screen
         }
         if state:
             auth_kwargs["state"] = state
