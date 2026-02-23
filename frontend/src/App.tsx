@@ -53,6 +53,7 @@ export const App = () => {
   const [syncing, setSyncing] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const accountButtonRef = useRef<HTMLButtonElement | null>(null);
+  const activeEmailRef = useRef<string | null>(null); // Track current activeEmail for closures
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
 
   const requestNotificationPermission = async () => {
@@ -114,7 +115,7 @@ export const App = () => {
         }
 
         return {
-          account: accountIdToUse || loadedAccounts[0]?.account_id || 'Primary',
+          account: e.account_id || 'Unknown',  // CRITICAL: Use REAL account_id from email record
           subject: e.subject || 'No Subject',
           sender: e.sender || 'Unknown',
           date: formattedDate,
@@ -174,8 +175,8 @@ export const App = () => {
 
       if (result.status === 'done' && result.count && result.count > 0) {
         console.log(`[AUTO-SYNC] Processed ${result.processed_count ?? result.count} emails`);
-        // Refetch emails to update UI
-        await fetchEmails();
+        // Refetch emails for active account to update UI
+        await fetchEmails(activeEmail);
         // Reset failures on success
         setConsecutiveFailures(0);
       } else if (result.status === 'auth_required') {
@@ -189,7 +190,29 @@ export const App = () => {
   };
 
   useEffect(() => {
-    fetchEmails(); // Initial load
+    // Initial load: Load accounts first, then emails will be loaded via activeEmail useEffect
+    const initializeApp = async () => {
+      try {
+        const accountsData = await apiService.listAccounts();
+        const loadedAccounts: AccountInfo[] = accountsData.accounts || [];
+        setAccounts(loadedAccounts);
+
+        // Set first connected account as active
+        const firstConnected = loadedAccounts.find(a => a.connected);
+        if (firstConnected) {
+          setAccount(firstConnected.account_id);
+          setActiveEmail(firstConnected.account_id); // This triggers fetchEmails via useEffect
+        } else {
+          // No accounts connected - show empty state
+          setLoading(false);
+        }
+      } catch (error) {
+        console.warn('[STRATEGY] Failed to load accounts on init', error);
+        setLoading(false);
+      }
+    };
+
+    initializeApp();
 
     // Immediate sync on mount (within seconds)
     autoSync();
@@ -197,7 +220,7 @@ export const App = () => {
     // Realtime updates via WebSocket
     const handleEmailsUpdated = (data: { count_new: number }) => {
       console.log("[STRATEGY] Realtime update received:", data);
-      fetchEmails(); // Immediately refetch on socket event
+      fetchEmails(activeEmailRef.current); // Refetch for current active account
     };
 
     const handleSummaryReady = (data: { count_summarized: number }) => {
@@ -223,14 +246,12 @@ export const App = () => {
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Fallback polling (30s) for redundancy
-    const fallbackInterval = setInterval(fetchEmails, 30000);
+    // Note: Fallback polling removed - using WebSocket updates + activeEmail change detection instead
 
     return () => {
       websocketService.off("emails_updated", handleEmailsUpdated);
       websocketService.off("summary_ready", handleSummaryReady);
       clearInterval(autoSyncInterval);
-      clearInterval(fallbackInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
@@ -248,6 +269,29 @@ export const App = () => {
     document.addEventListener("mousedown", onMouseDown, true);
     return () => document.removeEventListener("mousedown", onMouseDown, true);
   }, [showAccountMenu]);
+
+  // Refetch emails when active account changes
+  useEffect(() => {
+    activeEmailRef.current = activeEmail; // Keep ref in sync for closures
+    if (activeEmail) {
+      console.log(`[STRATEGY] Active account changed to: ${activeEmail}`);
+      fetchEmails(activeEmail);
+    }
+  }, [activeEmail]);
+
+  // Detect OAuth callback success and trigger sync
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('success') !== null || window.location.pathname.includes('/auth')) {
+      console.log('[STRATEGY] OAuth callback detected - triggering immediate sync');
+      // Wait a moment for accounts to load, then sync
+      setTimeout(() => {
+        autoSync();
+      }, 1000);
+      // Clean up URL without page reload
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   const getPriorityStyles = (priority: string) => {
     switch (priority) {
