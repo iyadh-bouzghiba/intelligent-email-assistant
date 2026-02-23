@@ -198,7 +198,7 @@ def require_schema_ok():
         )
 
 
-_ACCOUNT_ID_CLEAN_RE = re.compile(r"[^a-zA-Z0-9._-]")
+_ACCOUNT_ID_CLEAN_RE = re.compile(r"[^a-zA-Z0-9._@-]")
 
 def resolve_account_id(state: Optional[str], account_id: Optional[str]) -> str:
     """
@@ -207,7 +207,8 @@ def resolve_account_id(state: Optional[str], account_id: Optional[str]) -> str:
     - If state starts with "acc:", extract account_id from state
     - Else use account_id parameter
     - Default to "default"
-    Sanitizes output to prevent injection: allows only [a-zA-Z0-9._-]
+    Sanitizes output to prevent injection: allows only [a-zA-Z0-9._@-]
+    CRITICAL: @ symbol MUST be preserved for email address account_ids
     """
     effective = "default"
     if state and isinstance(state, str) and state.startswith("acc:"):
