@@ -806,45 +806,81 @@ async def google_oauth_callback(code: str, state: str = None, account_id: str = 
         oauth_manager = OAuthManager(client_config, redirect_uri)
 
         effective_account_id = resolve_account_id(state, account_id)
-        print(f"[OK] [OAuth] Callback for account_id={effective_account_id}")
+        print(f"[OAUTH] Callback received - initial account_id from state: {effective_account_id}")
+
+        # Exchange code for tokens
+        print(f"[OAUTH] Exchanging authorization code for tokens...")
+        tokens = oauth_manager.exchange_code_for_tokens(code)
+
+        # Log token presence without exposing values
+        has_refresh = 'yes' if tokens.get('refresh_token') else 'no'
+        has_id_token = 'yes' if tokens.get('id_token') else 'no'
+        print(f"[OAUTH] Tokens received: refresh_token={has_refresh}, id_token={has_id_token}")
+
+        # CRITICAL: Extract user's actual Gmail email to use as account_id
+        # Method 1: Decode id_token JWT (most reliable)
+        user_email = None
+        if tokens.get('id_token'):
+            try:
+                import jwt
+                # Decode without verification (we trust Google's response)
+                id_token_claims = jwt.decode(tokens['id_token'], options={"verify_signature": False})
+                user_email = id_token_claims.get('email')
+                if user_email:
+                    print(f"[OAUTH] ✅ Extracted email from id_token: {user_email}")
+                else:
+                    print(f"[OAUTH] ⚠️ id_token present but no email claim found")
+            except Exception as e:
+                print(f"[OAUTH] ⚠️ Failed to decode id_token: {e}")
+
+        # Method 2: Fallback to userinfo API (less reliable due to network/rate limits)
+        if not user_email:
+            try:
+                import requests
+                print(f"[OAUTH] id_token method failed, trying userinfo API...")
+                userinfo_response = requests.get(
+                    "https://www.googleapis.com/oauth2/v2/userinfo",
+                    headers={"Authorization": f"Bearer {tokens['token']}"},
+                    timeout=10
+                )
+                if userinfo_response.status_code == 200:
+                    userinfo = userinfo_response.json()
+                    user_email = userinfo.get('email')
+                    if user_email:
+                        print(f"[OAUTH] ✅ Retrieved email from userinfo API: {user_email}")
+                    else:
+                        print(f"[OAUTH] ⚠️ Userinfo API returned but no email field")
+                else:
+                    print(f"[OAUTH] ⚠️ Userinfo API failed: HTTP {userinfo_response.status_code}")
+            except Exception as e:
+                print(f"[OAUTH] ⚠️ Userinfo API request failed: {e}")
+
+        # FAIL-SAFE: Reject OAuth flow if email cannot be determined
+        if not user_email:
+            error_msg = (
+                "Could not determine Gmail account email. "
+                "This is required for multi-account support. "
+                "Please try connecting again or contact support if the issue persists."
+            )
+            print(f"[OAUTH] ❌ CRITICAL: Email extraction failed completely")
+            print(f"[OAUTH] ❌ Cannot proceed without user email (prevents account collision)")
+            return JSONResponse(
+                status_code=400,
+                content={"error": error_msg}
+            )
+
+        # Update effective_account_id with verified email
+        effective_account_id = user_email
+        print(f"[OAUTH] ✅ Final account_id: {effective_account_id}")
 
         # Load existing credentials to preserve refresh_token if needed
         credential_store = CredentialStore(persistence)
         existing_creds = credential_store.load_credentials(effective_account_id)
 
-        # Exchange code for tokens
-        tokens = oauth_manager.exchange_code_for_tokens(code)
-
         # OAuth Determinism: Preserve refresh_token if new response lacks it
         if not tokens.get('refresh_token') and existing_creds and existing_creds.get('refresh_token'):
             tokens['refresh_token'] = existing_creds['refresh_token']
-            print(f"[OK] [OAuth] Preserved existing refresh_token (new response lacked it)")
-
-        # Log token presence without exposing values
-        has_refresh = 'yes' if tokens.get('refresh_token') else 'no'
-        print(f"[OK] [OAuth] Tokens received: refresh_token_present={has_refresh}")
-
-        # CRITICAL: Get user's actual Gmail email to use as account_id
-        try:
-            import requests
-            userinfo_response = requests.get(
-                "https://www.googleapis.com/oauth2/v2/userinfo",
-                headers={"Authorization": f"Bearer {tokens['token']}"},
-                timeout=10
-            )
-            if userinfo_response.status_code == 200:
-                userinfo = userinfo_response.json()
-                user_email = userinfo.get('email')
-                if user_email:
-                    # Use actual email as account_id (overrides "default")
-                    effective_account_id = user_email
-                    print(f"[OK] [OAuth] Retrieved user email: {user_email}")
-                else:
-                    print(f"[WARN] [OAuth] No email in userinfo, using: {effective_account_id}")
-            else:
-                print(f"[WARN] [OAuth] Userinfo fetch failed: {userinfo_response.status_code}")
-        except Exception as e:
-            print(f"[WARN] [OAuth] Failed to fetch userinfo: {e}, using: {effective_account_id}")
+            print(f"[OAUTH] Preserved existing refresh_token (new response lacked it)")
 
         # Store tokens encrypted via CredentialStore (with real email as account_id)
         credential_store.save_credentials(effective_account_id, tokens)
