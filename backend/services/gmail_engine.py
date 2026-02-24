@@ -66,16 +66,18 @@ def run_engine(token_data: dict):
         query = "in:inbox"
 
         # Pagination: Gmail API returns max 500 per request
+        # CRITICAL: Reduced from 500 to 50 to prevent timeout on Render free tier
+        # Each email requires separate API call - 500 emails = 30+ seconds = TIMEOUT
         page_token = None
         total_fetched = 0
-        max_emails = 500  # Safety limit per sync cycle
+        max_emails = 50  # Balanced: enough emails, fast enough to avoid timeout
 
         while total_fetched < max_emails:
             # Fetch batch of emails
             list_params = {
                 'userId': 'me',
                 'q': query,
-                'maxResults': min(100, max_emails - total_fetched)  # Fetch 100 at a time
+                'maxResults': min(50, max_emails - total_fetched)  # Fetch 50 at a time to avoid timeout
             }
             if page_token:
                 list_params['pageToken'] = page_token
@@ -144,7 +146,12 @@ def run_engine(token_data: dict):
         if "invalid_grant" in error_str or "invalid_client" in error_str:
             print(f"[WARN] [GMAIL] Re-auth required: token expired/revoked")
             return {"__auth_error__": "invalid_grant"}
-        print(f"❌ Error during execution: {str(e)}")
+
+        # Log detailed error for debugging sync failures
+        print(f"[ERROR] [GMAIL] Sync failed with exception: {type(e).__name__}")
+        print(f"[ERROR] [GMAIL] Error message: {str(e)}")
+        import traceback
+        print(f"[ERROR] [GMAIL] Traceback: {traceback.format_exc()}")
         return []
 
 if __name__ == "__main__":
