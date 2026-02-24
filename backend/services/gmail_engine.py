@@ -66,18 +66,19 @@ def run_engine(token_data: dict):
         query = "in:inbox"
 
         # Pagination: Gmail API returns max 500 per request
-        # CRITICAL: Reduced from 500 to 50 to prevent timeout on Render free tier
-        # Each email requires separate API call - 500 emails = 30+ seconds = TIMEOUT
+        # CRITICAL: Optimized to 30 emails to reliably avoid timeout on Render free tier
+        # Each email requires separate API call (~0.5s each)
+        # 30 emails × 0.5s + overhead = ~18-20s (safely under 30s timeout)
         page_token = None
         total_fetched = 0
-        max_emails = 50  # Balanced: enough emails, fast enough to avoid timeout
+        max_emails = 30  # Optimized: fast sync, no timeout noise, professional UX
 
         while total_fetched < max_emails:
             # Fetch batch of emails
             list_params = {
                 'userId': 'me',
                 'q': query,
-                'maxResults': min(50, max_emails - total_fetched)  # Fetch 50 at a time to avoid timeout
+                'maxResults': min(30, max_emails - total_fetched)  # Fetch 30 at a time - no timeout
             }
             if page_token:
                 list_params['pageToken'] = page_token
