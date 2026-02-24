@@ -58,59 +58,85 @@ def run_engine(token_data: dict):
     # 2. Build Service
     service = build('gmail', 'v1', credentials=creds)
 
-    # 3. The Fetcher - Looking for "Strategic" emails
+    # 3. The Fetcher - Fetch ALL INBOX emails with pagination
     emails_data = []
     try:
-        # Query for non-chat, non-newsletter content usually yields more strategic emails
-        query = "in:inbox -category:promotions -category:social is:unread"
-        results = service.users().messages().list(userId='me', q=query, maxResults=10).execute()
-        messages = results.get('messages', [])
+        # CRITICAL: Fetch ALL inbox emails (not just unread/filtered)
+        # This ensures complete email sync across all accounts
+        query = "in:inbox"
 
-        if not messages:
-            return []
+        # Pagination: Gmail API returns max 500 per request
+        page_token = None
+        total_fetched = 0
+        max_emails = 500  # Safety limit per sync cycle
 
-        for msg_info in messages:
-            msg = service.users().messages().get(userId='me', id=msg_info['id']).execute()
-            label_ids = msg.get('labelIds', []) or []
-            if "INBOX" not in label_ids:
-                continue
+        while total_fetched < max_emails:
+            # Fetch batch of emails
+            list_params = {
+                'userId': 'me',
+                'q': query,
+                'maxResults': min(100, max_emails - total_fetched)  # Fetch 100 at a time
+            }
+            if page_token:
+                list_params['pageToken'] = page_token
 
-            payload = msg.get('payload', {})
-            headers = payload.get('headers', [])
+            results = service.users().messages().list(**list_params).execute()
+            messages = results.get('messages', [])
 
-            # Extract Metadata
-            subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), "No Subject")
-            sender_raw = next((h['value'] for h in headers if h['name'].lower() == 'from'), "Unknown Sender")
-            date_header = next((h['value'] for h in headers if h['name'].lower() == 'date'), None)
+            if not messages:
+                break
 
-            # Use Gmail internalDate (ms since epoch) as authoritative timestamp
-            internal_date_ms = msg.get('internalDate')
-            if internal_date_ms:
-                from datetime import datetime
-                date_iso = datetime.utcfromtimestamp(int(internal_date_ms) / 1000).isoformat() + 'Z'
-            elif date_header:
-                # Fallback: parse Date header (best-effort)
-                try:
-                    from email.utils import parsedate_to_datetime
-                    parsed_dt = parsedate_to_datetime(date_header)
-                    date_iso = parsed_dt.isoformat()
-                except:
+            # Process this batch
+            for msg_info in messages:
+                msg = service.users().messages().get(userId='me', id=msg_info['id']).execute()
+                label_ids = msg.get('labelIds', []) or []
+                if "INBOX" not in label_ids:
+                    continue
+
+                payload = msg.get('payload', {})
+                headers = payload.get('headers', [])
+
+                # Extract Metadata
+                subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), "No Subject")
+                sender_raw = next((h['value'] for h in headers if h['name'].lower() == 'from'), "Unknown Sender")
+                date_header = next((h['value'] for h in headers if h['name'].lower() == 'date'), None)
+
+                # Use Gmail internalDate (ms since epoch) as authoritative timestamp
+                internal_date_ms = msg.get('internalDate')
+                if internal_date_ms:
+                    from datetime import datetime
+                    date_iso = datetime.utcfromtimestamp(int(internal_date_ms) / 1000).isoformat() + 'Z'
+                elif date_header:
+                    # Fallback: parse Date header (best-effort)
+                    try:
+                        from email.utils import parsedate_to_datetime
+                        parsed_dt = parsedate_to_datetime(date_header)
+                        date_iso = parsed_dt.isoformat()
+                    except:
+                        date_iso = datetime.utcnow().isoformat() + 'Z'
+                else:
                     date_iso = datetime.utcnow().isoformat() + 'Z'
-            else:
-                date_iso = datetime.utcnow().isoformat() + 'Z'
 
-            # Extract & Clean Body
-            raw_body = get_message_body(payload)
-            cleaned_body = raw_body.strip()
+                # Extract & Clean Body
+                raw_body = get_message_body(payload)
+                cleaned_body = raw_body.strip()
 
-            emails_data.append({
-                "message_id": msg['id'],  # Gmail message ID
-                "subject": subject,
-                "sender": sender_raw,
-                "date": date_iso,  # ISO timestamp
-                "body": cleaned_body
-            })
+                emails_data.append({
+                    "message_id": msg['id'],  # Gmail message ID
+                    "subject": subject,
+                    "sender": sender_raw,
+                    "date": date_iso,  # ISO timestamp
+                    "body": cleaned_body
+                })
 
+                total_fetched += 1
+
+            # Check pagination - continue to next page if available
+            page_token = results.get('nextPageToken')
+            if not page_token:
+                break  # No more pages
+
+        print(f"[GMAIL] Fetched {len(emails_data)} emails from inbox")
         return emails_data
 
     except Exception as e:
