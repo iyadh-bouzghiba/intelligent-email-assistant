@@ -84,27 +84,37 @@ def _fetch_and_transform_messages(gmail_client, message_ids, assistant):
             date_header = next((h['value'] for h in headers if h['name'].lower() == 'date'), None)
 
             # Use internalDate as authoritative timestamp
+            # CRITICAL FIX: Use timezone-aware datetime to prevent drift
+            from datetime import timezone
+
             internal_date_ms = msg.get('internalDate')
             timestamp_source = "unknown"
 
             if internal_date_ms:
-                date_iso = datetime.utcfromtimestamp(int(internal_date_ms) / 1000).isoformat() + 'Z'
+                # ✅ FIXED: Use timezone-aware conversion (not deprecated utcfromtimestamp)
+                dt_utc = datetime.fromtimestamp(int(internal_date_ms) / 1000, tz=timezone.utc)
+                date_iso = dt_utc.isoformat()
                 timestamp_source = "internalDate"
-                print(f"[TIMESTAMP-DEBUG-WORKER] {subject[:30]}... | internalDate: {internal_date_ms}ms | UTC: {date_iso} | Source: {timestamp_source}")
+                print(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | internalDate: {internal_date_ms}ms | UTC: {date_iso} | Source: {timestamp_source}")
             elif date_header:
                 try:
                     parsed_dt = parsedate_to_datetime(date_header)
+                    # Ensure timezone-aware
+                    if parsed_dt.tzinfo is None:
+                        parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
                     date_iso = parsed_dt.isoformat()
                     timestamp_source = "date_header"
-                    print(f"[TIMESTAMP-DEBUG-WORKER] {subject[:30]}... | Date header: {date_header} | UTC: {date_iso} | Source: {timestamp_source}")
+                    print(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | Date header: {date_header} | UTC: {date_iso} | Source: {timestamp_source}")
                 except Exception as e:
-                    date_iso = datetime.utcnow().isoformat() + 'Z'
+                    dt_utc = datetime.now(timezone.utc)
+                    date_iso = dt_utc.isoformat()
                     timestamp_source = "fallback_now"
-                    print(f"[TIMESTAMP-DEBUG-WORKER] {subject[:30]}... | Date parse failed: {e} | UTC: {date_iso} | Source: {timestamp_source}")
+                    print(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | Date parse failed: {e} | UTC: {date_iso} | Source: {timestamp_source}")
             else:
-                date_iso = datetime.utcnow().isoformat() + 'Z'
+                dt_utc = datetime.now(timezone.utc)
+                date_iso = dt_utc.isoformat()
                 timestamp_source = "fallback_now"
-                print(f"[TIMESTAMP-DEBUG-WORKER] {subject[:30]}... | No timestamp found | UTC: {date_iso} | Source: {timestamp_source}")
+                print(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | No timestamp found | UTC: {date_iso} | Source: {timestamp_source}")
 
             # Extract body
             raw_body = get_message_body(payload)
