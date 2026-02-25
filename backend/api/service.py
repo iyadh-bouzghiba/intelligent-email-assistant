@@ -718,7 +718,7 @@ async def _sync_now_impl(account_id: str):
         return {"status": "error", "message": f"Sync failed: {type(e).__name__}"}
 
 
-@api_router.get("/api/emails/{gmail_message_id}/summary")
+@api_router.get("/emails/{gmail_message_id}/summary")
 async def get_email_summary(
     gmail_message_id: str,
     account_id: str = Query("default")
@@ -1014,7 +1014,7 @@ async def disconnect_all_accounts():
         print(f"[ERROR] [CLEANUP] Failed to delete credentials: {e}")
         return {"status": "error", "message": str(e)}
 
-@api_router.post("/api/emails/{gmail_message_id}/summarize")
+@api_router.post("/emails/{gmail_message_id}/summarize")
 async def summarize_email_by_id(
     gmail_message_id: str,
     account_id: str = Query("default")
