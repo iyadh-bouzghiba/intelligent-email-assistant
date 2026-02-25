@@ -114,16 +114,33 @@ export const App = () => {
           // Fallback already set
         }
 
+        // CRITICAL: Determine priority from AI urgency if available
+        let priority: 'Low' | 'Medium' | 'High' = 'Medium';
+        if (e.ai_summary_json?.urgency === 'high') priority = 'High';
+        else if (e.ai_summary_json?.urgency === 'low') priority = 'Low';
+
+        // Use AI overview if available, fallback to raw body
+        const displaySummary = e.ai_summary_text || e.body || 'Awaiting strategic processing.';
+
+        // Use first action item as primary action if available
+        const primaryAction = e.ai_summary_json?.action_items?.[0] || 'Review Pending';
+
         return {
           account: e.account_id || 'Unknown',  // CRITICAL: Use REAL account_id from email record
           subject: e.subject || 'No Subject',
           sender: e.sender || 'Unknown',
           date: formattedDate,
-          priority: 'Medium',
+          priority: priority,
           category: 'General',
-          should_alert: false,
-          summary: e.body || 'Email content delivered. Awaiting strategic processing.',
-          action: 'Review Pending'
+          should_alert: e.ai_summary_json?.urgency === 'high',
+          summary: displaySummary,
+          action: primaryAction,
+
+          // NEW: Pass through AI summary fields for detailed display
+          ai_summary_json: e.ai_summary_json,
+          ai_summary_text: e.ai_summary_text,
+          ai_summary_model: e.ai_summary_model,
+          gmail_message_id: e.gmail_message_id,
         };
       });
 
@@ -229,8 +246,20 @@ export const App = () => {
       // Could refetch thread data if needed
     };
 
+    // NEW: Handle real-time AI summary completion events
+    const handleAiSummaryReady = (data: { account_id: string; gmail_message_id: string; timestamp: string }) => {
+      console.log("[AI-SUMMARY] New summary ready:", data);
+
+      // Only refresh if the summary is for the currently active account
+      if (activeEmailRef.current === data.account_id || !activeEmailRef.current) {
+        console.log("[AI-SUMMARY] Refreshing emails to show new summary");
+        fetchEmails(activeEmailRef.current);
+      }
+    };
+
     websocketService.on("emails_updated", handleEmailsUpdated);
     websocketService.on("summary_ready", handleSummaryReady);
+    websocketService.on("ai_summary_ready", handleAiSummaryReady);
 
     // Auto-sync scheduler (120s interval, respects visibility + backoff)
     const SYNC_INTERVAL = 120000; // 120s
@@ -252,6 +281,7 @@ export const App = () => {
     return () => {
       websocketService.off("emails_updated", handleEmailsUpdated);
       websocketService.off("summary_ready", handleSummaryReady);
+      websocketService.off("ai_summary_ready", handleAiSummaryReady);
       clearInterval(autoSyncInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
@@ -773,9 +803,45 @@ export const App = () => {
 
                   <div className="space-y-4 flex-grow overflow-y-auto custom-scrollbar pr-2">
                     <div className="p-5 rounded-3xl bg-white/[0.03] border border-white/5 group-hover:bg-white/[0.05] transition-colors duration-500">
+                      {/* AI Summary Badge (only if AI summary exists) */}
+                      {item.ai_summary_text && (
+                        <div className="flex items-center gap-2 mb-3">
+                          <Sparkles size={12} className="text-indigo-400" />
+                          <span className="text-[9px] font-black text-indigo-400 uppercase tracking-wider">
+                            AI Summary
+                          </span>
+                          <span className="text-[8px] text-slate-600">
+                            {item.ai_summary_model || 'mistral'}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Summary Text (AI or fallback to raw body) */}
                       <p className="text-sm leading-relaxed text-slate-200 font-medium overflow-wrap-anywhere word-break-break-word">
                         {item.summary}
                       </p>
+
+                      {/* Action Items (only if AI summary has action items) */}
+                      {item.ai_summary_json?.action_items && item.ai_summary_json.action_items.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                          <p className="text-[10px] font-black text-indigo-400 uppercase tracking-wider">
+                            Action Items
+                          </p>
+                          <ul className="space-y-1.5">
+                            {item.ai_summary_json.action_items.slice(0, 3).map((action: string, idx: number) => (
+                              <li key={idx} className="flex items-start gap-2 text-xs text-slate-300">
+                                <span className="text-indigo-500 mt-0.5">•</span>
+                                <span>{action}</span>
+                              </li>
+                            ))}
+                          </ul>
+                          {item.ai_summary_json.action_items.length > 3 && (
+                            <p className="text-[9px] text-slate-600 italic mt-1">
+                              +{item.ai_summary_json.action_items.length - 3} more action item{item.ai_summary_json.action_items.length - 3 > 1 ? 's' : ''}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className={`flex items-center gap-4 p-4 rounded-3xl border transition-all duration-500 ${item.action === 'None' ? 'bg-slate-500/5 border-slate-500/10' : 'bg-indigo-500/5 border-indigo-500/20 shadow-[0_0_20px_rgba(79,70,229,0.05)]'}`}>
@@ -791,22 +857,43 @@ export const App = () => {
 
                   <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      {item.summary.includes('Awaiting strategic processing') && (
+                      {/* NEW: Manual Summarization Button (only if no AI summary exists) */}
+                      {!item.ai_summary_text && item.gmail_message_id && (
                         <button
                           onClick={async () => {
-                            const thread_id = `${item.subject}_${item.sender}`.replace(/\s/g, '_').substring(0, 50);
-                            console.log('[SUMMARIZE] Requesting summary for:', thread_id);
-                            const result = await apiService.summarizeThread(thread_id);
-                            if (result.status === 'done') {
-                              await fetchEmails();
-                            } else if (result.status === 'skipped_no_key') {
-                              alert('AI summarization requires MISTRAL_API_KEY to be configured.');
+                            console.log('[SUMMARIZE] Requesting:', item.gmail_message_id);
+
+                            // Optimistic UI update
+                            const updatedBriefings = briefings.map(b =>
+                              b.gmail_message_id === item.gmail_message_id
+                                ? { ...b, summary: '⏳ Generating AI summary...' }
+                                : b
+                            );
+                            setBriefings(updatedBriefings);
+
+                            // Call API to enqueue summarization job
+                            const result = await apiService.summarizeEmail(
+                              item.gmail_message_id!,
+                              activeEmail || 'default'
+                            );
+
+                            // Handle result
+                            if (result.status === 'queued') {
+                              console.log('[SUMMARIZE] Job queued:', result.job_id);
+                              // Refresh after 5 seconds to show completed summary
+                              setTimeout(() => fetchEmails(activeEmail), 5000);
+                            } else if (result.status === 'no_mistral_key') {
+                              alert('AI summarization requires MISTRAL_API_KEY configuration.');
+                              setBriefings(briefings); // Revert optimistic update
+                            } else {
+                              console.warn('[SUMMARIZE] Failed:', result);
+                              setBriefings(briefings); // Revert optimistic update
                             }
                           }}
                           className="text-[10px] font-black text-indigo-500 hover:text-indigo-400 uppercase tracking-[0.2em] flex items-center gap-2 transition-all group/btn"
                         >
                           <Sparkles size={14} className="group-hover/btn:rotate-12 transition-transform" />
-                          Summarize Thread
+                          Summarize Email
                         </button>
                       )}
                       <button
