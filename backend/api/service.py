@@ -13,6 +13,7 @@ Bootstrap:
 """
 import os
 import sys
+import logging
 
 import asyncio
 import json
@@ -27,6 +28,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 import socketio
+
+# CRITICAL: Configure logging with immediate flush for production visibility
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(levelname)s] [%(name)s] %(message)s',
+    stream=sys.stdout,
+    force=True
+)
+logger = logging.getLogger("api.service")
+logger.setLevel(logging.INFO)
+
+# Force Python unbuffered output
+sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)
 
 from backend.config import Config
 from backend.core import EmailAssistant
@@ -178,6 +192,132 @@ async def healthz():
     in worker_entry.py is dead code - only sio_app (this file) is served.
     """
     return {"status": "ok", "schema": ControlPlane.schema_state}
+
+@app.get("/api/diagnostic")
+async def diagnostic_check():
+    """
+    DIAGNOSTIC: Test database connectivity and write capability.
+
+    Returns detailed status of:
+    - Supabase connection
+    - Environment variables
+    - Test email write operation
+    - Actual database state
+    """
+    logger.info("[DIAGNOSTIC] ========== DIAGNOSTIC CHECK STARTED ==========")
+    diagnostic = {
+        "timestamp": datetime.now().isoformat(),
+        "supabase_configured": False,
+        "supabase_url_set": False,
+        "supabase_key_set": False,
+        "test_write_success": False,
+        "test_write_error": None,
+        "email_count_in_db": 0,
+        "accounts_in_db": [],
+        "test_email_id": None
+    }
+
+    try:
+        # Check environment variables
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+        diagnostic["supabase_url_set"] = bool(supabase_url)
+        diagnostic["supabase_key_set"] = bool(supabase_key)
+
+        if supabase_url and supabase_key:
+            diagnostic["supabase_url_prefix"] = supabase_url[:30] + "..." if len(supabase_url) > 30 else supabase_url
+            diagnostic["supabase_configured"] = True
+
+        # Get store instance
+        store = safe_get_store()
+        if not store:
+            diagnostic["test_write_error"] = "Store not available"
+            logger.error("[DIAGNOSTIC] Store not available!")
+            return diagnostic
+
+        # Check existing emails count
+        try:
+            existing = await asyncio.to_thread(store.get_emails, limit=1000)
+            if hasattr(existing, 'data') and existing.data:
+                diagnostic["email_count_in_db"] = len(existing.data)
+                # Get unique account IDs
+                accounts = set(e.get("account_id") for e in existing.data if e.get("account_id"))
+                diagnostic["accounts_in_db"] = list(accounts)
+                logger.info(f"[DIAGNOSTIC] Found {len(existing.data)} emails in database")
+            else:
+                logger.warning("[DIAGNOSTIC] No emails found in database")
+        except Exception as e:
+            diagnostic["email_count_error"] = str(e)
+            logger.error(f"[DIAGNOSTIC] Failed to count emails: {e}")
+
+        # Attempt test write
+        test_message_id = f"diagnostic-test-{int(time.time())}"
+        logger.info(f"[DIAGNOSTIC] Attempting test write with ID: {test_message_id}")
+
+        result = await asyncio.to_thread(
+            store.save_email,
+            subject="[DIAGNOSTIC TEST]",
+            sender="diagnostic@test.local",
+            date=datetime.now().isoformat(),
+            body="This is a diagnostic test email to verify database writes work correctly.",
+            message_id=test_message_id,
+            account_id="diagnostic-test-account",
+            tenant_id="primary"
+        )
+
+        logger.info(f"[DIAGNOSTIC] save_email returned: {result}")
+        logger.info(f"[DIAGNOSTIC] result type: {type(result)}")
+        logger.info(f"[DIAGNOSTIC] result has 'data': {hasattr(result, 'data') if result else 'N/A'}")
+
+        if result:
+            diagnostic["test_write_result_type"] = str(type(result))
+            diagnostic["test_write_has_data_attr"] = hasattr(result, 'data')
+
+            if hasattr(result, 'data'):
+                diagnostic["test_write_data"] = result.data if result.data else "EMPTY"
+                diagnostic["test_write_data_length"] = len(result.data) if result.data else 0
+
+                if result.data and len(result.data) > 0:
+                    diagnostic["test_write_success"] = True
+                    diagnostic["test_email_id"] = test_message_id
+                    logger.info(f"[DIAGNOSTIC] ✓ Test write SUCCEEDED: {result.data}")
+                else:
+                    diagnostic["test_write_error"] = "Result.data is empty"
+                    logger.error(f"[DIAGNOSTIC] ✗ Test write FAILED: result.data is empty")
+            else:
+                diagnostic["test_write_error"] = "Result has no 'data' attribute"
+                logger.error(f"[DIAGNOSTIC] ✗ Test write FAILED: No 'data' attribute on result")
+        else:
+            diagnostic["test_write_error"] = "save_email returned None"
+            logger.error("[DIAGNOSTIC] ✗ Test write FAILED: save_email returned None")
+
+        # Verify test email was actually written
+        try:
+            verify_result = await asyncio.to_thread(
+                lambda: store.client.table("emails")
+                    .select("*")
+                    .eq("gmail_message_id", test_message_id)
+                    .execute()
+            )
+            if hasattr(verify_result, 'data') and verify_result.data:
+                diagnostic["test_email_verified_in_db"] = True
+                diagnostic["test_email_data"] = verify_result.data[0]
+                logger.info(f"[DIAGNOSTIC] ✓ Test email VERIFIED in database")
+            else:
+                diagnostic["test_email_verified_in_db"] = False
+                logger.error(f"[DIAGNOSTIC] ✗ Test email NOT FOUND in database after write!")
+        except Exception as e:
+            diagnostic["test_email_verification_error"] = str(e)
+            logger.error(f"[DIAGNOSTIC] Error verifying test email: {e}")
+
+    except Exception as e:
+        diagnostic["test_write_error"] = str(e)
+        logger.error(f"[DIAGNOSTIC] Exception during diagnostic: {e}")
+        import traceback
+        logger.error(f"[DIAGNOSTIC] Traceback: {traceback.format_exc()}")
+
+    logger.info("[DIAGNOSTIC] ========== DIAGNOSTIC CHECK COMPLETED ==========")
+    return diagnostic
 
 
 @app.api_route("/", methods=["GET", "HEAD"])
@@ -362,59 +502,59 @@ async def sync_now(account_id: str = Query("default")):
     - {"status": "error"} on failure (no secrets leaked)
     """
     try:
-        print(f"[SYNC] ========== SYNC REQUEST STARTED ==========")
-        print(f"[SYNC] Request account_id param: {account_id}")
+        logger.info("[SYNC] ========== SYNC REQUEST STARTED ==========")
+        logger.info(f"[SYNC] Request account_id param: {account_id}")
 
         effective_account_id = resolve_account_id(None, account_id)
-        print(f"[SYNC] Effective account_id: {effective_account_id}")
+        logger.info(f"[SYNC] Effective account_id: {effective_account_id}")
 
         # Load credentials from CredentialStore (primary) or fallback
         from backend.services.gmail_engine import run_engine
 
-        print(f"[SYNC] Loading credentials from CredentialStore...")
+        logger.info(f"[SYNC] Loading credentials from CredentialStore...")
         credential_store = CredentialStore(persistence)
         token_data = credential_store.load_credentials(effective_account_id)
 
         # No credentials or file fallback
         if not token_data and effective_account_id == "default":
-            print(f"[SYNC] No credentials found for '{effective_account_id}', trying file fallback...")
+            logger.info(f"[SYNC] No credentials found for '{effective_account_id}', trying file fallback...")
             path = os.getenv("GMAIL_CREDENTIALS_PATH", "")
             if path:
                 try:
                     with open(path) as f:
                         token_data = json.load(f)
-                    print(f"[SYNC] Loaded credentials from file: {path}")
+                    logger.info(f"[SYNC] Loaded credentials from file: {path}")
                 except Exception as e:
-                    print(f"[SYNC] File fallback failed: {e}")
+                    logger.info(f"[SYNC] File fallback failed: {e}")
                     pass
 
         if not token_data or 'token' not in token_data:
-            print(f"[SYNC] No valid credentials found for account: {effective_account_id}")
+            logger.info(f"[SYNC] No valid credentials found for account: {effective_account_id}")
             return {"status": "auth_required", "message": f"Please authenticate {effective_account_id}"}
 
-        print(f"[SYNC] Credentials loaded, fetching emails from Gmail...")
+        logger.info(f"[SYNC] Credentials loaded, fetching emails from Gmail...")
         # Execute Gmail fetch
         emails = await asyncio.to_thread(run_engine, token_data)
 
         # Handle auth errors
         if isinstance(emails, dict) and "__auth_error__" in emails:
-            print(f"[SYNC] Gmail authentication error detected")
+            logger.info(f"[SYNC] Gmail authentication error detected")
             return {"status": "auth_required", "message": "Gmail token expired or revoked"}
 
         if not emails:
-            print(f"[SYNC] No emails returned from Gmail")
+            logger.info(f"[SYNC] No emails returned from Gmail")
             return {"status": "no_new", "message": "No emails in inbox"}
 
-        print(f"[SYNC] Gmail fetch successful: {len(emails)} emails retrieved")
+        logger.info(f"[SYNC] Gmail fetch successful: {len(emails)} emails retrieved")
 
         # Store emails in Supabase
-        print(f"[SYNC] Initializing Supabase store...")
+        logger.info(f"[SYNC] Initializing Supabase store...")
         store = safe_get_store()
         if not store:
-            print(f"[SYNC] CRITICAL ERROR: Supabase store unavailable!")
+            logger.info(f"[SYNC] CRITICAL ERROR: Supabase store unavailable!")
             return {"status": "error", "message": "Database connection failed"}
 
-        print(f"[SYNC] Processing {len(emails)} emails for account: {effective_account_id}")
+        logger.info(f"[SYNC] Processing {len(emails)} emails for account: {effective_account_id}")
         stored_count = 0
         new_thread_ids = []
         for email in emails:
@@ -424,7 +564,7 @@ async def sync_now(account_id: str = Query("default")):
 
                 # Skip emails without Gmail ID to prevent duplicate inserts
                 if not m_id:
-                    print(f"[WARN] [SYNC] Skip email without gmail_message_id: {email.get('subject', 'No Subject')}")
+                    logger.warning(f"[SYNC] Skip email without gmail_message_id: {email.get('subject', 'No Subject')}")
                     continue
 
                 # CRITICAL FIX: Verify save_email actually succeeded
@@ -442,7 +582,7 @@ async def sync_now(account_id: str = Query("default")):
                 # Validate that save succeeded (result should have .data)
                 if result and hasattr(result, 'data') and result.data:
                     stored_count += 1
-                    print(f"[SYNC] ✓ Saved email {stored_count}/{len(emails)}: {email.get('subject', 'No Subject')[:50]}")
+                    logger.info(f"[SYNC] ✓ Saved email {stored_count}/{len(emails)}: {email.get('subject', 'No Subject')[:50]}")
 
                     # Enqueue AI summarization job for user-triggered sync (30-email limit)
                     if stored_count <= 30:
@@ -454,29 +594,29 @@ async def sync_now(account_id: str = Query("default")):
                                 job_type="email_summarize_v1"
                             )
                         except Exception as job_err:
-                            print(f"[WARN] [SYNC] Failed to enqueue AI job: {job_err}")
+                            logger.warning(f"[SYNC] Failed to enqueue AI job: {job_err}")
 
                     # Track thread_id for auto-summary
                     thread_id = f"{email.get('subject', '')}_{email.get('sender', '')}".replace(' ', '_')[:50]
                     new_thread_ids.append((thread_id, email))
                 else:
-                    print(f"[ERROR] [SYNC] Failed to save email (no data in response): {email.get('subject', 'No Subject')[:50]}")
-                    print(f"[ERROR] [SYNC] Save result: {result}")
+                    logger.error(f"[SYNC] Failed to save email (no data in response): {email.get('subject', 'No Subject')[:50]}")
+                    logger.error(f"[SYNC] Save result: {result}")
 
             except Exception as e:
-                print(f"[ERROR] [SYNC] Exception while storing email: {e}")
-                print(f"[ERROR] [SYNC] Email subject: {email.get('subject', 'No Subject')[:50]}")
+                logger.error(f"[SYNC] Exception while storing email: {e}")
+                logger.error(f"[SYNC] Email subject: {email.get('subject', 'No Subject')[:50]}")
                 import traceback
-                print(f"[ERROR] [SYNC] Traceback: {traceback.format_exc()}")
+                logger.error(f"[SYNC] Traceback: {traceback.format_exc()}")
 
-        print(f"[SYNC] Storage complete: {stored_count}/{len(emails)} emails saved successfully")
+        logger.info(f"[SYNC] Storage complete: {stored_count}/{len(emails)} emails saved successfully")
 
         # Emit socket event for new emails
         try:
             await sio.emit("emails_updated", {"count_new": stored_count})
-            print(f"[SYNC] Socket.IO event emitted: emails_updated (count: {stored_count})")
+            logger.info(f"[SYNC] Socket.IO event emitted: emails_updated (count: {stored_count})")
         except Exception as e:
-            print(f"[WARN] [SYNC] Failed to emit socket event: {e}")
+            logger.warning(f"[SYNC] Failed to emit socket event: {e}")
 
         # Auto-summary for NEW emails only (Mode A)
         auto_summary_enabled = os.getenv("AUTO_SUMMARY", "false").lower() == "true"
@@ -511,26 +651,26 @@ async def sync_now(account_id: str = Query("default")):
                         )
                     summarized_count += 1
                 except Exception as e:
-                    print(f"[WARN] [SYNC] Auto-summary failed for {thread_id}: {e}")
+                    logger.warning(f"[SYNC] Auto-summary failed for {thread_id}: {e}")
 
             # Emit socket event for summaries
             if summarized_count > 0:
                 try:
                     await sio.emit("summary_ready", {"count_summarized": summarized_count})
                 except Exception as e:
-                    print(f"[WARN] [SYNC] Failed to emit summary event: {e}")
+                    logger.warning(f"[SYNC] Failed to emit summary event: {e}")
 
-        print(f"[SYNC] ========== SYNC REQUEST COMPLETED ==========")
-        print(f"[SYNC] Final status: {stored_count} emails saved to database")
+        logger.info(f"[SYNC] ========== SYNC REQUEST COMPLETED ==========")
+        logger.info(f"[SYNC] Final status: {stored_count} emails saved to database")
         return {"status": "done", "count": stored_count, "processed_count": stored_count}
 
     except Exception as e:
-        print(f"[ERROR] [SYNC] ========== SYNC FAILED ==========")
-        print(f"[ERROR] [SYNC] Exception type: {type(e).__name__}")
-        print(f"[ERROR] [SYNC] Exception message: {str(e)}")
+        logger.error(f"[SYNC] ========== SYNC FAILED ==========")
+        logger.error(f"[SYNC] Exception type: {type(e).__name__}")
+        logger.error(f"[SYNC] Exception message: {str(e)}")
         import traceback
-        print(f"[ERROR] [SYNC] Full traceback:")
-        print(traceback.format_exc())
+        logger.error(f"[SYNC] Full traceback:")
+        logger.error(traceback.format_exc())
         return {"status": "error", "message": f"Sync failed: {type(e).__name__}"}
 
 
