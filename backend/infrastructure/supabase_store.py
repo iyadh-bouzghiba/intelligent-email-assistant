@@ -82,56 +82,42 @@ class SupabaseStore:
 
     def get_emails(self, limit=50, account_id=None):
         """
-        Fetches emails with AI summaries via LEFT JOIN.
+        Fetches emails from Supabase.
 
-        Returns emails with flattened summary fields:
-        - ai_summary_json: JSONB object {overview, action_items, urgency}
-        - ai_summary_text: Plain text overview
-        - ai_summary_model: Model used (e.g., "mistral-small-latest")
+        STABLE VERSION: Direct query without LEFT JOIN to ensure reliability.
+        AI summary integration can be added after verifying basic functionality.
 
         Args:
             limit: Maximum number of emails to return (default: 50)
             account_id: Filter by specific account (optional)
+
+        Returns:
+            Supabase response object with .data attribute containing email list
         """
+        import logging
+        logger = logging.getLogger("supabase_store")
+
         try:
-            # LEFT JOIN with email_ai_summaries to include summaries if available
-            query = self.client.table("emails").select(
-                """
-                *,
-                email_ai_summaries!left(
-                    summary_json,
-                    summary_text,
-                    model,
-                    updated_at
-                )
-                """
-            )
+            # Direct query without LEFT JOIN for maximum reliability
+            query = self.client.table("emails").select("*")
 
             # Filter by account_id if provided
             if account_id:
+                logger.info(f"[EMAILS] Filtering by account_id: {account_id}")
                 query = query.eq("account_id", account_id)
 
+            # Execute query with ordering and limit
             result = query.order("date", desc=True).limit(limit).execute()
 
-            # Flatten joined data for frontend consumption
-            if result.data:
-                for email in result.data:
-                    summaries = email.get("email_ai_summaries", [])
-                    if summaries and len(summaries) > 0:
-                        summary = summaries[0]
-                        email["ai_summary_json"] = summary.get("summary_json")
-                        email["ai_summary_text"] = summary.get("summary_text")
-                        email["ai_summary_model"] = summary.get("model")
-                    else:
-                        email["ai_summary_json"] = None
-                        email["ai_summary_text"] = None
-                        email["ai_summary_model"] = None
-                    # Remove nested array to keep response clean
-                    del email["email_ai_summaries"]
+            # Log result for debugging
+            email_count = len(result.data) if result.data else 0
+            logger.info(f"[EMAILS] Retrieved {email_count} emails from database")
 
             return result
         except Exception as e:
-            print(f"[WARN] Supabase email fetch error: {e}")
+            logger.error(f"[EMAILS] Supabase fetch error: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"[EMAILS] Traceback: {traceback.format_exc()}")
             return type('obj', (object,), {'data': []})
 
     def save_credential(self, provider: str, account_id: str, encrypted_payload: dict, scopes: list = None):
