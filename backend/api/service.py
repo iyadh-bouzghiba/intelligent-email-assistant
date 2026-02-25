@@ -501,15 +501,32 @@ async def list_emails(account_id: Optional[str] = Query(None)):
 @api_router.post("/sync-now")
 async def sync_now(account_id: str = Query("default")):
     """
-    User-driven Gmail sync endpoint.
+    User-driven Gmail sync endpoint with timeout protection.
     Executes ONE Gmail fetch + store cycle immediately.
 
     Returns status-only (no email contents):
     - {"status": "auth_required"} if no valid credentials
     - {"status": "no_new"} if no new emails found
     - {"status": "done", "count": N} if stored N emails
+    - {"status": "timeout"} if sync takes longer than 25 seconds
     - {"status": "error"} on failure (no secrets leaked)
     """
+    try:
+        # Wrap with 25s timeout (Render has 30s timeout - leave 5s buffer)
+        return await asyncio.wait_for(
+            _sync_now_impl(account_id),
+            timeout=25.0
+        )
+    except asyncio.TimeoutError:
+        logger.error("[SYNC] Request timed out after 25s")
+        return {"status": "timeout", "message": "Sync took too long, try reducing email count"}
+    except Exception as e:
+        logger.error(f"[SYNC] Top-level error: {type(e).__name__}: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+async def _sync_now_impl(account_id: str):
+    """Internal sync implementation (extracted for timeout wrapping)."""
     try:
         logger.info("[SYNC] ========== SYNC REQUEST STARTED ==========")
         logger.info(f"[SYNC] Request account_id param: {account_id}")
@@ -566,6 +583,8 @@ async def sync_now(account_id: str = Query("default")):
         logger.info(f"[SYNC] Processing {len(emails)} emails for account: {effective_account_id}")
         stored_count = 0
         new_thread_ids = []
+        ai_job_queue = []  # Collect emails for batch AI job enqueuing (non-blocking)
+
         for email in emails:
             try:
                 # Extract Gmail stable ID for deduplication
@@ -593,17 +612,9 @@ async def sync_now(account_id: str = Query("default")):
                     stored_count += 1
                     logger.info(f"[SYNC] ✓ Saved email {stored_count}/{len(emails)}: {email.get('subject', 'No Subject')[:50]}")
 
-                    # Enqueue AI summarization job for user-triggered sync (30-email limit)
+                    # Collect for batch AI job enqueuing (first 30 only)
                     if stored_count <= 30:
-                        try:
-                            await asyncio.to_thread(
-                                store.enqueue_ai_job,
-                                account_id=effective_account_id,
-                                gmail_message_id=m_id,
-                                job_type="email_summarize_v1"
-                            )
-                        except Exception as job_err:
-                            logger.warning(f"[SYNC] Failed to enqueue AI job: {job_err}")
+                        ai_job_queue.append((effective_account_id, m_id))
 
                     # Track thread_id for auto-summary
                     thread_id = f"{email.get('subject', '')}_{email.get('sender', '')}".replace(' ', '_')[:50]
@@ -619,6 +630,30 @@ async def sync_now(account_id: str = Query("default")):
                 logger.error(f"[SYNC] Traceback: {traceback.format_exc()}")
 
         logger.info(f"[SYNC] Storage complete: {stored_count}/{len(emails)} emails saved successfully")
+
+        # CRITICAL: Enqueue AI jobs AFTER email loop (non-blocking batch)
+        if ai_job_queue:
+            async def enqueue_batch():
+                """Fire-and-forget AI job enqueueing."""
+                try:
+                    tasks = [
+                        asyncio.to_thread(
+                            store.enqueue_ai_job,
+                            account_id=acc_id,
+                            gmail_message_id=msg_id,
+                            job_type="email_summarize_v1"
+                        )
+                        for acc_id, msg_id in ai_job_queue
+                    ]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    success_count = sum(1 for r in results if r and not isinstance(r, Exception))
+                    logger.info(f"[SYNC] Enqueued {success_count}/{len(ai_job_queue)} AI jobs")
+                except Exception as e:
+                    logger.warning(f"[SYNC] Batch AI job enqueue failed: {e}")
+
+            # Fire-and-forget (doesn't block sync response)
+            asyncio.create_task(enqueue_batch())
+            logger.info(f"[SYNC] Batch AI job enqueuing started ({len(ai_job_queue)} jobs)")
 
         # Emit socket event for new emails
         try:
@@ -681,6 +716,71 @@ async def sync_now(account_id: str = Query("default")):
         logger.error(f"[SYNC] Full traceback:")
         logger.error(traceback.format_exc())
         return {"status": "error", "message": f"Sync failed: {type(e).__name__}"}
+
+
+@api_router.get("/api/emails/{gmail_message_id}/summary")
+async def get_email_summary(
+    gmail_message_id: str,
+    account_id: str = Query("default")
+):
+    """
+    Fetch AI summary for specific email.
+
+    Returns:
+        - summary_json: {overview, action_items, urgency} if ready
+        - status: "ready"|"processing"|"failed"|"not_found"
+    """
+    effective_account_id = resolve_account_id(None, account_id)
+    store = safe_get_store()
+    if not store:
+        return {"status": "error", "message": "Store unavailable"}
+
+    try:
+        # Query email_ai_summaries table
+        response = await asyncio.to_thread(
+            lambda: store.client.table("email_ai_summaries")
+                .select("*")
+                .eq("account_id", effective_account_id)
+                .eq("gmail_message_id", gmail_message_id)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+        )
+
+        if response.data and len(response.data) > 0:
+            summary = response.data[0]
+            return {
+                "status": "ready",
+                "summary_json": summary.get("summary_json"),
+                "summary_text": summary.get("summary_text"),
+                "model": summary.get("model"),
+                "created_at": summary.get("created_at")
+            }
+
+        # Check if job is queued/running
+        job_response = await asyncio.to_thread(
+            lambda: store.client.table("ai_jobs")
+                .select("status")
+                .eq("account_id", effective_account_id)
+                .eq("gmail_message_id", gmail_message_id)
+                .eq("job_type", "email_summarize_v1")
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+        )
+
+        if job_response.data and len(job_response.data) > 0:
+            job_status = job_response.data[0].get("status")
+            if job_status in ["queued", "running"]:
+                return {"status": "processing"}
+            elif job_status in ["failed", "dead"]:
+                return {"status": "failed"}
+
+        return {"status": "not_found"}
+
+    except Exception as e:
+        logger.error(f"[API] Summary fetch error: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 @api_router.get("/threads")
