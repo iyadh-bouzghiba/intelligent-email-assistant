@@ -850,44 +850,105 @@ export const App = () => {
 
                   <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      {/* NEW: Manual Summarization Button (only if no AI summary exists) */}
+                      {/* ENHANCED: Manual Summarization Button with Tooltip (only if no AI summary exists) */}
                       {!item.ai_summary_text && item.gmail_message_id && (
-                        <button
-                          onClick={async () => {
-                            console.log('[SUMMARIZE] Requesting:', item.gmail_message_id);
+                        <div className="relative group/tooltip">
+                          <button
+                            onClick={async () => {
+                              console.log('[SUMMARIZE] Requesting:', item.gmail_message_id);
 
-                            // Optimistic UI update
-                            const updatedBriefings = briefings.map(b =>
-                              b.gmail_message_id === item.gmail_message_id
-                                ? { ...b, summary: '⏳ Generating AI summary...' }
-                                : b
-                            );
-                            setBriefings(updatedBriefings);
+                              // Optimistic UI update with loading state
+                              const updatedBriefings = briefings.map(b =>
+                                b.gmail_message_id === item.gmail_message_id
+                                  ? {
+                                      ...b,
+                                      summary: '⏳ Generating AI summary with Mistral AI...',
+                                      _summarizing: true  // Track loading state
+                                    }
+                                  : b
+                              );
+                              setBriefings(updatedBriefings);
 
-                            // Call API to enqueue summarization job
-                            const result = await apiService.summarizeEmail(
-                              item.gmail_message_id!,
-                              activeEmail || 'default'
-                            );
+                              try {
+                                // Call API to enqueue summarization job
+                                const result = await apiService.summarizeEmail(
+                                  item.gmail_message_id!,
+                                  activeEmail || 'default'
+                                );
 
-                            // Handle result
-                            if (result.status === 'queued') {
-                              console.log('[SUMMARIZE] Job queued:', result.job_id);
-                              // Refresh after 5 seconds to show completed summary
-                              setTimeout(() => fetchEmails(activeEmail), 5000);
-                            } else if (result.status === 'no_mistral_key') {
-                              alert('AI summarization requires MISTRAL_API_KEY configuration.');
-                              setBriefings(briefings); // Revert optimistic update
-                            } else {
-                              console.warn('[SUMMARIZE] Failed:', result);
-                              setBriefings(briefings); // Revert optimistic update
-                            }
-                          }}
-                          className="text-[10px] font-black text-indigo-500 hover:text-indigo-400 uppercase tracking-[0.2em] flex items-center gap-2 transition-all group/btn"
-                        >
-                          <Sparkles size={14} className="group-hover/btn:rotate-12 transition-transform" />
-                          Summarize Email
-                        </button>
+                                // Handle result
+                                if (result.status === 'queued') {
+                                  console.log('[SUMMARIZE] Job queued:', result.job_id);
+
+                                  // Show success feedback
+                                  const feedbackBriefings = briefings.map(b =>
+                                    b.gmail_message_id === item.gmail_message_id
+                                      ? { ...b, summary: '✓ AI summary queued! Refreshing in 5 seconds...' }
+                                      : b
+                                  );
+                                  setBriefings(feedbackBriefings);
+
+                                  // Refresh after 5 seconds to show completed summary
+                                  setTimeout(() => {
+                                    fetchEmails(activeEmail);
+                                  }, 5000);
+
+                                } else if (result.status === 'no_mistral_key') {
+                                  console.error('[SUMMARIZE] MISTRAL_API_KEY not configured');
+                                  const errorBriefings = briefings.map(b =>
+                                    b.gmail_message_id === item.gmail_message_id
+                                      ? { ...b, summary: '❌ AI summarization unavailable (API key required)' }
+                                      : b
+                                  );
+                                  setBriefings(errorBriefings);
+
+                                  setTimeout(() => setBriefings(briefings), 3000);
+
+                                } else if (result.status === 'email_not_found') {
+                                  console.error('[SUMMARIZE] Email not found in database');
+                                  setBriefings(briefings); // Revert
+
+                                } else {
+                                  console.warn('[SUMMARIZE] Failed:', result);
+                                  const errorBriefings = briefings.map(b =>
+                                    b.gmail_message_id === item.gmail_message_id
+                                      ? { ...b, summary: '❌ Summarization failed. Please try again.' }
+                                      : b
+                                  );
+                                  setBriefings(errorBriefings);
+
+                                  setTimeout(() => setBriefings(briefings), 3000);
+                                }
+
+                              } catch (error) {
+                                console.error('[SUMMARIZE] Network error:', error);
+                                const errorBriefings = briefings.map(b =>
+                                  b.gmail_message_id === item.gmail_message_id
+                                    ? { ...b, summary: '❌ Network error. Check connection and try again.' }
+                                    : b
+                                );
+                                setBriefings(errorBriefings);
+
+                                setTimeout(() => setBriefings(briefings), 3000);
+                              }
+                            }}
+                            className="text-[10px] font-black text-indigo-500 hover:text-indigo-400 uppercase tracking-[0.2em] flex items-center gap-2 transition-all group/btn"
+                            title="This email wasn't auto-summarized. Click to generate AI summary."
+                          >
+                            <Sparkles size={14} className="group-hover/btn:rotate-12 transition-transform" />
+                            Summarize Email
+                          </button>
+
+                          {/* Tooltip explaining why button appears */}
+                          <div className="absolute bottom-full left-0 mb-2 hidden group-hover/tooltip:block w-64 bg-slate-900 border border-indigo-500/30 rounded-lg p-3 shadow-xl z-50">
+                            <p className="text-[10px] text-slate-300 leading-relaxed">
+                              <span className="text-indigo-400 font-bold">Auto-summary not available.</span>
+                              <br />
+                              This email wasn't included in automatic batch processing. Click to generate AI summary using Mistral AI.
+                            </p>
+                            <div className="absolute top-full left-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-indigo-500/30"></div>
+                          </div>
+                        </div>
                       )}
                       <button
                         onClick={() => alert(`Strategic context expansion for "${item.subject}" is coming soon.`)}
@@ -903,7 +964,33 @@ export const App = () => {
                   </div>
                 </motion.div>
               ))
-            ) : connectedAccounts.length === 0 && !error ? (
+            ) : null}
+
+            {/* BATCH LIMIT INDICATOR: Inform users about auto-summary limits */}
+            {currentItems.length > 30 && (
+              <div className="col-span-full mt-8 mb-4 p-6 rounded-2xl bg-gradient-to-r from-indigo-500/10 to-violet-500/10 border border-indigo-500/20">
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-indigo-600/20 flex items-center justify-center border border-indigo-500/30">
+                    <Sparkles size={20} className="text-indigo-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-black text-indigo-300 mb-1 uppercase tracking-wide">
+                      Auto-Summary Batch Limit Reached
+                    </h4>
+                    <p className="text-xs text-slate-400 leading-relaxed mb-3">
+                      You have <span className="text-white font-bold">{currentItems.length} emails</span> in this account.
+                      Only the <span className="text-indigo-400 font-bold">first 30 emails</span> receive automatic AI summaries to optimize costs.
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      <strong className="text-indigo-400">💡 Tip:</strong> Use the <strong className="text-white">"Summarize Email"</strong> button
+                      to manually generate AI summaries for emails #{31} onwards.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {connectedAccounts.length === 0 && !error ? (
               /* ONBOARDING GUIDE: Professional zero-account state with step-by-step instructions */
               <div className="col-span-full py-16 flex flex-col items-center gap-8 text-center max-w-4xl mx-auto">
                 <div className="w-28 h-28 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-2xl">
