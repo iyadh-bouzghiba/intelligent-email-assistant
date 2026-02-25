@@ -102,8 +102,38 @@ export const App = () => {
 
       const loadedAccounts: AccountInfo[] = accountsData.accounts || [];
 
+      // Fetch AI summaries for emails (in parallel)
+      const apiBase = import.meta.env.VITE_API_BASE?.replace(/\/$/, "") || "";
+      const effectiveAccountId = accountIdToUse || "default";
+
+      const emailsWithSummaries = await Promise.all(
+        sorted.map(async (email: any) => {
+          if (!email.gmail_message_id) return email;
+
+          try {
+            const summaryResponse = await fetch(
+              `${apiBase}/api/emails/${encodeURIComponent(email.gmail_message_id)}/summary?account_id=${effectiveAccountId}`
+            );
+            const summary = await summaryResponse.json();
+
+            if (summary.status === "ready") {
+              return {
+                ...email,
+                ai_summary_json: summary.summary_json,
+                ai_summary_text: summary.summary_text,
+                ai_summary_model: summary.model
+              };
+            }
+          } catch (err) {
+            console.warn(`Failed to fetch summary for ${email.gmail_message_id}`);
+          }
+
+          return email;
+        })
+      );
+
       // Map DB schema to UI Briefing model
-      const mapped: Briefing[] = sorted.map((e: any) => {
+      const mapped: Briefing[] = emailsWithSummaries.map((e: any) => {
         const isoDate = e.date ?? e.created_at;
         let formattedDate = 'Unknown time';
         try {
