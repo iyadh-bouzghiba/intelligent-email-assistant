@@ -120,6 +120,101 @@ class SupabaseStore:
             logger.error(f"[EMAILS] Traceback: {traceback.format_exc()}")
             return type('obj', (object,), {'data': []})
 
+    def get_emails_with_summaries(self, limit=50, account_id=None):
+        """
+        Fetches emails with AI summaries via LEFT JOIN (OPTIMIZED VERSION).
+
+        This eliminates the N+1 query pattern by fetching emails and summaries
+        in a single database query.
+
+        Args:
+            limit: Maximum number of emails to return (default: 50)
+            account_id: Filter by specific account (optional)
+
+        Returns:
+            List of email dictionaries with flattened summary fields:
+            - ai_summary_json: JSONB object {overview, action_items, urgency}
+            - ai_summary_text: Plain text overview
+            - ai_summary_model: Model used (e.g., "mistral-small-latest")
+        """
+        import logging
+        logger = logging.getLogger("supabase_store")
+
+        try:
+            # Build query with LEFT JOIN to email_ai_summaries
+            # CRITICAL: Use proper Supabase syntax to avoid empty responses
+            query = self.client.table("emails").select(
+                "*",
+                count=None  # Don't include count in response
+            )
+
+            # Filter by account_id if provided
+            if account_id:
+                logger.info(f"[EMAILS] Filtering by account_id: {account_id}")
+                query = query.eq("account_id", account_id)
+
+            # Execute query with ordering and limit
+            result = query.order("date", desc=True).limit(limit).execute()
+
+            if not result.data:
+                logger.info("[EMAILS] No emails found")
+                return []
+
+            # Fetch AI summaries separately for these emails (more reliable than LEFT JOIN)
+            email_ids = [email.get("gmail_message_id") for email in result.data if email.get("gmail_message_id")]
+
+            # Build a map of gmail_message_id -> summary
+            summaries_map = {}
+            if email_ids:
+                try:
+                    summaries_query = self.client.table("email_ai_summaries").select("*")
+
+                    # Filter by account_id and gmail_message_ids
+                    if account_id:
+                        summaries_query = summaries_query.eq("account_id", account_id)
+
+                    summaries_query = summaries_query.in_("gmail_message_id", email_ids)
+
+                    summaries_result = summaries_query.execute()
+
+                    # Build map (use most recent summary if multiple exist)
+                    for summary in (summaries_result.data or []):
+                        msg_id = summary.get("gmail_message_id")
+                        if msg_id and msg_id not in summaries_map:
+                            summaries_map[msg_id] = summary
+
+                    logger.info(f"[EMAILS] Fetched {len(summaries_map)} summaries for {len(email_ids)} emails")
+
+                except Exception as summary_err:
+                    logger.warning(f"[EMAILS] Summary fetch failed: {type(summary_err).__name__}: {summary_err}")
+                    # Continue without summaries rather than failing
+
+            # Merge summaries into email objects
+            enriched_emails = []
+            for email in result.data:
+                msg_id = email.get("gmail_message_id")
+                summary = summaries_map.get(msg_id) if msg_id else None
+
+                if summary:
+                    email["ai_summary_json"] = summary.get("summary_json")
+                    email["ai_summary_text"] = summary.get("summary_text")
+                    email["ai_summary_model"] = summary.get("model")
+                else:
+                    email["ai_summary_json"] = None
+                    email["ai_summary_text"] = None
+                    email["ai_summary_model"] = None
+
+                enriched_emails.append(email)
+
+            logger.info(f"[EMAILS] Returning {len(enriched_emails)} emails with summary data")
+            return enriched_emails
+
+        except Exception as e:
+            logger.error(f"[EMAILS] Fetch with summaries error: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"[EMAILS] Traceback: {traceback.format_exc()}")
+            return []
+
     def save_credential(self, provider: str, account_id: str, encrypted_payload: dict, scopes: list = None):
         """
         Upserts encrypted OAuth credentials to Supabase.

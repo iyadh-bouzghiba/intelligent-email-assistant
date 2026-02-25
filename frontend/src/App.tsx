@@ -89,7 +89,7 @@ export const App = () => {
     const accountIdToUse = overrideAccountId !== undefined ? overrideAccountId : activeEmail;
     try {
       const [emailData, accountsData] = await Promise.all([
-        apiService.listEmails(accountIdToUse ?? undefined),
+        apiService.listEmailsWithSummaries(accountIdToUse ?? undefined),
         apiService.listAccounts()
       ]);
 
@@ -102,38 +102,11 @@ export const App = () => {
 
       const loadedAccounts: AccountInfo[] = accountsData.accounts || [];
 
-      // Fetch AI summaries for emails (in parallel)
-      const apiBase = import.meta.env.VITE_API_BASE?.replace(/\/$/, "") || "";
-      const effectiveAccountId = accountIdToUse || "default";
-
-      const emailsWithSummaries = await Promise.all(
-        sorted.map(async (email: any) => {
-          if (!email.gmail_message_id) return email;
-
-          try {
-            const summaryResponse = await fetch(
-              `${apiBase}/api/emails/${encodeURIComponent(email.gmail_message_id)}/summary?account_id=${effectiveAccountId}`
-            );
-            const summary = await summaryResponse.json();
-
-            if (summary.status === "ready") {
-              return {
-                ...email,
-                ai_summary_json: summary.summary_json,
-                ai_summary_text: summary.summary_text,
-                ai_summary_model: summary.model
-              };
-            }
-          } catch (err) {
-            console.warn(`Failed to fetch summary for ${email.gmail_message_id}`);
-          }
-
-          return email;
-        })
-      );
+      // Emails already include AI summary fields from unified endpoint
+      // No N+1 query pattern - summaries are fetched in batch on backend
 
       // Map DB schema to UI Briefing model
-      const mapped: Briefing[] = emailsWithSummaries.map((e: any) => {
+      const mapped: Briefing[] = sorted.map((e: any) => {
         const isoDate = e.date ?? e.created_at;
         let formattedDate = 'Unknown time';
         try {
@@ -276,20 +249,11 @@ export const App = () => {
       // Could refetch thread data if needed
     };
 
-    // NEW: Handle real-time AI summary completion events
-    const handleAiSummaryReady = (data: { account_id: string; gmail_message_id: string; timestamp: string }) => {
-      console.log("[AI-SUMMARY] New summary ready:", data);
-
-      // Only refresh if the summary is for the currently active account
-      if (activeEmailRef.current === data.account_id || !activeEmailRef.current) {
-        console.log("[AI-SUMMARY] Refreshing emails to show new summary");
-        fetchEmails(activeEmailRef.current);
-      }
-    };
+    // Note: ai_summary_ready event removed - worker runs in separate process from Socket.IO
+    // Frontend uses unified /api/emails-with-summaries endpoint that fetches summaries in batch
 
     websocketService.on("emails_updated", handleEmailsUpdated);
     websocketService.on("summary_ready", handleSummaryReady);
-    websocketService.on("ai_summary_ready", handleAiSummaryReady);
 
     // Auto-sync scheduler (120s interval, respects visibility + backoff)
     const SYNC_INTERVAL = 120000; // 120s
@@ -311,7 +275,6 @@ export const App = () => {
     return () => {
       websocketService.off("emails_updated", handleEmailsUpdated);
       websocketService.off("summary_ready", handleSummaryReady);
-      websocketService.off("ai_summary_ready", handleAiSummaryReady);
       clearInterval(autoSyncInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
