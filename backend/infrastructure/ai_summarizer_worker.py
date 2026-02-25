@@ -350,14 +350,23 @@ Respond ONLY with valid JSON matching this exact structure.
         """Mark job as succeeded."""
         try:
             now_iso = datetime.now(timezone.utc).isoformat()
-            self.store.client.table("ai_jobs").update({
+            result = self.store.client.table("ai_jobs").update({
                 "status": "succeeded",
                 "updated_at": now_iso
             }).eq("id", job_id).execute()
 
+            # CRITICAL: Verify the update actually affected a row
+            if not result.data or len(result.data) == 0:
+                raise RuntimeError(
+                    f"Job {job_id} status update returned no rows - update may have failed silently"
+                )
+
+            logger.info(f"[AI-WORKER] Job {job_id} marked succeeded")
+
         except Exception as e:
             err_type = type(e).__name__
-            logger.error(f"[AI-WORKER] Job success update failed for {job_id} (type={err_type})")
+            logger.error(f"[AI-WORKER] Job success update failed for {job_id} (type={err_type}): {str(e)}")
+            raise  # RE-RAISE to prevent infinite loop
 
     def _mark_job_failed(self, job_id: str, attempts: int, error_code: str):
         """
@@ -479,20 +488,12 @@ Respond ONLY with valid JSON matching this exact structure.
             # 7. Mark succeeded
             self._mark_job_succeeded(job_id)
 
-            # 8. Emit Socket.IO event for real-time frontend updates
-            try:
-                from backend.api.service import sio
-                import asyncio
-
-                asyncio.run(sio.emit("ai_summary_ready", {
-                    "account_id": account_id,
-                    "gmail_message_id": gmail_message_id,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }))
-                logger.info(f"[AI-WORKER] Socket.IO event emitted for {gmail_message_id[:8]}...")
-            except Exception as e:
-                # Non-critical - Socket.IO emission failure shouldn't break worker
-                logger.warning(f"[AI-WORKER] Socket.IO emit failed: {type(e).__name__}")
+            # 8. Socket.IO event emission DISABLED
+            # REASON: Worker runs in separate process from FastAPI/Socket.IO server
+            # Using asyncio.run() in sync context causes event loop issues
+            # Frontend polls for summary updates instead (simpler and more reliable)
+            # TODO: Consider database trigger or Redis pub/sub for real-time notifications
+            logger.info(f"[AI-WORKER] Job completed for {gmail_message_id[:8]}... (summary written to DB)")
 
         except Exception as e:
             err_type = type(e).__name__

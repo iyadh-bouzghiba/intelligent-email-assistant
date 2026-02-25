@@ -74,7 +74,7 @@ app.add_middleware(
 )
 
 # ------------------------------------------------------------------
-# SOCKET.IO (WEBSOCKET ONLY - RENDER SAFE)
+# SOCKET.IO (WEBSOCKET + POLLING FALLBACK)
 # ------------------------------------------------------------------
 sio = socketio.AsyncServer(
     async_mode="asgi",
@@ -82,9 +82,9 @@ sio = socketio.AsyncServer(
         "https://intelligent-email-frontend.onrender.com",
         "http://localhost:5173",
     ],
-    transports=["websocket"],          # [!] CRITICAL FIX
-    ping_timeout=20,
-    ping_interval=10,
+    transports=["websocket", "polling"],  # FIXED: Enable polling fallback for stability
+    ping_timeout=30,                      # FIXED: Increased to 30s (Render's idle timeout limit)
+    ping_interval=15,                     # FIXED: Increased to 15s for high-latency networks
     logger=True,
     engineio_logger=True,
 )
@@ -493,6 +493,41 @@ async def list_emails(account_id: Optional[str] = Query(None)):
         return response.data
     except Exception as e:
         logger.error(f"[API] /emails fetch error: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"[API] Traceback: {traceback.format_exc()}")
+        return []
+
+
+@api_router.get("/emails-with-summaries")
+async def list_emails_with_summaries(account_id: Optional[str] = Query(None)):
+    """
+    OPTIMIZED endpoint that fetches emails with AI summaries in batch.
+
+    This eliminates the N+1 query pattern where frontend makes separate requests
+    for each email's summary. Instead, emails and summaries are fetched together.
+
+    Args:
+        account_id: Optional filter by specific account (e.g., user@gmail.com)
+
+    Returns:
+        List of email objects with merged AI summary fields:
+        - ai_summary_json: {overview, action_items, urgency} or null
+        - ai_summary_text: Plain text overview or null
+        - ai_summary_model: Model used or null
+    """
+    store = safe_get_store()
+    if not store:
+        logger.warning("[API] /emails-with-summaries called but store unavailable")
+        return []
+
+    try:
+        logger.info(f"[API] /emails-with-summaries called with account_id={account_id}")
+        emails = await asyncio.to_thread(store.get_emails_with_summaries, account_id=account_id)
+        email_count = len(emails) if emails else 0
+        logger.info(f"[API] /emails-with-summaries returning {email_count} emails")
+        return emails
+    except Exception as e:
+        logger.error(f"[API] /emails-with-summaries fetch error: {type(e).__name__}: {e}")
         import traceback
         logger.error(f"[API] Traceback: {traceback.format_exc()}")
         return []

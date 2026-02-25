@@ -121,6 +121,19 @@ export const apiService = {
         }
     },
 
+    listEmailsWithSummaries: async (account_id?: string): Promise<any[]> => {
+        const params = account_id ? { account_id } : {};
+        try {
+            const response = await api.get(`${API_ROOT}/emails-with-summaries`, { params });
+            console.log(`📡 API: Fetched ${response.data?.length || 0} emails with summaries`);
+            return response.data;
+        } catch (error) {
+            console.warn("📡 API: emails-with-summaries unreachable, falling back to listEmails", error);
+            // Fallback to old endpoint if new one fails
+            return apiService.listEmails(account_id);
+        }
+    },
+
     // OAuth — root endpoint
     getGoogleAuthUrl: (): string => {
         return `${BASE_URL}/auth/google`;
