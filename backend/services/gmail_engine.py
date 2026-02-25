@@ -106,19 +106,29 @@ def run_engine(token_data: dict):
 
                 # Use Gmail internalDate (ms since epoch) as authoritative timestamp
                 internal_date_ms = msg.get('internalDate')
+                timestamp_source = "unknown"
+
                 if internal_date_ms:
                     from datetime import datetime
                     date_iso = datetime.utcfromtimestamp(int(internal_date_ms) / 1000).isoformat() + 'Z'
+                    timestamp_source = "internalDate"
+                    print(f"[TIMESTAMP-DEBUG] {subject[:30]}... | internalDate: {internal_date_ms}ms | UTC: {date_iso} | Source: {timestamp_source}")
                 elif date_header:
                     # Fallback: parse Date header (best-effort)
                     try:
                         from email.utils import parsedate_to_datetime
                         parsed_dt = parsedate_to_datetime(date_header)
                         date_iso = parsed_dt.isoformat()
-                    except:
+                        timestamp_source = "date_header"
+                        print(f"[TIMESTAMP-DEBUG] {subject[:30]}... | Date header: {date_header} | UTC: {date_iso} | Source: {timestamp_source}")
+                    except Exception as e:
                         date_iso = datetime.utcnow().isoformat() + 'Z'
+                        timestamp_source = "fallback_now"
+                        print(f"[TIMESTAMP-DEBUG] {subject[:30]}... | Date parse failed: {e} | UTC: {date_iso} | Source: {timestamp_source}")
                 else:
                     date_iso = datetime.utcnow().isoformat() + 'Z'
+                    timestamp_source = "fallback_now"
+                    print(f"[TIMESTAMP-DEBUG] {subject[:30]}... | No timestamp found | UTC: {date_iso} | Source: {timestamp_source}")
 
                 # Extract & Clean Body
                 raw_body = get_message_body(payload)
