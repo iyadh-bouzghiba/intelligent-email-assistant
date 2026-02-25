@@ -291,9 +291,18 @@ def run_worker_loop():
                             date=date_val,
                             body=email.get('body', ''),  # INGEST-FIX-02: Use Gmail body, not AI summary
                             message_id=m_id,
-                            tenant_id="primary"
+                            tenant_id="primary",
+                            account_id=account_id
                         )
                         written_count += 1
+
+                        # CRITICAL: Enqueue AI summarization job for recent emails only (30-email limit)
+                        if written_count <= 30:
+                            control.store.enqueue_ai_job(
+                                account_id=account_id,
+                                gmail_message_id=m_id,
+                                job_type="email_summarize_v1"
+                            )
 
                     # Sleep between batches for backpressure
                     if i + batch_size < len(emails):

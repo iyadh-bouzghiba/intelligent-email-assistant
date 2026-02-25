@@ -82,21 +82,54 @@ class SupabaseStore:
 
     def get_emails(self, limit=50, account_id=None):
         """
-        Fetches latest emails from the source of truth.
-        Orders by 'date' (actual Gmail timestamp) DESC, not created_at.
+        Fetches emails with AI summaries via LEFT JOIN.
+
+        Returns emails with flattened summary fields:
+        - ai_summary_json: JSONB object {overview, action_items, urgency}
+        - ai_summary_text: Plain text overview
+        - ai_summary_model: Model used (e.g., "mistral-small-latest")
 
         Args:
             limit: Maximum number of emails to return (default: 50)
             account_id: Filter by specific account (optional)
         """
         try:
-            query = self.client.table("emails").select("*")
+            # LEFT JOIN with email_ai_summaries to include summaries if available
+            query = self.client.table("emails").select(
+                """
+                *,
+                email_ai_summaries!left(
+                    summary_json,
+                    summary_text,
+                    model,
+                    updated_at
+                )
+                """
+            )
 
             # Filter by account_id if provided
             if account_id:
                 query = query.eq("account_id", account_id)
 
-            return query.order("date", desc=True).limit(limit).execute()
+            result = query.order("date", desc=True).limit(limit).execute()
+
+            # Flatten joined data for frontend consumption
+            if result.data:
+                for email in result.data:
+                    summaries = email.get("email_ai_summaries", [])
+                    if summaries and len(summaries) > 0:
+                        summary = summaries[0]
+                        email["ai_summary_json"] = summary.get("summary_json")
+                        email["ai_summary_text"] = summary.get("summary_text")
+                        email["ai_summary_model"] = summary.get("model")
+                    else:
+                        email["ai_summary_json"] = None
+                        email["ai_summary_text"] = None
+                        email["ai_summary_model"] = None
+                    # Remove nested array to keep response clean
+                    del email["email_ai_summaries"]
+
+            return result
         except Exception as e:
             print(f"[WARN] Supabase email fetch error: {e}")
             return type('obj', (object,), {'data': []})
@@ -249,3 +282,41 @@ class SupabaseStore:
             print(f"[OK] [SUPABASE] Deleted credentials (provider={provider}, account_id={account_id})")
         except Exception as e:
             print(f"[WARN] Supabase credential delete error: {e}")
+
+    def enqueue_ai_job(self, account_id: str, gmail_message_id: str, job_type: str = "email_summarize_v1"):
+        """
+        Enqueue AI summarization job (idempotent via unique index).
+
+        Args:
+            account_id: Gmail account identifier
+            gmail_message_id: Gmail's stable message ID
+            job_type: Job type identifier (default: "email_summarize_v1")
+
+        Returns:
+            job_id (str) if successful, None if failed
+        """
+        try:
+            payload = {
+                "job_type": job_type,
+                "account_id": account_id,
+                "gmail_message_id": gmail_message_id,
+                "status": "queued",
+                "attempts": 0,
+                "run_after": datetime.utcnow().isoformat(),
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }
+
+            result = self.client.table("ai_jobs").upsert(
+                payload,
+                on_conflict="job_type,account_id,gmail_message_id"
+            ).execute()
+
+            if result.data and len(result.data) > 0:
+                job_id = result.data[0].get("id")
+                print(f"[AI-ENQUEUE] Job {job_id} queued for {account_id}/{gmail_message_id[:8]}...")
+                return job_id
+            return None
+        except Exception as e:
+            print(f"[WARN] AI job enqueue failed: {e}")
+            return None

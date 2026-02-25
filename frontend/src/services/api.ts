@@ -155,4 +155,22 @@ export const apiService = {
             return { status: "error" };
         }
     },
+
+    summarizeEmail: async (
+        gmail_message_id: string,
+        account_id: string
+    ): Promise<{ status: string; job_id?: string; message?: string }> => {
+        try {
+            const response = await api.post(
+                `${API_ROOT}/emails/${encodeURIComponent(gmail_message_id)}/summarize`,
+                null,
+                { params: { account_id } }
+            );
+            console.log(`📡 API: Email summarization queued for ${gmail_message_id}`);
+            return response.data;
+        } catch (error) {
+            console.warn(`📡 API: Email summarization failed for ${gmail_message_id}`, error);
+            return { status: "error", message: "Network error" };
+        }
+    },
 };

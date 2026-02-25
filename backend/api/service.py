@@ -421,6 +421,16 @@ async def sync_now(account_id: str = Query("default")):
                     tenant_id="primary"
                 )
                 stored_count += 1
+
+                # Enqueue AI summarization job for user-triggered sync (30-email limit)
+                if stored_count <= 30:
+                    await asyncio.to_thread(
+                        store.enqueue_ai_job,
+                        account_id=effective_account_id,
+                        gmail_message_id=m_id,
+                        job_type="email_summarize_v1"
+                    )
+
                 # Track thread_id for auto-summary
                 thread_id = f"{email.get('subject', '')}_{email.get('sender', '')}".replace(' ', '_')[:50]
                 new_thread_ids.append((thread_id, email))
@@ -711,6 +721,65 @@ async def disconnect_all_accounts():
         return {"status": "success", "deleted_count": deleted_count}
     except Exception as e:
         print(f"[ERROR] [CLEANUP] Failed to delete credentials: {e}")
+        return {"status": "error", "message": str(e)}
+
+@api_router.post("/api/emails/{gmail_message_id}/summarize")
+async def summarize_email_by_id(
+    gmail_message_id: str,
+    account_id: str = Query("default")
+):
+    """
+    Enqueue AI summarization job for specific email.
+
+    User-triggered action when clicking "Summarize Email" button.
+
+    Args:
+        gmail_message_id: Gmail's stable message ID
+        account_id: Account identifier (from query param)
+
+    Returns:
+        {"status": "queued", "job_id": "..."} on success
+        {"status": "no_mistral_key"} if API key missing
+        {"status": "email_not_found"} if email doesn't exist
+        {"status": "error"} on failure
+    """
+    # Check if Mistral API key configured
+    if not os.getenv("MISTRAL_API_KEY"):
+        return {"status": "no_mistral_key"}
+
+    effective_account_id = resolve_account_id(None, account_id)
+    store = safe_get_store()
+    if not store:
+        return {"status": "error", "message": "Store unavailable"}
+
+    try:
+        # Verify email exists for this account
+        response = await asyncio.to_thread(
+            lambda: store.client.table("emails")
+                .select("id")
+                .eq("account_id", effective_account_id)
+                .eq("gmail_message_id", gmail_message_id)
+                .execute()
+        )
+
+        if not response.data or len(response.data) == 0:
+            return {"status": "email_not_found"}
+
+        # Enqueue AI summarization job
+        job_id = await asyncio.to_thread(
+            store.enqueue_ai_job,
+            account_id=effective_account_id,
+            gmail_message_id=gmail_message_id,
+            job_type="email_summarize_v1"
+        )
+
+        if job_id:
+            return {"status": "queued", "job_id": job_id}
+        else:
+            return {"status": "error", "message": "Job enqueue failed"}
+
+    except Exception as e:
+        print(f"[ERROR] Manual summarization failed: {e}")
         return {"status": "error", "message": str(e)}
 
 # Include API router after all routes are defined
