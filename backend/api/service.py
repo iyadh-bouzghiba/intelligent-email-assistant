@@ -476,16 +476,25 @@ async def list_emails(account_id: Optional[str] = Query(None)):
 
     Args:
         account_id: Optional filter by specific account (e.g., user@gmail.com)
+
+    Returns:
+        List of email objects from Supabase
     """
     store = safe_get_store()
     if not store:
+        logger.warning("[API] /emails called but store unavailable")
         return []
 
     try:
+        logger.info(f"[API] /emails called with account_id={account_id}")
         response = await asyncio.to_thread(store.get_emails, account_id=account_id)
+        email_count = len(response.data) if response.data else 0
+        logger.info(f"[API] /emails returning {email_count} emails")
         return response.data
     except Exception as e:
-        print(f"[WARN] Supabase fetch error: {e}")
+        logger.error(f"[API] /emails fetch error: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"[API] Traceback: {traceback.format_exc()}")
         return []
 
 
