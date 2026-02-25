@@ -137,6 +137,38 @@ SELECT status, COUNT(*) FROM ai_jobs GROUP BY status;
 
 ---
 
+## Local Development (Run Worker Correctly)
+
+**CRITICAL**: Always run the AI worker from PROJECT ROOT, not from backend directory.
+
+### Windows (Recommended - Use Helper Script)
+```bash
+# From project root
+.\run_worker_local.bat
+```
+
+### Linux/Mac (Recommended - Use Helper Script)
+```bash
+# From project root
+chmod +x run_worker_local.sh
+./run_worker_local.sh
+```
+
+### Manual Method (All Platforms)
+```bash
+# CORRECT: Run from project root with backend. prefix
+cd c:\Users\Iyadh Bouzghiba\Desktop\Security_Backup\Intelligent-Email-Assistant\repo-fresh
+python -m backend.infrastructure.ai_summarizer_worker
+
+# WRONG: This will fail with ModuleNotFoundError
+cd backend
+python -m infrastructure.ai_summarizer_worker
+```
+
+**Why?** The worker imports use `from backend.infrastructure...`, so Python must be able to find the `backend` package. Running from project root ensures the correct module path.
+
+---
+
 ## Troubleshooting (30 Seconds)
 
 ### No summaries appearing?
@@ -148,9 +180,11 @@ ps aux | grep ai_summarizer_worker
 # 2. Check API key
 echo $MISTRAL_API_KEY
 
-# 3. Restart worker
+# 3. Restart worker (USE HELPER SCRIPT)
 pkill -f ai_summarizer_worker
-cd backend && python -m infrastructure.ai_summarizer_worker
+.\run_worker_local.bat  # Windows
+# OR
+./run_worker_local.sh   # Linux/Mac
 ```
 
 ### Rate limit errors?

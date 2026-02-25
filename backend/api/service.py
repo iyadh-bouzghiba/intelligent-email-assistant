@@ -362,55 +362,73 @@ async def sync_now(account_id: str = Query("default")):
     - {"status": "error"} on failure (no secrets leaked)
     """
     try:
+        print(f"[SYNC] ========== SYNC REQUEST STARTED ==========")
+        print(f"[SYNC] Request account_id param: {account_id}")
+
         effective_account_id = resolve_account_id(None, account_id)
+        print(f"[SYNC] Effective account_id: {effective_account_id}")
 
         # Load credentials from CredentialStore (primary) or fallback
         from backend.services.gmail_engine import run_engine
 
+        print(f"[SYNC] Loading credentials from CredentialStore...")
         credential_store = CredentialStore(persistence)
         token_data = credential_store.load_credentials(effective_account_id)
 
         # No credentials or file fallback
         if not token_data and effective_account_id == "default":
+            print(f"[SYNC] No credentials found for '{effective_account_id}', trying file fallback...")
             path = os.getenv("GMAIL_CREDENTIALS_PATH", "")
             if path:
                 try:
                     with open(path) as f:
                         token_data = json.load(f)
-                except Exception:
+                    print(f"[SYNC] Loaded credentials from file: {path}")
+                except Exception as e:
+                    print(f"[SYNC] File fallback failed: {e}")
                     pass
 
         if not token_data or 'token' not in token_data:
-            return {"status": "auth_required"}
+            print(f"[SYNC] No valid credentials found for account: {effective_account_id}")
+            return {"status": "auth_required", "message": f"Please authenticate {effective_account_id}"}
 
+        print(f"[SYNC] Credentials loaded, fetching emails from Gmail...")
         # Execute Gmail fetch
         emails = await asyncio.to_thread(run_engine, token_data)
 
         # Handle auth errors
         if isinstance(emails, dict) and "__auth_error__" in emails:
-            return {"status": "auth_required"}
+            print(f"[SYNC] Gmail authentication error detected")
+            return {"status": "auth_required", "message": "Gmail token expired or revoked"}
 
         if not emails:
-            return {"status": "no_new"}
+            print(f"[SYNC] No emails returned from Gmail")
+            return {"status": "no_new", "message": "No emails in inbox"}
+
+        print(f"[SYNC] Gmail fetch successful: {len(emails)} emails retrieved")
 
         # Store emails in Supabase
+        print(f"[SYNC] Initializing Supabase store...")
         store = safe_get_store()
         if not store:
-            return {"status": "error"}
+            print(f"[SYNC] CRITICAL ERROR: Supabase store unavailable!")
+            return {"status": "error", "message": "Database connection failed"}
 
+        print(f"[SYNC] Processing {len(emails)} emails for account: {effective_account_id}")
         stored_count = 0
         new_thread_ids = []
         for email in emails:
             try:
                 # Extract Gmail stable ID for deduplication
                 m_id = email.get("message_id") or email.get("id")
-                
+
                 # Skip emails without Gmail ID to prevent duplicate inserts
                 if not m_id:
                     print(f"[WARN] [SYNC] Skip email without gmail_message_id: {email.get('subject', 'No Subject')}")
                     continue
-                
-                await asyncio.to_thread(
+
+                # CRITICAL FIX: Verify save_email actually succeeded
+                result = await asyncio.to_thread(
                     store.save_email,
                     subject=email.get("subject", "No Subject"),
                     sender=email.get("sender", "Unknown"),
@@ -420,26 +438,43 @@ async def sync_now(account_id: str = Query("default")):
                     account_id=effective_account_id,
                     tenant_id="primary"
                 )
-                stored_count += 1
 
-                # Enqueue AI summarization job for user-triggered sync (30-email limit)
-                if stored_count <= 30:
-                    await asyncio.to_thread(
-                        store.enqueue_ai_job,
-                        account_id=effective_account_id,
-                        gmail_message_id=m_id,
-                        job_type="email_summarize_v1"
-                    )
+                # Validate that save succeeded (result should have .data)
+                if result and hasattr(result, 'data') and result.data:
+                    stored_count += 1
+                    print(f"[SYNC] ✓ Saved email {stored_count}/{len(emails)}: {email.get('subject', 'No Subject')[:50]}")
 
-                # Track thread_id for auto-summary
-                thread_id = f"{email.get('subject', '')}_{email.get('sender', '')}".replace(' ', '_')[:50]
-                new_thread_ids.append((thread_id, email))
+                    # Enqueue AI summarization job for user-triggered sync (30-email limit)
+                    if stored_count <= 30:
+                        try:
+                            await asyncio.to_thread(
+                                store.enqueue_ai_job,
+                                account_id=effective_account_id,
+                                gmail_message_id=m_id,
+                                job_type="email_summarize_v1"
+                            )
+                        except Exception as job_err:
+                            print(f"[WARN] [SYNC] Failed to enqueue AI job: {job_err}")
+
+                    # Track thread_id for auto-summary
+                    thread_id = f"{email.get('subject', '')}_{email.get('sender', '')}".replace(' ', '_')[:50]
+                    new_thread_ids.append((thread_id, email))
+                else:
+                    print(f"[ERROR] [SYNC] Failed to save email (no data in response): {email.get('subject', 'No Subject')[:50]}")
+                    print(f"[ERROR] [SYNC] Save result: {result}")
+
             except Exception as e:
-                print(f"[WARN] [SYNC] Failed to store email: {e}")
+                print(f"[ERROR] [SYNC] Exception while storing email: {e}")
+                print(f"[ERROR] [SYNC] Email subject: {email.get('subject', 'No Subject')[:50]}")
+                import traceback
+                print(f"[ERROR] [SYNC] Traceback: {traceback.format_exc()}")
+
+        print(f"[SYNC] Storage complete: {stored_count}/{len(emails)} emails saved successfully")
 
         # Emit socket event for new emails
         try:
             await sio.emit("emails_updated", {"count_new": stored_count})
+            print(f"[SYNC] Socket.IO event emitted: emails_updated (count: {stored_count})")
         except Exception as e:
             print(f"[WARN] [SYNC] Failed to emit socket event: {e}")
 
@@ -485,11 +520,18 @@ async def sync_now(account_id: str = Query("default")):
                 except Exception as e:
                     print(f"[WARN] [SYNC] Failed to emit summary event: {e}")
 
+        print(f"[SYNC] ========== SYNC REQUEST COMPLETED ==========")
+        print(f"[SYNC] Final status: {stored_count} emails saved to database")
         return {"status": "done", "count": stored_count, "processed_count": stored_count}
 
     except Exception as e:
-        print(f"[ERROR] [SYNC] Sync failed: {e}")
-        return {"status": "error"}
+        print(f"[ERROR] [SYNC] ========== SYNC FAILED ==========")
+        print(f"[ERROR] [SYNC] Exception type: {type(e).__name__}")
+        print(f"[ERROR] [SYNC] Exception message: {str(e)}")
+        import traceback
+        print(f"[ERROR] [SYNC] Full traceback:")
+        print(traceback.format_exc())
+        return {"status": "error", "message": f"Sync failed: {type(e).__name__}"}
 
 
 @api_router.get("/threads")
