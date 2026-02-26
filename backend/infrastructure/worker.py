@@ -95,13 +95,10 @@ def _fetch_and_transform_messages(gmail_client, message_ids, assistant):
             internal_date_ms = msg.get('internalDate')
             timestamp_source = "unknown"
 
-            if internal_date_ms:
-                # ✅ FIXED: Use timezone-aware conversion (not deprecated utcfromtimestamp)
-                dt_utc = datetime.fromtimestamp(int(internal_date_ms) / 1000, tz=timezone.utc)
-                date_iso = dt_utc.isoformat()
-                timestamp_source = "internalDate"
-                logger.info(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | internalDate: {internal_date_ms}ms | UTC: {date_iso} | Source: {timestamp_source}")
-            elif date_header:
+            # CRITICAL: Use Date header FIRST (matches Gmail inbox display)
+            # Only fallback to internalDate if Date header is missing/invalid
+            if date_header:
+                # PRIMARY: parse Date header (matches what Gmail inbox shows)
                 try:
                     parsed_dt = parsedate_to_datetime(date_header)
                     # Ensure timezone-aware
@@ -111,10 +108,23 @@ def _fetch_and_transform_messages(gmail_client, message_ids, assistant):
                     timestamp_source = "date_header"
                     logger.info(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | Date header: {date_header} | UTC: {date_iso} | Source: {timestamp_source}")
                 except Exception as e:
-                    dt_utc = datetime.now(timezone.utc)
-                    date_iso = dt_utc.isoformat()
-                    timestamp_source = "fallback_now"
-                    logger.warning(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | Date parse failed: {e} | UTC: {date_iso} | Source: {timestamp_source}")
+                    # Fallback to internalDate if Date header parsing fails
+                    if internal_date_ms:
+                        dt_utc = datetime.fromtimestamp(int(internal_date_ms) / 1000, tz=timezone.utc)
+                        date_iso = dt_utc.isoformat()
+                        timestamp_source = "internalDate_fallback"
+                        logger.warning(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | Date parse failed, using internalDate | UTC: {date_iso} | Error: {e}")
+                    else:
+                        dt_utc = datetime.now(timezone.utc)
+                        date_iso = dt_utc.isoformat()
+                        timestamp_source = "fallback_now"
+                        logger.warning(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | Date parse failed: {e} | UTC: {date_iso} | Source: {timestamp_source}")
+            elif internal_date_ms:
+                # Secondary fallback: Use internalDate if Date header missing
+                dt_utc = datetime.fromtimestamp(int(internal_date_ms) / 1000, tz=timezone.utc)
+                date_iso = dt_utc.isoformat()
+                timestamp_source = "internalDate_only"
+                logger.info(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | internalDate: {internal_date_ms}ms | UTC: {date_iso} | Source: {timestamp_source}")
             else:
                 dt_utc = datetime.now(timezone.utc)
                 date_iso = dt_utc.isoformat()
