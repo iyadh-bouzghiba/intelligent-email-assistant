@@ -2,9 +2,14 @@ import os
 import time
 import asyncio
 import json
+import logging
 from datetime import datetime
 from backend.core import EmailAssistant
 from backend.infrastructure.control_plane import ControlPlane
+
+# Configure logger for worker process
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 # Socket.IO for realtime notifications
 try:
@@ -95,7 +100,7 @@ def _fetch_and_transform_messages(gmail_client, message_ids, assistant):
                 dt_utc = datetime.fromtimestamp(int(internal_date_ms) / 1000, tz=timezone.utc)
                 date_iso = dt_utc.isoformat()
                 timestamp_source = "internalDate"
-                print(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | internalDate: {internal_date_ms}ms | UTC: {date_iso} | Source: {timestamp_source}")
+                logger.info(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | internalDate: {internal_date_ms}ms | UTC: {date_iso} | Source: {timestamp_source}")
             elif date_header:
                 try:
                     parsed_dt = parsedate_to_datetime(date_header)
@@ -104,17 +109,17 @@ def _fetch_and_transform_messages(gmail_client, message_ids, assistant):
                         parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
                     date_iso = parsed_dt.isoformat()
                     timestamp_source = "date_header"
-                    print(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | Date header: {date_header} | UTC: {date_iso} | Source: {timestamp_source}")
+                    logger.info(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | Date header: {date_header} | UTC: {date_iso} | Source: {timestamp_source}")
                 except Exception as e:
                     dt_utc = datetime.now(timezone.utc)
                     date_iso = dt_utc.isoformat()
                     timestamp_source = "fallback_now"
-                    print(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | Date parse failed: {e} | UTC: {date_iso} | Source: {timestamp_source}")
+                    logger.warning(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | Date parse failed: {e} | UTC: {date_iso} | Source: {timestamp_source}")
             else:
                 dt_utc = datetime.now(timezone.utc)
                 date_iso = dt_utc.isoformat()
                 timestamp_source = "fallback_now"
-                print(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | No timestamp found | UTC: {date_iso} | Source: {timestamp_source}")
+                logger.warning(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | No timestamp found | UTC: {date_iso} | Source: {timestamp_source}")
 
             # Extract body
             raw_body = get_message_body(payload)

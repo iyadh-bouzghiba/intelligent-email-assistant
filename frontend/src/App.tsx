@@ -613,7 +613,27 @@ export const App = () => {
             </div>
 
             <button
-              onClick={() => { setLoading(true); fetchEmails(); }}
+              onClick={async () => {
+                setLoading(true);
+                try {
+                  console.log('[REFRESH] Syncing from Gmail API for account:', activeEmail);
+                  const syncResult = await apiService.syncNow(activeEmail);
+                  console.log('[REFRESH] Sync result:', syncResult);
+
+                  if (syncResult.status === 'done' || syncResult.status === 'success') {
+                    console.log(`[REFRESH] Synced ${syncResult.count || 0} emails, processed ${syncResult.processed_count || 0}`);
+                  } else {
+                    console.warn('[REFRESH] Sync failed:', syncResult);
+                  }
+
+                  // Always fetch emails after sync attempt
+                  await fetchEmails(activeEmail);
+                } catch (err) {
+                  console.error('[REFRESH] Sync error:', err);
+                  // Still try to fetch emails from database
+                  await fetchEmails(activeEmail);
+                }
+              }}
               disabled={loading}
               className="group flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
             >
