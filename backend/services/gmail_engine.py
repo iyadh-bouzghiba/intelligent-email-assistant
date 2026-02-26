@@ -1,10 +1,15 @@
 import os
 import json
 import base64
+import logging
 from pathlib import Path
 from bs4 import BeautifulSoup
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+
+# Configure logger to ensure Render captures output
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 def clean_html(html_content):
     """Strips HTML tags to save context window space."""
@@ -116,7 +121,7 @@ def run_engine(token_data: dict):
                     dt_utc = datetime.fromtimestamp(int(internal_date_ms) / 1000, tz=timezone.utc)
                     date_iso = dt_utc.isoformat()
                     timestamp_source = "internalDate"
-                    print(f"[TIMESTAMP-FIX] {subject[:30]}... | internalDate: {internal_date_ms}ms | UTC: {date_iso} | Source: {timestamp_source}")
+                    logger.info(f"[TIMESTAMP-FIX] {subject[:30]}... | internalDate: {internal_date_ms}ms | UTC: {date_iso} | Source: {timestamp_source}")
                 elif date_header:
                     # Fallback: parse Date header (best-effort)
                     try:
@@ -127,17 +132,17 @@ def run_engine(token_data: dict):
                             parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
                         date_iso = parsed_dt.isoformat()
                         timestamp_source = "date_header"
-                        print(f"[TIMESTAMP-FIX] {subject[:30]}... | Date header: {date_header} | UTC: {date_iso} | Source: {timestamp_source}")
+                        logger.info(f"[TIMESTAMP-FIX] {subject[:30]}... | Date header: {date_header} | UTC: {date_iso} | Source: {timestamp_source}")
                     except Exception as e:
                         dt_utc = datetime.now(timezone.utc)
                         date_iso = dt_utc.isoformat()
                         timestamp_source = "fallback_now"
-                        print(f"[TIMESTAMP-FIX] {subject[:30]}... | Date parse failed: {e} | UTC: {date_iso} | Source: {timestamp_source}")
+                        logger.warning(f"[TIMESTAMP-FIX] {subject[:30]}... | Date parse failed: {e} | UTC: {date_iso} | Source: {timestamp_source}")
                 else:
                     dt_utc = datetime.now(timezone.utc)
                     date_iso = dt_utc.isoformat()
                     timestamp_source = "fallback_now"
-                    print(f"[TIMESTAMP-FIX] {subject[:30]}... | No timestamp found | UTC: {date_iso} | Source: {timestamp_source}")
+                    logger.warning(f"[TIMESTAMP-FIX] {subject[:30]}... | No timestamp found | UTC: {date_iso} | Source: {timestamp_source}")
 
                 # Extract & Clean Body
                 raw_body = get_message_body(payload)
@@ -158,20 +163,20 @@ def run_engine(token_data: dict):
             if not page_token:
                 break  # No more pages
 
-        print(f"[GMAIL] Fetched {len(emails_data)} emails from inbox")
+        logger.info(f"[GMAIL] Fetched {len(emails_data)} emails from inbox")
         return emails_data
 
     except Exception as e:
         error_str = str(e).lower()
         if "invalid_grant" in error_str or "invalid_client" in error_str:
-            print(f"[WARN] [GMAIL] Re-auth required: token expired/revoked")
+            logger.warning(f"[WARN] [GMAIL] Re-auth required: token expired/revoked")
             return {"__auth_error__": "invalid_grant"}
 
         # Log detailed error for debugging sync failures
-        print(f"[ERROR] [GMAIL] Sync failed with exception: {type(e).__name__}")
-        print(f"[ERROR] [GMAIL] Error message: {str(e)}")
+        logger.error(f"[ERROR] [GMAIL] Sync failed with exception: {type(e).__name__}")
+        logger.error(f"[ERROR] [GMAIL] Error message: {str(e)}")
         import traceback
-        print(f"[ERROR] [GMAIL] Traceback: {traceback.format_exc()}")
+        logger.error(f"[ERROR] [GMAIL] Traceback: {traceback.format_exc()}")
         return []
 
 if __name__ == "__main__":

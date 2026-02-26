@@ -41,15 +41,34 @@ class SupabaseStore:
         updated_at tracks when the record was last synced from Gmail.
 
         CRITICAL: account_id MUST be included in payload for multi-account isolation.
+        CRITICAL: Timestamp validation ensures UTC timezone consistency.
         """
+        from datetime import datetime, timezone
+        import logging
+        logger = logging.getLogger("supabase_store")
+
+        # CRITICAL VALIDATION: Ensure date timestamp is timezone-aware UTC
+        # This prevents timestamp drift caused by naive datetime objects
+        validated_date = date
+        if isinstance(date, str):
+            # Verify ISO format includes timezone (+00:00 or Z suffix)
+            if not ('+' in date or date.endswith('Z')):
+                logger.warning(f"[TIMESTAMP-VALIDATION] Received naive timestamp string without timezone: {date}")
+                logger.warning(f"[TIMESTAMP-VALIDATION] Subject: {subject[:50] if subject else 'Unknown'}")
+                # Assume UTC and add timezone suffix
+                validated_date = f"{date}+00:00" if not date.endswith('Z') else date
+                logger.warning(f"[TIMESTAMP-VALIDATION] Corrected to: {validated_date}")
+            else:
+                logger.info(f"[TIMESTAMP-VALIDATION] Timestamp OK: {date[:19]}... (has timezone)")
+
         payload = {
             "subject": subject,
             "sender": sender,
-            "date": date,
+            "date": validated_date,
             "body": body,
             "tenant_id": tenant_id,
             "account_id": account_id,  # CRITICAL: Required for multi-account email isolation
-            "updated_at": datetime.utcnow().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat()  # ✅ FIXED: Use timezone-aware datetime
         }
 
         if message_id:
