@@ -72,3 +72,8 @@ apply_*.py
 emails.json
 data/
 
+
+# Documentation files (keep local only)
+*_DEPLOYMENT.md
+CRITICAL_FIXES_DEPLOYMENT.md
+SECURITY_FIX_DEPLOYMENT.md
