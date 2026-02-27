@@ -114,9 +114,17 @@ def _fetch_and_transform_messages(gmail_client, message_ids, assistant):
                     # Ensure timezone-aware
                     if parsed_dt.tzinfo is None:
                         parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
-                    date_iso = parsed_dt.isoformat()
+
+                    # CRITICAL FIX: ALWAYS normalize to UTC for consistent storage/display
+                    # This prevents timezone inconsistencies across accounts
+                    utc_dt = parsed_dt.astimezone(timezone.utc)
+                    date_iso = utc_dt.isoformat()
                     timestamp_source = "date_header"
-                    logger.info(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | Date header: {date_header} | UTC: {date_iso} | Source: {timestamp_source}")
+
+                    # Log timezone offset for diagnostics
+                    tz_offset = parsed_dt.utcoffset()
+                    offset_str = f"{int(tz_offset.total_seconds() / 3600):+03d}:00" if tz_offset else "+00:00"
+                    logger.info(f"[TIMESTAMP-FIX-WORKER] {subject[:30]}... | Date header: {date_header} | TZ offset: {offset_str} | UTC: {date_iso} | Source: {timestamp_source}")
                 except Exception as e:
                     # Fallback to internalDate if Date header parsing fails
                     if internal_date_ms:
