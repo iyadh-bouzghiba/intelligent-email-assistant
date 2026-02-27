@@ -77,3 +77,9 @@ data/
 *_DEPLOYMENT.md
 CRITICAL_FIXES_DEPLOYMENT.md
 SECURITY_FIX_DEPLOYMENT.md
+
+# Documentation files (keep local only)
+AUTH_*.md
+AUTHENTICATION_*.md
+CRITICAL_FIXES_*.md
+SECURITY_FIX_*.md

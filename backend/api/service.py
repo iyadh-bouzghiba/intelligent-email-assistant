@@ -1115,6 +1115,30 @@ app.include_router(api_router)
 # ------------------------------------------------------------------
 # GOOGLE OAUTH ROUTES
 # ------------------------------------------------------------------
+@app.get("/auth/check")
+async def check_oauth_config():
+    """
+    Diagnostic endpoint to check if OAuth is properly configured.
+    Returns configuration status without exposing secrets.
+    """
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:8000")
+
+    return {
+        "oauth_configured": bool(client_id and client_secret),
+        "client_id_set": bool(client_id),
+        "client_secret_set": bool(client_secret),
+        "client_id_prefix": client_id[:30] + "..." if client_id else None,
+        "frontend_url": frontend_url,
+        "backend_url": render_url,
+        "callback_url": f"{render_url}/auth/callback/google",
+        "instructions": "If oauth_configured=false, set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Render environment variables",
+        "documentation": "See AUTHENTICATION_FIX_GUIDE.md for complete setup instructions"
+    }
+
+
 @app.get("/auth/google")
 async def google_oauth_init(account_id: str = Query("default")):
     """
@@ -1129,8 +1153,14 @@ async def google_oauth_init(account_id: str = Query("default")):
 
     if not client_id or not client_secret:
         return JSONResponse(
-            status_code=500,
-            content={"error": "OAuth credentials not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET."}
+            status_code=503,
+            content={
+                "error": "OAuth credentials not configured",
+                "message": "Administrator must set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables",
+                "check_config": "/auth/check",
+                "platform": "Render Dashboard → Environment → Add variables",
+                "documentation": "See AUTHENTICATION_FIX_GUIDE.md for detailed setup instructions"
+            }
         )
 
     # Use canonical redirect URI from environment
