@@ -617,7 +617,7 @@ export const App = () => {
                 setLoading(true);
                 try {
                   console.log('[REFRESH] Syncing from Gmail API for account:', activeEmail);
-                  const syncResult = await apiService.syncNow(activeEmail);
+                  const syncResult = await apiService.syncNow(activeEmail ?? undefined);
                   console.log('[REFRESH] Sync result:', syncResult);
 
                   if (syncResult.status === 'done' || syncResult.status === 'success') {
