@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import base64
 import logging
@@ -10,6 +11,15 @@ from googleapiclient.discovery import build
 # Configure logger to ensure Render captures output
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# CRITICAL: Add explicit StreamHandler for production logging (required for threaded execution)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('[%(levelname)s] [%(name)s] %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.propagate = True  # Also send to root logger
 
 def clean_html(html_content):
     """Strips HTML tags to save context window space."""
