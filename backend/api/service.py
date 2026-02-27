@@ -1142,11 +1142,13 @@ async def check_oauth_config():
 @app.get("/auth/google")
 async def google_oauth_init(account_id: str = Query("default")):
     """
-    Initiates Google OAuth flow.
+    Initiates Google OAuth flow with PKCE support.
     Redirects user to Google consent screen.
     """
     from backend.config import Config
-    
+    import base64
+    import json
+
     # Environment-driven configuration
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
@@ -1178,17 +1180,32 @@ async def google_oauth_init(account_id: str = Query("default")):
 
     oauth_manager = OAuthManager(client_config, redirect_uri)
     effective_account_id = resolve_account_id(None, account_id)
-    state = f"acc:{effective_account_id}"
-    auth_url = oauth_manager.get_authorization_url(state=state)
 
-    print(f"[SECURE] [OAuth] Redirecting to Google: {auth_url}")
-    return RedirectResponse(url=auth_url)
+    # CRITICAL FIX: Get authorization URL with PKCE code_verifier
+    auth_url, code_verifier = oauth_manager.get_authorization_url(state=None)
+
+    # CRITICAL: Encode code_verifier + account_id into state parameter (encrypted)
+    # Format: base64(json({v: code_verifier, a: account_id}))
+    state_data = {
+        "v": code_verifier,  # PKCE code_verifier
+        "a": effective_account_id  # Account ID
+    }
+    state_json = json.dumps(state_data)
+    state_encoded = base64.urlsafe_b64encode(state_json.encode('utf-8')).decode('utf-8')
+
+    # Append state to auth_url
+    separator = "&" if "?" in auth_url else "?"
+    auth_url_with_state = f"{auth_url}{separator}state={state_encoded}"
+
+    print(f"[OAUTH] [PKCE] Generated code_verifier (first 10 chars): {code_verifier[:10]}...")
+    print(f"[OAUTH] [PKCE] Redirecting to Google with PKCE challenge")
+    return RedirectResponse(url=auth_url_with_state)
 
 
 @app.get("/auth/callback/google")
 async def google_oauth_callback(code: str, state: str = None, account_id: str = Query("default")):
     """
-    Handles Google OAuth callback.
+    Handles Google OAuth callback with PKCE support.
     Exchanges authorization code for tokens and stores them encrypted.
 
     CANONICAL CALLBACK ROUTE: /auth/callback/google
@@ -1196,7 +1213,9 @@ async def google_oauth_callback(code: str, state: str = None, account_id: str = 
     PROD: https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google
     """
     from backend.config import Config
-    
+    import base64
+    import json
+
     if not code:
         return JSONResponse(
             status_code=400,
@@ -1215,6 +1234,32 @@ async def google_oauth_callback(code: str, state: str = None, account_id: str = 
         )
 
     try:
+        # CRITICAL FIX: Extract code_verifier from state parameter
+        code_verifier = None
+        effective_account_id = "default"
+
+        if state:
+            try:
+                # Decode state parameter: base64(json({v: code_verifier, a: account_id}))
+                state_json = base64.urlsafe_b64decode(state.encode('utf-8')).decode('utf-8')
+                state_data = json.loads(state_json)
+                code_verifier = state_data.get("v")
+                effective_account_id = state_data.get("a", "default")
+                print(f"[OAUTH] [PKCE] Extracted code_verifier from state (first 10 chars): {code_verifier[:10] if code_verifier else 'MISSING'}...")
+                print(f"[OAUTH] [PKCE] Extracted account_id from state: {effective_account_id}")
+            except Exception as e:
+                print(f"[OAUTH] [PKCE] Failed to decode state: {e} - falling back to query param")
+                effective_account_id = resolve_account_id(None, account_id)
+
+        if not code_verifier:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "OAuth callback failed: Missing code_verifier in state parameter",
+                    "message": "PKCE flow requires code_verifier. Please restart OAuth flow from /auth/google"
+                }
+            )
+
         # Use canonical redirect URI from environment (must match initiation)
         redirect_uri = Config.get_callback_url()
 
@@ -1230,12 +1275,11 @@ async def google_oauth_callback(code: str, state: str = None, account_id: str = 
 
         oauth_manager = OAuthManager(client_config, redirect_uri)
 
-        effective_account_id = resolve_account_id(state, account_id)
-        print(f"[OAUTH] Callback received - initial account_id from state: {effective_account_id}")
+        print(f"[OAUTH] Callback received - account_id: {effective_account_id}")
 
-        # Exchange code for tokens
-        print(f"[OAUTH] Exchanging authorization code for tokens...")
-        tokens = oauth_manager.exchange_code_for_tokens(code)
+        # Exchange code for tokens WITH code_verifier (PKCE)
+        print(f"[OAUTH] [PKCE] Exchanging authorization code for tokens with code_verifier...")
+        tokens = oauth_manager.exchange_code_for_tokens(code, code_verifier)
 
         # Log token presence without exposing values
         has_refresh = 'yes' if tokens.get('refresh_token') else 'no'
