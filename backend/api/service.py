@@ -177,11 +177,13 @@ async def get_system_heartbeat():
     }
 
 @app.get("/health")
+@app.head("/health")
 async def health():
-    """Render survival health check"""
+    """Render survival health check (accepts GET and HEAD)"""
     return {"status": "ok", "schema": ControlPlane.schema_state}
 
 @app.get("/healthz")
+@app.head("/healthz")
 async def healthz():
     """Render liveness probe - API-only.
 
@@ -190,6 +192,8 @@ async def healthz():
     survivability is handled by the daemon thread + restart wrapper in
     worker_entry.py (start_worker).  The WORKER_HEARTBEAT /healthz defined
     in worker_entry.py is dead code - only sio_app (this file) is served.
+
+    Accepts both GET and HEAD methods (UptimeRobot free tier uses HEAD).
     """
     return {"status": "ok", "schema": ControlPlane.schema_state}
 
