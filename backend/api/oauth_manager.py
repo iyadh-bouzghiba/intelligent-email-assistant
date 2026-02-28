@@ -41,15 +41,23 @@ class OAuthManager:
         code_challenge = base64.urlsafe_b64encode(digest).decode('utf-8')
         return code_challenge.rstrip('=')
 
-    def get_authorization_url(self, state: Optional[str] = None) -> tuple[str, str]:
+    def get_authorization_url(self, state: Optional[str] = None, code_verifier: Optional[str] = None) -> tuple[str, str]:
         """
         Generates the Google OAuth2 authorization URL with PKCE.
+
+        Args:
+            state: Optional state parameter for CSRF protection
+            code_verifier: Optional pre-generated code_verifier (if None, generates new one)
 
         Returns:
             tuple: (authorization_url, code_verifier) - MUST store code_verifier for callback
         """
-        # Generate PKCE parameters
-        self._code_verifier = self._generate_code_verifier()
+        # Use provided code_verifier or generate new one
+        if code_verifier:
+            self._code_verifier = code_verifier
+        else:
+            self._code_verifier = self._generate_code_verifier()
+
         code_challenge = self._generate_code_challenge(self._code_verifier)
 
         flow = google_auth_oauthlib.flow.Flow.from_client_config(

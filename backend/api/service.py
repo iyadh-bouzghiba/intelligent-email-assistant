@@ -1181,25 +1181,35 @@ async def google_oauth_init(account_id: str = Query("default")):
     oauth_manager = OAuthManager(client_config, redirect_uri)
     effective_account_id = resolve_account_id(None, account_id)
 
-    # CRITICAL FIX: Get authorization URL with PKCE code_verifier
-    auth_url, code_verifier = oauth_manager.get_authorization_url(state=None)
+    # CRITICAL FIX: Create state parameter BEFORE generating auth URL
+    # This prevents duplicate state parameters (OAuth error 400)
+    # State format: base64(json({v: code_verifier, a: account_id}))
+    # We need to generate code_verifier first, then pass state to get_authorization_url()
 
-    # CRITICAL: Encode code_verifier + account_id into state parameter (encrypted)
-    # Format: base64(json({v: code_verifier, a: account_id}))
+    # Generate code_verifier directly (same logic as oauth_manager._generate_code_verifier())
+    import secrets
+    temp_code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8').rstrip('=')
+
+    # Encode code_verifier + account_id into state parameter
     state_data = {
-        "v": code_verifier,  # PKCE code_verifier
+        "v": temp_code_verifier,  # PKCE code_verifier
         "a": effective_account_id  # Account ID
     }
     state_json = json.dumps(state_data)
     state_encoded = base64.urlsafe_b64encode(state_json.encode('utf-8')).decode('utf-8')
 
-    # Append state to auth_url
-    separator = "&" if "?" in auth_url else "?"
-    auth_url_with_state = f"{auth_url}{separator}state={state_encoded}"
+    # Get authorization URL with PKCE, passing both custom state AND code_verifier
+    # CRITICAL: Pass state_encoded so OAuth library uses OUR state (contains code_verifier + account_id)
+    # CRITICAL: Pass temp_code_verifier so OAuth uses OUR verifier (matches the one in state)
+    auth_url, code_verifier = oauth_manager.get_authorization_url(
+        state=state_encoded,
+        code_verifier=temp_code_verifier
+    )
 
     print(f"[OAUTH] [PKCE] Generated code_verifier (first 10 chars): {code_verifier[:10]}...")
+    print(f"[OAUTH] [PKCE] State parameter contains: verifier + account_id")
     print(f"[OAUTH] [PKCE] Redirecting to Google with PKCE challenge")
-    return RedirectResponse(url=auth_url_with_state)
+    return RedirectResponse(url=auth_url)
 
 
 @app.get("/auth/callback/google")
