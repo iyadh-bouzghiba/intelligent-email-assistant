@@ -58,20 +58,20 @@ export interface Briefing {
     sender: string;
     date: string;
     priority: 'Low' | 'Medium' | 'High';
-    category: 'Security' | 'Financial' | 'General';
+    category: 'Security' | 'Financial' | 'Work' | 'Personal' | 'Marketing' | 'General';
     should_alert: boolean;
     summary: string;
     action: string;
 
-    // NEW: AI summary fields (from backend LEFT JOIN)
+    // AI summary fields (from backend)
     ai_summary_json?: {
         overview: string;
         action_items: string[];
         urgency: 'low' | 'medium' | 'high';
     };
-    ai_summary_text?: string;       // Plain text overview
-    ai_summary_model?: string;       // e.g., "mistral-small-latest"
-    gmail_message_id?: string;       // Required for manual summarization
+    ai_summary_text?: string;
+    ai_summary_model?: string;
+    gmail_message_id?: string;
 }
 
 export interface BriefingResponse {

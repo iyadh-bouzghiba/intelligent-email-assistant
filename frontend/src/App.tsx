@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiService } from '@services';
 import { websocketService } from '@services/websocket';
-import { Sparkles, RefreshCw, Mail, Shield, AlertCircle, Clock, CheckCircle2, User, ChevronRight, Brain, LogOut } from 'lucide-react';
+import { Sparkles, RefreshCw, Mail, Shield, AlertCircle, Clock, CheckCircle2, ChevronRight, Brain, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Briefing, AccountInfo } from '@types';
 
@@ -43,7 +43,7 @@ export const App = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [filterCategory, setFilterCategory] = useState<'All' | 'Security' | 'Financial' | 'General'>('All');
+  const [filterCategory, setFilterCategory] = useState<'All' | 'Security' | 'Financial' | 'Work' | 'Personal' | 'Marketing' | 'General'>('All');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [showSentinelToast, setShowSentinelToast] = useState(false);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
@@ -55,6 +55,8 @@ export const App = () => {
   const accountButtonRef = useRef<HTMLButtonElement | null>(null);
   const activeEmailRef = useRef<string | null>(null); // Track current activeEmail for closures
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) return;
@@ -83,6 +85,56 @@ export const App = () => {
       });
     }
   };
+
+  // Smart email categorization based on content analysis
+  const categorizeEmail = (subject: string, sender: string, body: string, aiSummary?: string): 'Security' | 'Financial' | 'Work' | 'Personal' | 'Marketing' | 'General' => {
+    const text = `${subject} ${sender} ${body} ${aiSummary || ''}`.toLowerCase();
+
+    // Security keywords (highest priority)
+    const securityKeywords = ['security', 'alert', 'password', 'verify', 'suspicious', 'login', 'unauthorized', 'breach', '2fa', 'mfa', 'authentication', 'suspicious activity', 'account locked'];
+    if (securityKeywords.some(keyword => text.includes(keyword))) return 'Security';
+
+    // Financial keywords
+    const financialKeywords = ['invoice', 'payment', 'bank', 'transaction', 'receipt', 'refund', 'billing', 'charge', 'purchase', 'order', 'card', 'paypal', 'stripe', 'revenue', 'expense'];
+    if (financialKeywords.some(keyword => text.includes(keyword))) return 'Financial';
+
+    // Work-related keywords
+    const workKeywords = ['meeting', 'deadline', 'project', 'review', 'presentation', 'report', 'urgent', 'asap', 'feedback', 'approval', 'task', 'jira', 'confluence', 'slack'];
+    if (workKeywords.some(keyword => text.includes(keyword))) return 'Work';
+
+    // Marketing keywords
+    const marketingKeywords = ['unsubscribe', 'newsletter', 'promotion', 'discount', 'sale', 'offer', 'deal', 'subscribe', 'marketing'];
+    if (marketingKeywords.some(keyword => text.includes(keyword))) return 'Marketing';
+
+    // Personal keywords
+    const personalKeywords = ['family', 'friend', 'birthday', 'vacation', 'personal'];
+    if (personalKeywords.some(keyword => text.includes(keyword))) return 'Personal';
+
+    return 'General';
+  };
+
+  // Scroll detection for scroll-to-top button
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 400);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Keyboard shortcut for scroll to top (Ctrl+Home or Cmd+Home)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Home') {
+        e.preventDefault();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const fetchEmails = async (overrideAccountId?: string | null) => {
     // Note: We avoid setting full loading:true during background polling for smoothness
@@ -128,13 +180,21 @@ export const App = () => {
         // Use first action item as primary action if available
         const primaryAction = e.ai_summary_json?.action_items?.[0] || 'Review Pending';
 
-        return {
+        // ENHANCED: Smart categorization based on email content
+        const category = categorizeEmail(
+          e.subject || '',
+          e.sender || '',
+          e.body || '',
+          e.ai_summary_text
+        );
+
+        const briefing = {
           account: e.account_id || 'Unknown',  // CRITICAL: Use REAL account_id from email record
           subject: e.subject || 'No Subject',
           sender: e.sender || 'Unknown',
           date: formattedDate,
           priority: priority,
-          category: 'General',
+          category: category,
           should_alert: e.ai_summary_json?.urgency === 'high',
           summary: displaySummary,
           action: primaryAction,
@@ -145,6 +205,13 @@ export const App = () => {
           ai_summary_model: e.ai_summary_model,
           gmail_message_id: e.gmail_message_id,
         };
+
+        // CRITICAL: Trigger Sentinel Alert for high-urgency emails
+        if (briefing.should_alert) {
+          setTimeout(() => triggerSentinelAlert(briefing), 500);
+        }
+
+        return briefing;
       });
 
       setBriefings(mapped);
@@ -388,8 +455,11 @@ export const App = () => {
 
   const getCategoryStyles = (category: string) => {
     switch (category) {
-      case 'Security': return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-      case 'Financial': return 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20';
+      case 'Security': return 'text-red-400 bg-red-500/10 border-red-500/30';
+      case 'Financial': return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
+      case 'Work': return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+      case 'Personal': return 'text-purple-400 bg-purple-500/10 border-purple-500/20';
+      case 'Marketing': return 'text-orange-400 bg-orange-500/10 border-orange-500/20';
       default: return 'text-slate-400 bg-white/5 border-white/10';
     }
   };
@@ -712,8 +782,8 @@ export const App = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-white/[0.02] border border-white/5 backdrop-blur-sm">
-            {['All', 'Security', 'Financial', 'General'].map((cat) => (
+          <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-white/[0.02] border border-white/5 backdrop-blur-sm flex-wrap">
+            {['All', 'Security', 'Financial', 'Work', 'Personal', 'Marketing', 'General'].map((cat) => (
               <button
                 key={cat}
                 onClick={() => { setFilterCategory(cat as any); setCurrentPage(1); }}
@@ -751,7 +821,7 @@ export const App = () => {
           )}
         </AnimatePresence>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-12">
           <AnimatePresence mode="popLayout">
             {loading ? (
               [...Array(currentItems.length || ITEMS_PER_PAGE)].map((_, i) => (
@@ -761,7 +831,7 @@ export const App = () => {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.4, delay: i * 0.1 }}
-                  className="h-[480px] rounded-[2.5rem] bg-white/[0.02] border border-white/5 relative overflow-hidden p-10 flex flex-col"
+                  className="h-[350px] rounded-[2.5rem] bg-white/[0.02] border border-white/5 relative overflow-hidden p-10 flex flex-col"
                 >
                   <div className="flex items-start justify-between mb-8">
                     <div className="flex flex-col gap-3">
@@ -776,214 +846,173 @@ export const App = () => {
                 </motion.div>
               ))
             ) : currentItems.length > 0 ? (
-              currentItems.map((item, index) => (
+              currentItems.map((item, index) => {
+                const cardId = `${item.gmail_message_id || item.subject}-${index}`;
+                const isExpanded = expandedCards.has(cardId);
+                const urgency = item.ai_summary_json?.urgency || 'medium';
+
+                // Color-coded urgency styles
+                const getUrgencyColor = () => {
+                  switch(urgency) {
+                    case 'high': return 'bg-red-500/10 border-red-500/30 text-red-400';
+                    case 'low': return 'bg-green-500/10 border-green-500/30 text-green-400';
+                    default: return 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400';
+                  }
+                };
+
+                return (
                 <motion.div
-                  key={item.subject + index}
+                  key={cardId}
                   layout
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.4, delay: index * 0.05 }}
-                  className="group relative flex flex-col h-[480px] p-10 rounded-[2.5rem] bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-500 shadow-2xl hover:shadow-indigo-500/5"
+                  className="group relative flex flex-col h-[350px] p-6 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-500 shadow-xl hover:shadow-indigo-500/5"
                 >
-                  <div className="flex items-start justify-between mb-8">
-                    <div className="flex flex-col gap-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.15em] border transition-all duration-500 ${getPriorityStyles(item.priority)}`}>
-                          {item.priority}
-                        </div>
-                        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.15em] border transition-all duration-500 ${getCategoryStyles(item.category)}`}>
-                          {item.category}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 text-slate-500 text-xs font-bold bg-white/[0.03] px-3 py-1.5 rounded-lg border border-white/5">
-                        <Clock size={14} className="text-indigo-400" />
-                        {item.date}
-                      </div>
+                  {/* AI Badge - Top Right with Gradient */}
+                  {item.ai_summary_text && (
+                    <div className="absolute top-4 right-4 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border border-indigo-400/30 backdrop-blur-sm">
+                      <Sparkles size={10} className="text-indigo-300" />
+                      <span className="text-[8px] font-black text-indigo-300 uppercase tracking-wider">AI</span>
                     </div>
-                    <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-tighter">
-                      <User size={14} className="text-indigo-400" /> {item.account}
+                  )}
+
+                  {/* Header - Compact badges and metadata */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getUrgencyColor()}`}>
+                        {urgency}
+                      </div>
+                      <div className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border transition-all duration-500 ${getCategoryStyles(item.category)}`}>
+                        {item.category}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="mb-2">
-                    <h3 className="text-2xl font-black text-white mb-2 tracking-tight line-clamp-2 leading-[1.2] group-hover:text-indigo-400 transition-colors duration-500">
+                  {/* Subject and sender - Compact */}
+                  <div className="mb-3">
+                    <h3 className="text-lg font-black text-white mb-1 tracking-tight line-clamp-2 leading-tight group-hover:text-indigo-400 transition-colors duration-500">
                       {item.subject}
                     </h3>
-                    <p className="text-slate-400 text-sm font-bold mb-6 flex items-center gap-2">
-                      <span className="text-indigo-500 opacity-50 uppercase tracking-widest text-[10px]">Source</span> {item.sender.split('<')[0].trim()}
-                    </p>
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span className="font-semibold truncate mr-2">{item.sender.split('<')[0].trim()}</span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Clock size={11} className="text-indigo-400/60" />
+                        <span className="text-[10px] font-medium">{item.date}</span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="space-y-4 flex-grow overflow-y-auto custom-scrollbar pr-2">
-                    <div className="p-5 rounded-3xl bg-white/[0.03] border border-white/5 group-hover:bg-white/[0.05] transition-colors duration-500">
-                      {/* AI Summary Badge (only if AI summary exists) */}
-                      {item.ai_summary_text && (
-                        <div className="flex items-center gap-2 mb-3">
-                          <Sparkles size={12} className="text-indigo-400" />
-                          <span className="text-[9px] font-black text-indigo-400 uppercase tracking-wider">
-                            AI Summary
-                          </span>
-                          <span className="text-[8px] text-slate-600">
-                            {item.ai_summary_model || 'mistral'}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Summary Text (AI or fallback to raw body) */}
-                      <p className="text-sm leading-relaxed text-slate-200 font-medium overflow-wrap-anywhere word-break-break-word">
+                  {/* Summary Section - Truncated with Read More */}
+                  <div className="flex-grow overflow-hidden mb-3">
+                    <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
+                      <p className={`text-sm leading-relaxed text-slate-200 font-medium ${!isExpanded ? 'line-clamp-2' : ''}`}>
                         {item.summary}
                       </p>
-
-                      {/* Action Items (only if AI summary has action items) */}
-                      {item.ai_summary_json?.action_items && item.ai_summary_json.action_items.length > 0 && (
-                        <div className="mt-4 space-y-2">
-                          <p className="text-[10px] font-black text-indigo-400 uppercase tracking-wider">
-                            Action Items
-                          </p>
-                          <ul className="space-y-1.5">
-                            {item.ai_summary_json.action_items.slice(0, 3).map((action: string, idx: number) => (
-                              <li key={idx} className="flex items-start gap-2 text-xs text-slate-300">
-                                <span className="text-indigo-500 mt-0.5">•</span>
-                                <span>{action}</span>
-                              </li>
-                            ))}
-                          </ul>
-                          {item.ai_summary_json.action_items.length > 3 && (
-                            <p className="text-[9px] text-slate-600 italic mt-1">
-                              +{item.ai_summary_json.action_items.length - 3} more action item{item.ai_summary_json.action_items.length - 3 > 1 ? 's' : ''}
-                            </p>
-                          )}
-                        </div>
+                      {item.summary && item.summary.length > 120 && (
+                        <button
+                          onClick={() => {
+                            const newExpanded = new Set(expandedCards);
+                            if (isExpanded) {
+                              newExpanded.delete(cardId);
+                            } else {
+                              newExpanded.add(cardId);
+                            }
+                            setExpandedCards(newExpanded);
+                          }}
+                          className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 mt-1 transition-colors"
+                        >
+                          {isExpanded ? 'Show less' : 'Read more'}
+                        </button>
                       )}
                     </div>
 
-                    <div className={`flex items-center gap-4 p-4 rounded-3xl border transition-all duration-500 ${item.action === 'None' ? 'bg-slate-500/5 border-slate-500/10' : 'bg-indigo-500/5 border-indigo-500/20 shadow-[0_0_20px_rgba(79,70,229,0.05)]'}`}>
-                      <div className={`w-8 h-8 rounded-2xl flex items-center justify-center transition-colors duration-500 ${item.action === 'None' ? 'bg-slate-500/10 text-slate-500' : 'bg-indigo-500/10 text-indigo-400'}`}>
-                        <CheckCircle2 size={16} />
+                    {/* Action Items as Pills */}
+                    {item.ai_summary_json?.action_items && item.ai_summary_json.action_items.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {item.ai_summary_json.action_items.slice(0, 3).map((action: string, idx: number) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-[10px] font-semibold text-indigo-300"
+                            title={action}
+                          >
+                            <span className="w-1 h-1 rounded-full bg-indigo-400"></span>
+                            <span className="truncate max-w-[120px]">{action}</span>
+                          </span>
+                        ))}
+                        {item.ai_summary_json.action_items.length > 3 && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-500/10 border border-slate-500/20 text-[10px] font-bold text-slate-400">
+                            +{item.ai_summary_json.action_items.length - 3}
+                          </span>
+                        )}
                       </div>
-                      <div className="min-w-0">
-                        <p className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${item.action === 'None' ? 'text-slate-500' : 'text-indigo-400'}`}>Recommended Action</p>
-                        <p className="text-xs font-bold text-slate-100 overflow-wrap-anywhere word-break-break-word">{item.action}</p>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
-                  <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      {/* ENHANCED: Manual Summarization Button with Tooltip (only if no AI summary exists) */}
+                  {/* Recommended Action - Compact */}
+                  {item.action && item.action !== 'None' && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-500/5 border border-indigo-500/20">
+                      <CheckCircle2 size={14} className="text-indigo-400 shrink-0" />
+                      <p className="text-[11px] font-bold text-slate-100 truncate">{item.action}</p>
+                    </div>
+                  )}
+
+                  {/* Footer - Compact buttons */}
+                  <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
                       {!item.ai_summary_text && item.gmail_message_id && (
-                        <div className="relative group/tooltip">
-                          <button
-                            onClick={async () => {
-                              console.log('[SUMMARIZE] Requesting:', item.gmail_message_id);
+                        <button
+                          onClick={async () => {
+                            console.log('[SUMMARIZE] Requesting:', item.gmail_message_id);
+                            const updatedBriefings = briefings.map(b =>
+                              b.gmail_message_id === item.gmail_message_id
+                                ? { ...b, summary: '⏳ Generating AI summary...' }
+                                : b
+                            );
+                            setBriefings(updatedBriefings);
 
-                              // Optimistic UI update with loading state
-                              const updatedBriefings = briefings.map(b =>
-                                b.gmail_message_id === item.gmail_message_id
-                                  ? {
-                                      ...b,
-                                      summary: '⏳ Generating AI summary with Mistral AI...',
-                                      _summarizing: true  // Track loading state
-                                    }
-                                  : b
+                            try {
+                              const result = await apiService.summarizeEmail(
+                                item.gmail_message_id!,
+                                activeEmail || 'default'
                               );
-                              setBriefings(updatedBriefings);
 
-                              try {
-                                // Call API to enqueue summarization job
-                                const result = await apiService.summarizeEmail(
-                                  item.gmail_message_id!,
-                                  activeEmail || 'default'
-                                );
-
-                                // Handle result
-                                if (result.status === 'queued') {
-                                  console.log('[SUMMARIZE] Job queued:', result.job_id);
-
-                                  // Show success feedback
-                                  const feedbackBriefings = briefings.map(b =>
-                                    b.gmail_message_id === item.gmail_message_id
-                                      ? { ...b, summary: '✓ AI summary queued! Refreshing in 5 seconds...' }
-                                      : b
-                                  );
-                                  setBriefings(feedbackBriefings);
-
-                                  // Refresh after 5 seconds to show completed summary
-                                  setTimeout(() => {
-                                    fetchEmails(activeEmail);
-                                  }, 5000);
-
-                                } else if (result.status === 'no_mistral_key') {
-                                  console.error('[SUMMARIZE] MISTRAL_API_KEY not configured');
-                                  const errorBriefings = briefings.map(b =>
-                                    b.gmail_message_id === item.gmail_message_id
-                                      ? { ...b, summary: '❌ AI summarization unavailable (API key required)' }
-                                      : b
-                                  );
-                                  setBriefings(errorBriefings);
-
-                                  setTimeout(() => setBriefings(briefings), 3000);
-
-                                } else if (result.status === 'email_not_found') {
-                                  console.error('[SUMMARIZE] Email not found in database');
-                                  setBriefings(briefings); // Revert
-
-                                } else {
-                                  console.warn('[SUMMARIZE] Failed:', result);
-                                  const errorBriefings = briefings.map(b =>
-                                    b.gmail_message_id === item.gmail_message_id
-                                      ? { ...b, summary: '❌ Summarization failed. Please try again.' }
-                                      : b
-                                  );
-                                  setBriefings(errorBriefings);
-
-                                  setTimeout(() => setBriefings(briefings), 3000);
-                                }
-
-                              } catch (error) {
-                                console.error('[SUMMARIZE] Network error:', error);
-                                const errorBriefings = briefings.map(b =>
+                              if (result.status === 'queued') {
+                                console.log('[SUMMARIZE] Job queued:', result.job_id);
+                                const feedbackBriefings = briefings.map(b =>
                                   b.gmail_message_id === item.gmail_message_id
-                                    ? { ...b, summary: '❌ Network error. Check connection and try again.' }
+                                    ? { ...b, summary: '✓ AI summary queued! Refreshing in 5s...' }
                                     : b
                                 );
-                                setBriefings(errorBriefings);
-
-                                setTimeout(() => setBriefings(briefings), 3000);
+                                setBriefings(feedbackBriefings);
+                                setTimeout(() => fetchEmails(activeEmail), 5000);
+                              } else {
+                                setBriefings(briefings);
                               }
-                            }}
-                            className="text-[10px] font-black text-indigo-500 hover:text-indigo-400 uppercase tracking-[0.2em] flex items-center gap-2 transition-all group/btn"
-                            title="This email wasn't auto-summarized. Click to generate AI summary."
-                          >
-                            <Sparkles size={14} className="group-hover/btn:rotate-12 transition-transform" />
-                            Summarize Email
-                          </button>
-
-                          {/* Tooltip explaining why button appears */}
-                          <div className="absolute bottom-full left-0 mb-2 hidden group-hover/tooltip:block w-64 bg-slate-900 border border-indigo-500/30 rounded-lg p-3 shadow-xl z-50">
-                            <p className="text-[10px] text-slate-300 leading-relaxed">
-                              <span className="text-indigo-400 font-bold">Auto-summary not available.</span>
-                              <br />
-                              This email wasn't included in automatic batch processing. Click to generate AI summary using Mistral AI.
-                            </p>
-                            <div className="absolute top-full left-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-indigo-500/30"></div>
-                          </div>
-                        </div>
+                            } catch (error) {
+                              console.error('[SUMMARIZE] Error:', error);
+                              setBriefings(briefings);
+                            }
+                          }}
+                          className="text-[9px] font-bold text-indigo-500 hover:text-indigo-400 uppercase flex items-center gap-1 transition-colors"
+                          title="Generate AI summary"
+                        >
+                          <Sparkles size={11} />
+                          Summarize
+                        </button>
                       )}
                       <button
-                        onClick={() => alert(`Strategic context expansion for "${item.subject}" is coming soon.`)}
-                        className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-[0.2em] flex items-center gap-2 transition-all group/btn"
+                        onClick={() => alert(`Details for "${item.subject}" coming soon.`)}
+                        className="text-[9px] font-bold text-slate-500 hover:text-slate-300 uppercase flex items-center gap-1 transition-colors"
                       >
-                        Deep Dive <ChevronRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
+                        Details <ChevronRight size={11} />
                       </button>
                     </div>
-                    <div className="flex items-center -space-x-2">
-                      <div className="w-8 h-8 rounded-full bg-slate-800 border-2 border-[#0f172a] shadow-inner" />
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-600 border-2 border-[#0f172a] flex items-center justify-center text-[10px] font-black text-white shadow-lg">AI</div>
-                    </div>
+                    <div className="text-[8px] font-bold text-slate-600 uppercase">{item.account}</div>
                   </div>
                 </motion.div>
-              ))
+                );
+              })
             ) : null}
 
             {/* BATCH LIMIT INDICATOR: Inform users about auto-summary limits */}
@@ -1206,6 +1235,42 @@ export const App = () => {
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Scroll to Top Button - Bottom Left */}
+      <AnimatePresence>
+        {showScrollTop && (
+          <motion.button
+            initial={{ opacity: 0, y: 20, scale: 0.8 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.8 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="fixed bottom-8 left-8 z-50 group"
+            title="Scroll to top (Ctrl+Home)"
+          >
+            <div className="relative">
+              {/* Glow effect */}
+              <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity" />
+
+              {/* Button */}
+              <div className="relative flex items-center gap-2 px-4 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 border border-indigo-400/30 shadow-2xl group-hover:shadow-indigo-500/50 transition-all duration-300 group-hover:scale-105">
+                <svg
+                  className="w-5 h-5 text-white group-hover:animate-bounce"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                </svg>
+                <span className="text-white font-bold text-sm tracking-wide">TOP</span>
+              </div>
+
+              {/* Pulse ring */}
+              <div className="absolute inset-0 rounded-2xl border-2 border-indigo-400/30 animate-ping opacity-20" />
+            </div>
+          </motion.button>
         )}
       </AnimatePresence>
 
