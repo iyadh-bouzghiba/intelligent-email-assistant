@@ -6,7 +6,7 @@ Tokens are designed to be stored in HttpOnly cookies, not LocalStorage.
 """
 
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 from backend.config import Config
 
@@ -37,8 +37,8 @@ class JWTService:
         payload = {
             'user_id': user_id,
             'email': email,
-            'exp': datetime.utcnow() + timedelta(days=Config.JWT_EXPIRATION_DAYS),
-            'iat': datetime.utcnow()
+            'exp': datetime.now(timezone.utc) + timedelta(days=Config.JWT_EXPIRATION_DAYS),
+            'iat': datetime.now(timezone.utc)
         }
         
         return jwt.encode(

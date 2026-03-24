@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import warnings
 from typing import Dict, Any, Optional, List
 from mistralai import Mistral
 
@@ -40,42 +41,71 @@ class MistralEngine:
         model: str = "mistral-large-latest",
         max_tokens: int = 1024,
         temperature: float = 0.7,
-        timeout: int = 30
+        timeout: int = 30,
+        system_prompt: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Generate JSON output using Mistral's native JSON mode.
+
+        Args:
+            system_prompt: Optional custom system prompt. Defaults to SYSTEM_PROMPT from prompts.py.
+
+        Includes retry logic for transient errors (429/503/timeouts).
         """
         if not self.client:
             raise ValueError("Mistral API key not configured. Set MISTRAL_API_KEY environment variable.")
-        
+
         from backend.engine.prompts import SYSTEM_PROMPT
-        
-        try:
-            # Use native JSON mode
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    self.client.chat.complete,
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt}
-                    ],
-                    response_format={"type": "json_object"},
-                    max_tokens=max_tokens,
-                    temperature=temperature
-                ),
-                timeout=timeout
-            )
-            
-            content = response.choices[0].message.content
-            return json.loads(content)
-            
-        except asyncio.TimeoutError:
-            raise TimeoutError(f"Mistral API call timed out after {timeout}s")
-        except json.JSONDecodeError as e:
-            raise RuntimeError(f"Failed to parse Mistral JSON response: {e}")
-        except Exception as e:
-            raise RuntimeError(f"Mistral API error: {str(e)}")
+        effective_system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+
+        # P2-3: Retry configuration for transient errors
+        max_retries = 2
+        base_delay = 1.0
+
+        for attempt in range(max_retries + 1):
+            try:
+                # Use native JSON mode
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.client.chat.complete,
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": effective_system_prompt},
+                            {"role": "user", "content": prompt}
+                        ],
+                        response_format={"type": "json_object"},
+                        max_tokens=max_tokens,
+                        temperature=temperature
+                    ),
+                    timeout=timeout
+                )
+
+                content = response.choices[0].message.content
+                return json.loads(content)
+
+            except asyncio.TimeoutError:
+                if attempt < max_retries:
+                    delay = base_delay * (2 ** attempt)
+                    await asyncio.sleep(delay)
+                    continue
+                raise TimeoutError(f"Mistral API call timed out after {timeout}s (retries exhausted)")
+
+            except json.JSONDecodeError as e:
+                # JSON decode errors are not retryable (API returned invalid JSON)
+                raise RuntimeError(f"Failed to parse Mistral JSON response: {e}")
+
+            except Exception as e:
+                # Check for retryable HTTP errors (429 rate limit, 503 service unavailable)
+                err_msg = str(e)
+                is_retryable = "429" in err_msg or "503" in err_msg or "rate" in err_msg.lower()
+
+                if is_retryable and attempt < max_retries:
+                    delay = base_delay * (2 ** attempt)
+                    await asyncio.sleep(delay)
+                    continue
+
+                # Non-retryable error or max retries reached
+                raise RuntimeError(f"Mistral API error: {str(e)}")
     
     def generate_json(
         self,
@@ -84,7 +114,12 @@ class MistralEngine:
         max_tokens: int = 1024,
         temperature: float = 0.7
     ) -> Dict[str, Any]:
-        """Synchronous wrapper for generate_json_async."""
+        """Synchronous wrapper for generate_json_async. DEPRECATED: Use generate_json_async() instead."""
+        warnings.warn(
+            "generate_json() is deprecated. Use generate_json_async() for better async performance.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         return asyncio.run(self.generate_json_async(
             prompt, model, max_tokens, temperature
         ))
@@ -95,37 +130,64 @@ class MistralEngine:
         model: str = "mistral-large-latest",
         max_tokens: int = 512,
         temperature: float = 0.7,
-        timeout: int = 30
+        timeout: int = 30,
+        system_prompt: Optional[str] = None
     ) -> str:
         """
         Generate plain text output (for draft replies).
+
+        Args:
+            system_prompt: Optional custom system prompt. Defaults to SYSTEM_PROMPT from prompts.py.
+
+        Includes retry logic for transient errors (429/503/timeouts).
         """
         if not self.client:
             raise ValueError("Mistral API key not configured")
-            
+
         from backend.engine.prompts import SYSTEM_PROMPT
-        
-        try:
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    self.client.chat.complete,
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt}
-                    ],
-                    max_tokens=max_tokens,
-                    temperature=temperature
-                ),
-                timeout=timeout
-            )
-            
-            return response.choices[0].message.content.strip()
-            
-        except asyncio.TimeoutError:
-            raise TimeoutError(f"Mistral API call timed out after {timeout}s")
-        except Exception as e:
-            raise RuntimeError(f"Mistral API error: {str(e)}")
+        effective_system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+
+        # P2-3: Retry configuration for transient errors
+        max_retries = 2
+        base_delay = 1.0
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.client.chat.complete,
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": effective_system_prompt},
+                            {"role": "user", "content": prompt}
+                        ],
+                        max_tokens=max_tokens,
+                        temperature=temperature
+                    ),
+                    timeout=timeout
+                )
+
+                return response.choices[0].message.content.strip()
+
+            except asyncio.TimeoutError:
+                if attempt < max_retries:
+                    delay = base_delay * (2 ** attempt)
+                    await asyncio.sleep(delay)
+                    continue
+                raise TimeoutError(f"Mistral API call timed out after {timeout}s (retries exhausted)")
+
+            except Exception as e:
+                # Check for retryable HTTP errors (429 rate limit, 503 service unavailable)
+                err_msg = str(e)
+                is_retryable = "429" in err_msg or "503" in err_msg or "rate" in err_msg.lower()
+
+                if is_retryable and attempt < max_retries:
+                    delay = base_delay * (2 ** attempt)
+                    await asyncio.sleep(delay)
+                    continue
+
+                # Non-retryable error or max retries reached
+                raise RuntimeError(f"Mistral API error: {str(e)}")
     
     def generate_text(
         self,
@@ -134,7 +196,12 @@ class MistralEngine:
         max_tokens: int = 512,
         temperature: float = 0.7
     ) -> str:
-        """Synchronous wrapper for generate_text_async."""
+        """Synchronous wrapper for generate_text_async. DEPRECATED: Use generate_text_async() instead."""
+        warnings.warn(
+            "generate_text() is deprecated. Use generate_text_async() for better async performance.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         return asyncio.run(self.generate_text_async(
             prompt, model, max_tokens, temperature
         ))

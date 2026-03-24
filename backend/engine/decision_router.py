@@ -1,8 +1,11 @@
+import logging
 from typing import Optional, Tuple
 from backend.data.models import EmailMessage, ClassificationResult, IntentCategory, PriorityLevel
 from backend.engine.summarizer import EmailSummarizer
 from backend.engine.drafter import EmailDrafter
 from backend.data.models import ThreadSummary
+
+logger = logging.getLogger(__name__)
 
 class DecisionRouter:
     """
@@ -35,10 +38,14 @@ class DecisionRouter:
         draft = None
         if classification:
              if self._should_draft(classification):
-                 # Draft needs summary context usually
-                 if summary:
-                     draft = self.drafter.draft_reply(email, summary)
-        
+                 # P1-3 FIX: Allow draft even when summary is None (urgent standalone emails)
+                 if summary is None:
+                     logger.warning(
+                         f"[ROUTER] Drafting without thread summary for {classification.intent.value} email "
+                         f"(priority: {classification.priority.value}). Subject: {email.metadata.subject[:50]}"
+                     )
+                 draft = self.drafter.draft_reply(email, summary)
+
         return summary, draft
 
     def _should_draft(self, classification: ClassificationResult) -> bool:
@@ -49,11 +56,12 @@ class DecisionRouter:
         - Priority: URGENT, HIGH (and sometimes MEDIUM if Request)
         """
         
-        # Strict rules for demo/v1
+        # Strict rules for demo/v1 (P1-5: Added SALES to actionable intents)
         is_actionable_intent = classification.intent in [
-            IntentCategory.REQUEST, 
-            IntentCategory.SCHEDULING, 
-            IntentCategory.FOLLOW_UP
+            IntentCategory.REQUEST,
+            IntentCategory.SCHEDULING,
+            IntentCategory.FOLLOW_UP,
+            IntentCategory.SALES
         ]
         
         is_high_priority = classification.priority in [

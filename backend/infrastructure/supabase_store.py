@@ -1,6 +1,9 @@
 import os
+import logging
 from supabase import create_client
-from datetime import datetime
+from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 class SupabaseStore:
     def __init__(self):
@@ -18,7 +21,7 @@ class SupabaseStore:
             "account_id": account_id,
             "subject": subject,
             "summary": summary,
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         }).execute()
 
     def get_threads(self, account_id="default"):
@@ -29,7 +32,7 @@ class SupabaseStore:
                 .order("created_at", desc=True) \
                 .execute()
         except Exception as e:
-            print(f"[WARN] Supabase thread fetch error: {e}")
+            logger.warning(f"Supabase thread fetch error: {e}")
             return type('obj', (object,), {'data': []})
 
     def save_email(self, subject, sender, date, body=None, message_id=None, tenant_id="primary", account_id="default"):
@@ -84,8 +87,8 @@ class SupabaseStore:
             # Legacy unsafe mode: insert without dedup (use only for recovery)
             subj = subject if isinstance(subject, str) else ("" if subject is None else str(subject))
             subject_truncated = (subj[:50] + "...") if len(subj) > 50 else subj
-            print(
-                f"[WARN] [SYNC] UNSAFE MODE: Missing gmail_message_id; inserting without dedupe "
+            logger.warning(
+                f"[SYNC] UNSAFE MODE: Missing gmail_message_id; inserting without dedupe "
                 f"(tenant={tenant_id}, subject={subject_truncated}, date={date})"
             )
             return self.client.table("emails").insert(payload).execute()
@@ -93,8 +96,8 @@ class SupabaseStore:
         # Default: skip insert to prevent DB corruption
         subj = subject if isinstance(subject, str) else ("" if subject is None else str(subject))
         subject_truncated = (subj[:50] + "...") if len(subj) > 50 else subj
-        print(
-            f"[WARN] [SYNC] Missing gmail_message_id; SKIPPING insert to prevent corruption "
+        logger.warning(
+            f"[SYNC] Missing gmail_message_id; SKIPPING insert to prevent corruption "
             f"(tenant={tenant_id}, subject={subject_truncated}, date={date})"
         )
         return None
@@ -257,7 +260,7 @@ class SupabaseStore:
             "account_id": account_id,
             "encrypted_payload": json.dumps(encrypted_payload),
             "scopes": scopes_str,
-            "updated_at": datetime.utcnow().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }
 
         try:
@@ -265,10 +268,10 @@ class SupabaseStore:
                 payload,
                 on_conflict="provider,account_id"
             ).execute()
-            print(f"[OK] [SUPABASE] Stored credentials (provider={provider}, account_id={account_id})")
+            logger.info(f"[SUPABASE] Stored credentials (provider={provider}, account_id={account_id})")
             return result
         except Exception as e:
-            print(f"[ERROR] Supabase credential save failed: {e}")
+            logger.error(f"Supabase credential save failed: {e}")
             raise
 
     def get_credential(self, provider: str, account_id: str):
@@ -298,7 +301,7 @@ class SupabaseStore:
                 scopes_str = cred.get("scopes", "")
                 scopes = [s.strip() for s in scopes_str.split(",") if s.strip()] if scopes_str else []
 
-                print(f"[OK] [SUPABASE] Loaded credentials (provider={provider}, account_id={account_id})")
+                logger.info(f"[SUPABASE] Loaded credentials (provider={provider}, account_id={account_id})")
                 return {
                     "encrypted_payload": json.loads(cred["encrypted_payload"]),
                     "scopes": scopes,
@@ -306,7 +309,7 @@ class SupabaseStore:
                 }
             return None
         except Exception as e:
-            print(f"[WARN] Supabase credential fetch error: {e}")
+            logger.warning(f"Supabase credential fetch error: {e}")
             return None
 
     def get_sync_state(self, tenant_id: str, account_id: str):
@@ -331,7 +334,7 @@ class SupabaseStore:
                 return response.data[0].get("last_history_id")
             return None
         except Exception as e:
-            print(f"[WARN] Supabase sync state fetch error: {e}")
+            logger.warning(f"Supabase sync state fetch error: {e}")
             return None
 
     def set_sync_state(self, tenant_id: str, account_id: str, last_history_id: str):
@@ -347,7 +350,7 @@ class SupabaseStore:
             "tenant_id": tenant_id,
             "account_id": account_id,
             "last_history_id": last_history_id,
-            "updated_at": datetime.utcnow().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }
 
         try:
@@ -355,9 +358,9 @@ class SupabaseStore:
                 payload,
                 on_conflict="tenant_id,account_id"
             ).execute()
-            print(f"[OK] [SYNC-STATE] Cursor saved: {last_history_id[:8]}... (tenant={tenant_id}, account={account_id})")
+            logger.info(f"[SYNC-STATE] Cursor saved: {last_history_id[:8]}... (tenant={tenant_id}, account={account_id})")
         except Exception as e:
-            print(f"[ERROR] Supabase sync state save failed: {e}")
+            logger.error(f"Supabase sync state save failed: {e}")
             raise
 
 
@@ -372,16 +375,16 @@ class SupabaseStore:
                 cred["scopes"] = [s.strip() for s in scopes_str.split(",") if s.strip()] if scopes_str else []
             return data
         except Exception as e:
-            print(f"[WARN] Supabase credential list error: {e}")
+            logger.warning(f"Supabase credential list error: {e}")
             return []
 
     def delete_credential(self, provider: str, account_id: str):
         """Deletes credentials for provider/account_id from Supabase."""
         try:
             self.client.table("credentials")                 .delete()                 .eq("provider", provider)                 .eq("account_id", account_id)                 .execute()
-            print(f"[OK] [SUPABASE] Deleted credentials (provider={provider}, account_id={account_id})")
+            logger.info(f"[SUPABASE] Deleted credentials (provider={provider}, account_id={account_id})")
         except Exception as e:
-            print(f"[WARN] Supabase credential delete error: {e}")
+            logger.warning(f"Supabase credential delete error: {e}")
 
     def enqueue_ai_job(self, account_id: str, gmail_message_id: str, job_type: str = "email_summarize_v1"):
         """
@@ -402,9 +405,9 @@ class SupabaseStore:
                 "gmail_message_id": gmail_message_id,
                 "status": "queued",
                 "attempts": 0,
-                "run_after": datetime.utcnow().isoformat(),
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat()
+                "run_after": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat()
             }
 
             result = self.client.table("ai_jobs").upsert(
@@ -414,9 +417,9 @@ class SupabaseStore:
 
             if result.data and len(result.data) > 0:
                 job_id = result.data[0].get("id")
-                print(f"[AI-ENQUEUE] Job {job_id} queued for {account_id}/{gmail_message_id[:8]}...")
+                logger.info(f"[AI-ENQUEUE] Job {job_id} queued for {account_id}/{gmail_message_id[:8]}...")
                 return job_id
             return None
         except Exception as e:
-            print(f"[WARN] AI job enqueue failed: {e}")
+            logger.warning(f"AI job enqueue failed: {e}")
             return None

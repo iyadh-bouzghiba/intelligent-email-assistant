@@ -1,13 +1,10 @@
 SYSTEM_PROMPT = """You are an Intelligent Email Assistant.
 
 Rules:
-- Do NOT invent email content
-- Do NOT summarize without full context
-- If an email is ambiguous, ask for clarification
-- Preserve factual accuracy
-- Output structured JSON when requested
-- Never modify emails unless explicitly instructed
-- Be concise, professional, and neutral"""
+1. ONLY output valid JSON. Do not include explanatory text, markdown formatting, or any content outside the JSON structure.
+2. Preserve factual accuracy — never invent email content or fabricate details.
+3. If input is ambiguous or incomplete, include an "error" field in the JSON response explaining what information is missing.
+4. Be concise and professional in all JSON field values."""
 
 CLASSIFICATION_PROMPT = """
 Analyze the following email and categorize its intent and priority.
@@ -52,7 +49,7 @@ DRAFTING_PROMPT = """
 Generate a professional and context-aware reply to the latest email in this thread.
 
 Thread Summary/Context:
-{summary}
+{summary_text}
 
 Latest Email:
 From: {sender}

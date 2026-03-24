@@ -1,8 +1,11 @@
 import os
 import time
+import logging
 from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from backend.infrastructure.supabase_store import SupabaseStore
+
+logger = logging.getLogger(__name__)
 
 class ControlPlane:
     _instance = None
@@ -18,7 +21,7 @@ class ControlPlane:
             try:
                 cls._instance.store = SupabaseStore()
             except Exception as e:
-                print(f"[WARN] [CONTROLPLANE] Persistence layer unavailable: {e}")
+                logger.warning(f"[CONTROLPLANE] Persistence layer unavailable: {e}")
                 cls._instance.store = None
         return cls._instance
 
@@ -48,7 +51,7 @@ class ControlPlane:
                 self._last_fetch = now
                 return self._policy_cache
         except Exception as e:
-            print(f"[WARN] ControlPlane fetch error: {e}")
+            logger.warning(f"ControlPlane fetch error: {e}")
             # Fail open: returning last known cache or empty dict
         
         return self._policy_cache or {
@@ -70,7 +73,7 @@ class ControlPlane:
     def verify_schema(self) -> bool:
         """Validates DB schema and sets schema_state. Never raises."""
         if not self.store:
-            print("[WARN] [CONTROLPLANE] Schema verification skipped: persistence layer unavailable")
+            logger.warning("[CONTROLPLANE] Schema verification skipped: persistence layer unavailable")
             ControlPlane.schema_state = "uninitialized"
             return False
 
@@ -90,7 +93,7 @@ class ControlPlane:
             ControlPlane.schema_state = "mismatch"
             return False
         except Exception as e:
-            print(f"[WARN] Schema verification failed: {e}")
+            logger.warning(f"Schema verification failed: {e}")
             ControlPlane.schema_state = "uninitialized"
             return False
 
@@ -104,7 +107,7 @@ class ControlPlane:
                 "action": action,
                 "resource": resource,
                 "metadata": metadata or {},
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }).execute()
         except Exception as e:
-            print(f"[WARN] Audit logging failure: {e}")
+            logger.warning(f"Audit logging failure: {e}")

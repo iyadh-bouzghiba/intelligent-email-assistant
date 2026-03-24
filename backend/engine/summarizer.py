@@ -1,5 +1,6 @@
 import asyncio
 import json
+import warnings
 from typing import List
 from .nlp_engine import MistralEngine
 from .prompts import SUMMARIZATION_PROMPT
@@ -117,5 +118,10 @@ Return a JSON object with this exact structure:
             )
     
     def summarize_thread(self, thread_state: ThreadState) -> ThreadSummary:
-        """Synchronous wrapper for backward compatibility."""
+        """Synchronous wrapper for backward compatibility. DEPRECATED: Use summarize_thread_async() instead."""
+        warnings.warn(
+            "summarize_thread() is deprecated. Use summarize_thread_async() for better async performance.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         return asyncio.run(self.summarize_thread_async(thread_state))
