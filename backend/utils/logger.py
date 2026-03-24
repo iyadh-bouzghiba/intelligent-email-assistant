@@ -7,7 +7,7 @@ Compatible with CloudWatch, Datadog, and other log aggregators.
 
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 
@@ -33,7 +33,7 @@ class JSONFormatter(logging.Formatter):
             JSON string
         """
         log_data: Dict[str, Any] = {
-            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'timestamp': datetime.now(timezone.utc).isoformat() + 'Z',
             'level': record.levelname,
             'message': record.getMessage(),
             'logger': record.name,

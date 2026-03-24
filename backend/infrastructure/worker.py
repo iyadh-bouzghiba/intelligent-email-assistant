@@ -4,9 +4,13 @@ import time
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from backend.core import EmailAssistant
 from backend.infrastructure.control_plane import ControlPlane
+
+# Schema mismatch retry configuration
+MAX_SCHEMA_RETRIES = 5
+SCHEMA_RETRY_DELAY = 300  # 5 minutes between retry attempts
 
 # Configure logger for worker process
 logger = logging.getLogger(__name__)
@@ -27,7 +31,7 @@ try:
     SOCKETIO_AVAILABLE = True
 except ImportError:
     SOCKETIO_AVAILABLE = False
-    print("[WARN] [WORKER] Socket.IO not available - realtime updates disabled")
+    logger.warning("[WORKER] Socket.IO not available - realtime updates disabled")
 
 # Shared operational heartbeat - accessible by health check server
 WORKER_HEARTBEAT = {"last_cycle": None}
@@ -45,7 +49,7 @@ def _load_token_data() -> dict:
         if tokens:
             return tokens
     except Exception as e:
-        print(f"[WARN] [WORKER] Failed to load credentials: {e}")
+        logger.warning(f"[WORKER] Failed to load credentials: {e}")
 
     # Dev fallback
     env = os.getenv("ENVIRONMENT", "production").lower()
@@ -100,8 +104,6 @@ def _fetch_and_transform_messages(gmail_client, message_ids, assistant):
 
             # Use internalDate as authoritative timestamp
             # CRITICAL FIX: Use timezone-aware datetime to prevent drift
-            from datetime import timezone
-
             internal_date_ms = msg.get('internalDate')
             timestamp_source = "unknown"
 
@@ -174,7 +176,7 @@ def _fetch_and_transform_messages(gmail_client, message_ids, assistant):
                 "summary": summary
             })
         except Exception as e:
-            print(f"[WARN] [WORKER] Failed to fetch message {msg_id}: {e}")
+            logger.warning(f"[WORKER] Failed to fetch message {msg_id}: {e}")
             continue
 
     return results
@@ -185,17 +187,41 @@ def run_worker_loop():
     Core background processing loop with Gmail History API cursor tracking.
     WORKER-PERF-01: Detects no-op cycles to eliminate redundant DB writes and Socket.IO emissions.
     """
-    print("[WORKER] Background worker loop initialized")
+    logger.info("[WORKER] Background worker loop initialized")
     assistant = EmailAssistant()
     control = ControlPlane()
 
-    # PHASE 4: DEPLOYMENT SAFETY CONTRACT
-    control.verify_schema()  # sets ControlPlane.schema_state
+    # PHASE 4: DEPLOYMENT SAFETY CONTRACT — Bounded retry for schema mismatch (P0-3 fix)
+    schema_retry_count = 0
+    while schema_retry_count < MAX_SCHEMA_RETRIES:
+        control.verify_schema()  # sets ControlPlane.schema_state
+
+        if ControlPlane.schema_state == "ok":
+            break  # Schema verified, proceed to worker loop
+
+        schema_retry_count += 1
+        logger.warning(
+            f"[WORKER] Schema verification failed (attempt {schema_retry_count}/{MAX_SCHEMA_RETRIES}). "
+            f"State: {ControlPlane.schema_state}. "
+            f"Retrying in {SCHEMA_RETRY_DELAY}s..."
+        )
+
+        # Update heartbeat during retry wait
+        WORKER_HEARTBEAT["last_cycle"] = time.time()
+        WORKER_HEARTBEAT["schema_error_count"] = schema_retry_count
+
+        time.sleep(SCHEMA_RETRY_DELAY)
+
+    # If retries exhausted, log critical error and exit cleanly
     if ControlPlane.schema_state != "ok":
-        print(f"[WARN] [WORKER] Schema state: {ControlPlane.schema_state}. Writes disabled. Worker idle.")
-        while True:
-            WORKER_HEARTBEAT["last_cycle"] = time.time()
-            time.sleep(60)
+        logger.critical(
+            f"[WORKER] Schema verification failed after {MAX_SCHEMA_RETRIES} attempts. "
+            f"Final state: {ControlPlane.schema_state}. "
+            f"Worker exiting cleanly for supervisor restart."
+        )
+        sys.exit(1)
+
+    logger.info("[WORKER] Schema verification passed. Starting worker loop.")
 
     # WORKER-PERF-01: Initialize cursor tracking
     tenant_id = "primary"
@@ -217,9 +243,9 @@ def run_worker_loop():
                 "scopes": token_data.get("scopes", [])
             }
             gmail_client = GmailClient(client_token_data)
-            print("[OK] [WORKER] GmailClient initialized for cursor tracking")
+            logger.info("[WORKER] GmailClient initialized for cursor tracking")
         except Exception as e:
-            print(f"[WARN] [WORKER] GmailClient init failed: {e}. Cursor tracking disabled.")
+            logger.warning(f"[WORKER] GmailClient init failed: {e}. Cursor tracking disabled.")
 
     while True:
         try:
@@ -228,11 +254,11 @@ def run_worker_loop():
 
             # PHASE 1: CONTROL PLANE ENFORCEMENT
             if not control.is_worker_enabled():
-                print("[WORKER] Ingestion suspended by ControlPlane policy.")
+                logger.info("[WORKER] Ingestion suspended by ControlPlane policy.")
                 time.sleep(60)
                 continue
 
-            print(f"[WORKER] Cycle started: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(f"[WORKER] Cycle started: {time.strftime('%Y-%m-%d %H:%M:%S')}")
             control.log_audit("cycle_start", "gmail_ingest")
 
             # WORKER-PERF-01: Cursor-based delta ingestion
@@ -246,7 +272,7 @@ def run_worker_loop():
 
             if not gmail_client:
                 # Fallback to full sync if GmailClient unavailable
-                print("[WORKER] GmailClient unavailable. Using full sync mode.")
+                logger.info("[WORKER] GmailClient unavailable. Using full sync mode.")
                 emails = assistant.process_emails()
             else:
                 try:
@@ -256,54 +282,54 @@ def run_worker_loop():
                     if not current_cursor:
                         raise RuntimeError("Gmail profile returned NULL historyId - cannot continue")
 
-                    print(f"[WORKER] Cursor state: last={last_cursor[:8] if last_cursor else 'NULL'}..., current={current_cursor[:8]}...")
+                    logger.info(f"[WORKER] Cursor state: last={last_cursor[:8] if last_cursor else 'NULL'}..., current={current_cursor[:8]}...")
 
                     # Case 1: First run (no cursor saved)
                     if not last_cursor:
-                        print("[WORKER] First run detected (NULL cursor). Running bounded full sync to seed data.")
+                        logger.info("[WORKER] First run detected (NULL cursor). Running bounded full sync to seed data.")
                         emails = assistant.process_emails()
 
                     # Case 2: NO-OP (cursor unchanged)
                     elif last_cursor == current_cursor:
-                        print(f"[WORKER] NO-OP: historyId unchanged ({current_cursor[:8]}...). Skip fetch/ingest.")
-                        print(f"[WORKER] Counters: changed_ids_count=0, fetched_emails_count=0, written_count=0, emitted=false")
-                        print("[WORKER] Cycle complete (NO-OP) - sleeping 60s")
+                        logger.info(f"[WORKER] NO-OP: historyId unchanged ({current_cursor[:8]}...). Skip fetch/ingest.")
+                        logger.info(f"[WORKER] Counters: changed_ids_count=0, fetched_emails_count=0, written_count=0, emitted=false")
+                        logger.info("[WORKER] Cycle complete (NO-OP) - sleeping 60s")
                         time.sleep(60)
                         continue
 
                     # Case 3: Delta sync (cursor changed)
                     else:
-                        print(f"[WORKER] Delta sync: historyId changed from {last_cursor[:8]}... to {current_cursor[:8]}...")
+                        logger.info(f"[WORKER] Delta sync: historyId changed from {last_cursor[:8]}... to {current_cursor[:8]}...")
                         history_records = gmail_client.list_history(start_history_id=last_cursor, history_types=["messageAdded"])
 
                         # Handle 404 "historyId too old" (list_history returns None)
                         if history_records is None:
-                            print("[WARN] [WORKER] History API indicates cursor too old (404). Fallback to bounded full sync.")
+                            logger.warning("[WORKER] History API indicates cursor too old (404). Fallback to bounded full sync.")
                             emails = assistant.process_emails()
                         else:
                             # Extract changed message IDs (may be empty list - valid case)
                             changed_ids = _extract_message_ids_from_history(history_records)
                             changed_ids_count = len(changed_ids)
-                            print(f"[WORKER] History API returned {changed_ids_count} changed message(s).")
+                            logger.info(f"[WORKER] History API returned {changed_ids_count} changed message(s).")
 
                             if changed_ids_count > 0:
                                 # Fetch ONLY changed messages
                                 emails = _fetch_and_transform_messages(gmail_client, changed_ids, assistant)
                                 fetched_emails_count = len(emails)
-                                print(f"[WORKER] Fetched {fetched_emails_count} message(s) via delta sync.")
+                                logger.info(f"[WORKER] Fetched {fetched_emails_count} message(s) via delta sync.")
                             else:
                                 # Valid: cursor changed but no messageAdded entries in this delta
                                 emails = []
-                                print("[WORKER] No messageAdded events in history delta.")
+                                logger.info("[WORKER] No messageAdded events in history delta.")
 
                 except Exception as e:
-                    print(f"[WARN] [WORKER] Delta sync failed: {e}. Fallback to full sync.")
+                    logger.warning(f"[WORKER] Delta sync failed: {e}. Fallback to full sync.")
                     emails = assistant.process_emails()
 
             # Detect auth error and enter quiet mode
             if isinstance(emails, dict) and emails.get("__auth_error__") == "invalid_grant":
-                print("[WARN] [WORKER] Gmail auth invalid. Re-auth required at /auth/google")
-                print("[WORKER] Entering quiet mode: 10 minute backoff")
+                logger.warning("[WORKER] Gmail auth invalid. Re-auth required at /auth/google")
+                logger.info("[WORKER] Entering quiet mode: 10 minute backoff")
                 time.sleep(600)  # 10 minutes
                 continue
 
@@ -311,12 +337,12 @@ def run_worker_loop():
                 # Enforce cycle quota
                 max_emails = control.max_emails_per_cycle()
                 if len(emails) > max_emails:
-                    print(f"[WARN] [WORKER] Truncating cycle from {len(emails)} to {max_emails} (Policy)")
+                    logger.warning(f"[WORKER] Truncating cycle from {len(emails)} to {max_emails} emails (Policy enforcement)")
                     emails = emails[:max_emails]
 
-                print(f"[WORKER] Gmail fetch success: {len(emails)} emails")
+                logger.info(f"[WORKER] Gmail fetch success: {len(emails)} emails")
             else:
-                print("[WORKER] Gmail fetch: No new emails found")
+                logger.info("[WORKER] Gmail fetch: No new emails found")
 
             # PHASE 3: REAL-TIME BACKPRESSURE (Batch Commits)
             if emails:
@@ -330,13 +356,13 @@ def run_worker_loop():
 
                         # CRITICAL: Never ingest emails without valid Gmail ID (breaks dedup contract)
                         if not m_id:
-                            print(f"[WORKER] SKIP: Missing gmail_id for subject: {email.get('subject', 'No Subject')}")
+                            logger.warning(f"[WORKER] SKIP: Missing gmail_id for subject: {email.get('subject', 'No Subject')}")
                             continue
 
                         # Deduplication key originates from source-of-truth date
-                        date_val = email.get('date') or datetime.utcnow().isoformat()
+                        date_val = email.get('date') or datetime.now(timezone.utc).isoformat()
 
-                        print(f"[WORKER] Ingesting: {email.get('subject', 'No Subject')} (gmail_id={m_id})")
+                        logger.info(f"[WORKER] Ingesting: {email.get('subject', 'No Subject')} (gmail_id={m_id})")
 
                         control.store.save_email(
                             subject=email.get('subject', 'No Subject'),
@@ -359,11 +385,11 @@ def run_worker_loop():
 
                     # Sleep between batches for backpressure
                     if i + batch_size < len(emails):
-                        print(f"[WORKER] Batch commit complete. Cooling for 500ms...")
+                        logger.info(f"[WORKER] Batch commit complete. Cooling for 500ms...")
                         time.sleep(0.5)
 
                 control.log_audit("ingestion_complete", "supabase", {"count": written_count})
-                print(f"[WORKER] Supabase write complete: {written_count} email(s) ingested")
+                logger.info(f"[WORKER] Supabase write complete: {written_count} email(s) ingested")
 
                 # Emit realtime notification ONLY if written_count > 0
                 if written_count > 0 and SOCKETIO_AVAILABLE:
@@ -371,28 +397,28 @@ def run_worker_loop():
                         # Use asyncio.run to properly await the async emit in sync context
                         asyncio.run(sio.emit("emails_updated", {
                             "count": written_count,
-                            "timestamp": datetime.utcnow().isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat()
                         }))
                         emitted = True
-                        print(f"[WORKER] Socket.IO event emitted: emails_updated (count={written_count})")
+                        logger.info(f"[WORKER] Socket.IO event emitted: emails_updated (count={written_count})")
                     except Exception as e:
-                        print(f"[WARN] [WORKER] Socket.IO emission failed: {e}")
+                        logger.warning(f"[WORKER] Socket.IO emission failed: {e}")
 
             # WORKER-PERF-01: Save cursor after successful cycle
             if gmail_client and current_cursor:
                 try:
                     control.store.set_sync_state(tenant_id, account_id, current_cursor)
                 except Exception as e:
-                    print(f"[WARN] [WORKER] Failed to save cursor: {e}")
+                    logger.warning(f"[WORKER] Failed to save cursor: {e}")
 
             # Log final counters
-            print(f"[WORKER] Counters: changed_ids_count={changed_ids_count}, fetched_emails_count={fetched_emails_count}, written_count={written_count}, emitted={emitted}")
-            print("[WORKER] Cycle complete - sleeping 60s")
+            logger.info(f"[WORKER] Counters: changed_ids_count={changed_ids_count}, fetched_emails_count={fetched_emails_count}, written_count={written_count}, emitted={emitted}")
+            logger.info("[WORKER] Cycle complete - sleeping 60s")
             time.sleep(60)
 
         except Exception as e:
-            print(f"[WORKER] ERROR: {e}")
-            print("[WORKER] Backing off 120s")
+            logger.error(f"[WORKER] ERROR: {e}")
+            logger.info("[WORKER] Backing off 120s")
             time.sleep(120)
 
 if __name__ == "__main__":
@@ -401,4 +427,4 @@ if __name__ == "__main__":
     if WORKER_MODE:
         run_worker_loop()
     else:
-        print("Worker mode disabled — safe exit")
+        logger.info("Worker mode disabled — safe exit")

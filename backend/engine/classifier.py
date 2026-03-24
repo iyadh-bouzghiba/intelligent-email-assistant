@@ -1,4 +1,5 @@
 import asyncio
+import warnings
 from typing import Optional
 from .nlp_engine import MistralEngine
 from .prompts import CLASSIFICATION_PROMPT
@@ -25,17 +26,7 @@ class EmailClassifier:
             subject=email.metadata.subject,
             body=email.content.plain_text[:2000]  # Limit to 2000 chars for speed
         )
-        
-        prompt += """
 
-Return a JSON object with this exact structure:
-{
-    "intent": "one of: request, follow_up, escalation, scheduling, fyi, support, sales, other",
-    "priority": "one of: urgent, high, medium, low",
-    "confidence": 0.95,
-    "reasoning": "Brief explanation of classification"
-}"""
-        
         try:
             # Use mistral-small-latest for fast classification
             data = await self.engine.generate_json_async(
@@ -66,5 +57,10 @@ Return a JSON object with this exact structure:
             )
     
     def classify(self, email: EmailMessage) -> ClassificationResult:
-        """Synchronous wrapper for backward compatibility."""
+        """Synchronous wrapper for backward compatibility. DEPRECATED: Use classify_async() instead."""
+        warnings.warn(
+            "classify() is deprecated. Use classify_async() for better async performance.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         return asyncio.run(self.classify_async(email))

@@ -19,7 +19,7 @@ import asyncio
 import json
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request, Response, APIRouter, Query
@@ -989,7 +989,7 @@ async def export_data(tenant_id: str = "primary"):
         
         return {
             "tenant_id": tenant_id,
-            "export_at": datetime.utcnow().isoformat(),
+            "export_at": datetime.now(timezone.utc).isoformat(),
             "emails": filtered,
             "threads_count": len(getattr(assistant, "threads", {}))
         }

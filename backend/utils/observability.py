@@ -8,7 +8,7 @@ production monitoring with Datadog, ELK, CloudWatch, etc.
 import logging
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from contextlib import contextmanager
 import redis
@@ -89,7 +89,7 @@ class MetricsCollector:
             "mistral_latencies": mistral_latencies,
             "gmail_errors": gmail_errors,
             "rate_limit_hits": rate_limit_hits,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -158,7 +158,7 @@ class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format log record as JSON."""
         log_data = {
-            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'timestamp': datetime.now(timezone.utc).isoformat() + 'Z',
             'level': record.levelname,
             'logger': record.name,
             'message': record.getMessage(),

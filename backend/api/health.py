@@ -9,7 +9,7 @@ from fastapi import APIRouter, Response
 from typing import Dict, Any
 import redis
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from backend.config import Config
 from backend.utils.observability import metrics_collector
 
@@ -26,9 +26,9 @@ async def check_redis() -> Dict[str, Any]:
         )
         
         # Test ping
-        start = datetime.utcnow()
+        start = datetime.now(timezone.utc)
         redis_client.ping()
-        latency_ms = (datetime.utcnow() - start).total_seconds() * 1000
+        latency_ms = (datetime.now(timezone.utc) - start).total_seconds() * 1000
         
         return {
             "status": "healthy",
@@ -106,7 +106,7 @@ async def health_check(response: Response):
     
     health_response = {
         "status": "healthy" if is_healthy else "unhealthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": checks,
         "metrics": metrics,
         "version": "1.0.0",
@@ -140,4 +140,4 @@ async def liveness_check():
     Kubernetes liveness probe.
     Returns 200 if service is alive (even if degraded).
     """
-    return {"status": "alive", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat()}

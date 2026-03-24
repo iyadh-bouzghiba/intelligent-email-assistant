@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Optional
 from pydantic import BaseModel, Field
@@ -43,7 +43,7 @@ class ThreadSummary(BaseModel):
     overview: str
     key_points: List[str]
     action_items: List[str]
-    deadlines: List[datetime] = []
+    deadlines: List[str] = []
     key_participants: List[str] = []
     confidence_score: float = 1.0
 
@@ -67,5 +67,5 @@ class ThreadState(BaseModel):
     history: List[EmailMessage]
     current_summary: Optional[ThreadSummary] = None
     overall_intent: Optional[IntentCategory] = None
-    last_updated: datetime = Field(default_factory=datetime.now)
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

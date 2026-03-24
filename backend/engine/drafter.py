@@ -1,4 +1,5 @@
 import asyncio
+import warnings
 from .nlp_engine import MistralEngine
 from .prompts import DRAFTING_PROMPT
 from ..data.models import EmailMessage, ThreadSummary
@@ -77,5 +78,10 @@ class EmailDrafter:
         latest_email: EmailMessage,
         summary: ThreadSummary
     ) -> str:
-        """Synchronous wrapper for backward compatibility."""
+        """Synchronous wrapper for backward compatibility. DEPRECATED: Use draft_reply_async() instead."""
+        warnings.warn(
+            "draft_reply() is deprecated. Use draft_reply_async() for better async performance.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         return asyncio.run(self.draft_reply_async(latest_email, summary))
