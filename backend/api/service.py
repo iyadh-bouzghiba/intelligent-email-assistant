@@ -60,7 +60,10 @@ load_dotenv()
 # ------------------------------------------------------------------
 app = FastAPI(title="Executive Brain - Sentinel Core")
 
-allowed_origins = []
+allowed_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 if os.getenv("FRONTEND_URL"):
     allowed_origins.append(os.getenv("FRONTEND_URL"))
 
@@ -81,6 +84,7 @@ sio = socketio.AsyncServer(
     cors_allowed_origins=[
         "https://intelligent-email-frontend.onrender.com",
         "http://localhost:5173",
+        "http://127.0.0.1:5173",
     ],
     transports=["websocket", "polling"],  # FIXED: Enable polling fallback for stability
     ping_timeout=30,                      # FIXED: Increased to 30s (Render's idle timeout limit)
