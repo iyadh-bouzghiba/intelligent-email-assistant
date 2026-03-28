@@ -21,7 +21,7 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
-
+from email.utils import parseaddr
 from fastapi import FastAPI, HTTPException, Request, Response, APIRouter, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,7 +51,9 @@ from backend.data.store import PersistenceManager
 from backend.infrastructure.control_plane import ControlPlane
 from backend.api.oauth_manager import OAuthManager
 from backend.auth.credential_store import CredentialStore
+from backend.integrations.gmail import GmailClient
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -973,6 +975,189 @@ async def draft_thread_reply(thread_id: str):
     """Stub: trigger draft-reply generation for a thread."""
     require_schema_ok()
     return {"thread_id": thread_id, "status": "queued", "draft": None, "message": "Draft generation scheduled"}
+
+class SendEmailRequest(BaseModel):
+    """Request model for sending email replies - backend owns reply context."""
+    body: str
+
+
+@api_router.post("/threads/{thread_id}/send")
+async def send_thread_reply(thread_id: str, request: SendEmailRequest):
+    """
+    Send an email reply with RFC-compliant threading headers.
+    Backend owns reply context derivation - client only provides draft text.
+
+    Args:
+        thread_id: Gmail thread ID (from URL path)
+        request: SendEmailRequest with body (draft text only)
+
+    Returns:
+        Success: {"success": true, "message_id": "...", "thread_id": "...", "sent_to": "..."}
+        Failure: {"success": false, "error": "..."}
+
+    Backend derives:
+        - account_id from email_threads table
+        - parent message from Gmail API
+        - recipient from Reply-To or From header
+        - subject with Re: normalization
+    """
+    try:
+        logger.info(f"[SEND] Starting send for thread {thread_id}")
+
+        # Step 1: Derive account_id from database
+        store = safe_get_store()
+        if not store:
+            return {"success": False, "error": "Database unavailable"}
+
+        # Query email_threads to get account_id for this thread
+        # CRITICAL: Detect ambiguity explicitly (0 rows, 1 row, >1 rows)
+        try:
+            thread_records = await asyncio.to_thread(
+                lambda: store.client.table("email_threads")
+                .select("account_id, subject")
+                .eq("thread_id", thread_id)
+                .execute()
+            )
+
+            # Explicit 0-row detection
+            if not thread_records.data or len(thread_records.data) == 0:
+                logger.warning(f"[SEND] Thread {thread_id} not found in database")
+                return {
+                    "success": False,
+                    "error": f"Thread {thread_id} not tracked in database - sync emails first"
+                }
+
+            # Explicit >1-row detection (multi-account ambiguity)
+            if len(thread_records.data) > 1:
+                ambiguous_accounts = [r.get('account_id') for r in thread_records.data]
+                logger.error(f"[SEND] Thread {thread_id} is ambiguous across {len(thread_records.data)} accounts: {ambiguous_accounts}")
+                return {
+                    "success": False,
+                    "error": f"Thread {thread_id} exists in multiple accounts {ambiguous_accounts}. Cannot determine reply context."
+                }
+
+            # Safe: exactly 1 row
+            account_id = thread_records.data[0].get('account_id', 'default')
+            logger.info(f"[SEND] Derived account_id: {account_id} (unique match)")
+
+        except Exception as e:
+            logger.error(f"[SEND] Database query failed: {e}")
+            return {"success": False, "error": "Failed to look up thread in database"}
+
+        # Step 2: Load credentials for derived account_id
+        credential_store = CredentialStore(persistence)
+        token_data = await asyncio.to_thread(
+            credential_store.load_credentials,
+            account_id
+        )
+
+        if not token_data or 'token' not in token_data:
+            logger.warning(f"[SEND] No valid credentials for account {account_id}")
+            return {
+                "success": False,
+                "error": f"Authentication required for account {account_id}"
+            }
+
+        # Step 3: Create Gmail client and fetch latest INBOUND message in thread
+        # CRITICAL: Filters out SENT messages to prevent self-reply loops
+        gmail_client = GmailClient(token_data)
+        gmail_client.refresh_if_needed()
+
+        logger.info(f"[SEND] Fetching latest inbound message from thread via Gmail API")
+        try:
+            latest_message = await asyncio.to_thread(
+                gmail_client.get_thread_latest_inbound_message,
+                thread_id
+            )
+
+            if not latest_message:
+                logger.error(f"[SEND] Thread {thread_id} has no inbound messages (only SENT messages or empty)")
+                return {
+                    "success": False,
+                    "error": f"Thread {thread_id} has no inbound messages to reply to"
+                }
+
+            parent_gmail_message_id = latest_message['gmail_message_id']
+            logger.info(f"[SEND] Parent message ID: {parent_gmail_message_id} (latest inbound)")
+
+        except RuntimeError as e:
+            logger.error(f"[SEND] Failed to fetch thread messages: {e}")
+            return {
+                "success": False,
+                "error": f"Failed to fetch thread from Gmail: {str(e)}"
+            }
+
+        # Step 4: Fetch RFC headers from parent message
+        logger.info(f"[SEND] Fetching RFC reply headers from parent message")
+        try:
+            reply_headers = await asyncio.to_thread(
+                gmail_client.get_reply_headers,
+                parent_gmail_message_id
+            )
+        except RuntimeError as e:
+            logger.error(f"[SEND] Failed to fetch reply headers: {e}")
+            return {
+                "success": False,
+                "error": f"Failed to fetch parent message headers: {str(e)}"
+            }
+
+        # Step 5: Derive recipient - use Reply-To if present, else From
+        recipient = latest_message.get('reply_to') or latest_message.get('from', '')
+        if not recipient:
+            logger.error(f"[SEND] No recipient found in parent message")
+            return {
+                "success": False,
+                "error": "Cannot determine recipient - parent message has no From/Reply-To"
+            }
+
+        # Extract email address from "Name <email@domain.com>" format using stdlib
+        # parseaddr safely handles various formats: "Name <email>", "<email>", "email"
+        name, email_addr = parseaddr(recipient)
+        recipient = email_addr if email_addr else recipient
+
+        logger.info(f"[SEND] Derived recipient: {recipient}")
+
+        # Step 6: Thread ID mismatch protection
+        fetched_thread_id = reply_headers.get('thread_id', '')
+        if fetched_thread_id and fetched_thread_id != thread_id:
+            logger.error(f"[SEND] Thread ID mismatch - URL: {thread_id}, Gmail: {fetched_thread_id}")
+            return {
+                "success": False,
+                "error": f"Thread ID mismatch - expected {thread_id}, got {fetched_thread_id}"
+            }
+
+        # Step 7: Extract headers for send
+        in_reply_to = reply_headers.get('in_reply_to', '')
+        references = reply_headers.get('references', '')
+        subject = reply_headers.get('subject', '(No Subject)')
+
+        logger.info(f"[SEND] Reply context - Subject: {subject}, To: {recipient}")
+
+        # Step 8: Send email via Gmail API
+        result = await asyncio.to_thread(
+            gmail_client.send_message,
+            to=recipient,
+            subject=subject,
+            body=request.body,
+            gmail_thread_id=thread_id,
+            in_reply_to=in_reply_to,
+            references=references
+        )
+
+        if result['success']:
+            logger.info(f"[SEND] Email sent successfully - Message ID: {result['message_id']}")
+            result['sent_to'] = recipient  # Include recipient in response
+        else:
+            logger.error(f"[SEND] Email send failed - Error: {result['error']}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"[SEND] Unexpected error: {type(e).__name__}: {e}")
+        return {
+            "success": False,
+            "error": f"Unexpected error: {str(e)}"
+        }
 
 @api_router.get("/export")
 async def export_data(tenant_id: str = "primary"):
