@@ -53,7 +53,7 @@ def get_message_body(payload):
                     body += decoded_data
     return body
 
-def run_engine(token_data: dict):
+def run_engine(token_data: dict, max_emails: int = 30):
     if not token_data or 'token' not in token_data:
         print("⚠️ Gmail Authentication Required. Please provide valid token data.")
         return []
@@ -86,7 +86,6 @@ def run_engine(token_data: dict):
         # 30 emails × 0.5s + overhead = ~18-20s (safely under 30s timeout)
         page_token = None
         total_fetched = 0
-        max_emails = 30  # Optimized: fast sync, no timeout noise, professional UX
 
         while total_fetched < max_emails:
             # Fetch batch of emails

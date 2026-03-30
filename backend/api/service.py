@@ -544,7 +544,10 @@ async def list_emails_with_summaries(account_id: Optional[str] = Query(None)):
 
 
 @api_router.post("/sync-now")
-async def sync_now(account_id: str = Query("default")):
+async def sync_now(
+    account_id: str = Query("default"),
+    max_emails: int = Query(30, description="Maximum emails to fetch (default: 30)")
+):
     """
     User-driven Gmail sync endpoint with timeout protection.
     Executes ONE Gmail fetch + store cycle immediately.
@@ -559,7 +562,7 @@ async def sync_now(account_id: str = Query("default")):
     try:
         # Wrap with 25s timeout (Render has 30s timeout - leave 5s buffer)
         return await asyncio.wait_for(
-            _sync_now_impl(account_id),
+            _sync_now_impl(account_id, max_emails),
             timeout=25.0
         )
     except asyncio.TimeoutError:
@@ -570,7 +573,7 @@ async def sync_now(account_id: str = Query("default")):
         return {"status": "error", "message": str(e)}
 
 
-async def _sync_now_impl(account_id: str):
+async def _sync_now_impl(account_id: str, max_emails: int = 30):
     """Internal sync implementation (extracted for timeout wrapping)."""
     try:
         logger.info("[SYNC] ========== SYNC REQUEST STARTED ==========")
@@ -603,9 +606,9 @@ async def _sync_now_impl(account_id: str):
             logger.info(f"[SYNC] No valid credentials found for account: {effective_account_id}")
             return {"status": "auth_required", "message": f"Please authenticate {effective_account_id}"}
 
-        logger.info(f"[SYNC] Credentials loaded, fetching emails from Gmail...")
-        # Execute Gmail fetch
-        emails = await asyncio.to_thread(run_engine, token_data)
+        logger.info(f"[SYNC] Credentials loaded, fetching emails from Gmail (max: {max_emails})...")
+        # Execute Gmail fetch with bounded scope
+        emails = await asyncio.to_thread(run_engine, token_data, max_emails)
 
         # Handle auth errors
         if isinstance(emails, dict) and "__auth_error__" in emails:
@@ -626,9 +629,27 @@ async def _sync_now_impl(account_id: str):
             return {"status": "error", "message": "Database connection failed"}
 
         logger.info(f"[SYNC] Processing {len(emails)} emails for account: {effective_account_id}")
+
+        # CRITICAL: Identify existing emails to prevent backfill
+        # Only NEW emails (not in DB) are eligible for automatic AI jobs
+        existing_message_ids = set()
+        try:
+            existing_result = await asyncio.to_thread(
+                lambda: store.client.table("emails").select("gmail_message_id").eq(
+                    "account_id", effective_account_id
+                ).execute()
+            )
+            if existing_result and existing_result.data:
+                existing_message_ids = {e['gmail_message_id'] for e in existing_result.data}
+                logger.info(f"[SYNC] Found {len(existing_message_ids)} existing emails for anti-backfill")
+        except Exception as e:
+            logger.warning(f"[SYNC] Failed to query existing emails: {e}")
+            # Continue with empty set - will treat all as new
+
         stored_count = 0
+        ai_job_count = 0
+        failed_saves = []
         new_thread_ids = []
-        ai_job_queue = []  # Collect emails for batch AI job enqueuing (non-blocking)
 
         for email in emails:
             try:
@@ -640,65 +661,59 @@ async def _sync_now_impl(account_id: str):
                     logger.warning(f"[SYNC] Skip email without gmail_message_id: {email.get('subject', 'No Subject')}")
                     continue
 
-                # CRITICAL FIX: Verify save_email actually succeeded
+                # Anti-backfill logic: Only create AI jobs for NEW emails
+                # Existing emails never get auto-backfilled
+                is_new_email = (m_id not in existing_message_ids)
+                create_ai_job = (is_new_email and ai_job_count < 20)
+
                 result = await asyncio.to_thread(
-                    store.save_email,
+                    store.save_email_atomic,
                     subject=email.get("subject", "No Subject"),
                     sender=email.get("sender", "Unknown"),
                     date=email.get("date", "Unknown"),
                     body=email.get("body", ""),
                     message_id=m_id,
                     account_id=effective_account_id,
-                    tenant_id="primary"
+                    tenant_id="primary",
+                    create_ai_job=create_ai_job
                 )
 
-                # Validate that save succeeded (result should have .data)
-                if result and hasattr(result, 'data') and result.data:
+                # Validate atomic save succeeded
+                if result and result.data:
                     stored_count += 1
-                    logger.info(f"[SYNC] ✓ Saved email {stored_count}/{len(emails)}: {email.get('subject', 'No Subject')[:50]}")
 
-                    # Collect for batch AI job enqueuing (first 30 only)
-                    if stored_count <= 30:
-                        ai_job_queue.append((effective_account_id, m_id))
+                    # Track AI job creation (only count NEWLY created jobs, not pre-existing)
+                    job_was_created = (
+                        create_ai_job and
+                        result.data.get('job_created') and
+                        not result.data.get('job_existed')
+                    )
+                    if job_was_created:
+                        ai_job_count += 1
 
                     # Track thread_id for auto-summary
                     thread_id = f"{email.get('subject', '')}_{email.get('sender', '')}".replace(' ', '_')[:50]
                     new_thread_ids.append((thread_id, email))
                 else:
-                    logger.error(f"[SYNC] Failed to save email (no data in response): {email.get('subject', 'No Subject')[:50]}")
-                    logger.error(f"[SYNC] Save result: {result}")
+                    failed_saves.append({
+                        "gmail_message_id": m_id,
+                        "subject": email.get('subject', 'No Subject')[:50]
+                    })
+                    logger.error(f"[SYNC] Failed to save email: {email.get('subject', 'No Subject')[:50]}")
 
             except Exception as e:
+                failed_saves.append({
+                    "gmail_message_id": m_id,
+                    "subject": email.get('subject', 'No Subject')[:50],
+                    "error": str(e)
+                })
                 logger.error(f"[SYNC] Exception while storing email: {e}")
                 logger.error(f"[SYNC] Email subject: {email.get('subject', 'No Subject')[:50]}")
                 import traceback
                 logger.error(f"[SYNC] Traceback: {traceback.format_exc()}")
 
         logger.info(f"[SYNC] Storage complete: {stored_count}/{len(emails)} emails saved successfully")
-
-        # CRITICAL: Enqueue AI jobs AFTER email loop (non-blocking batch)
-        if ai_job_queue:
-            async def enqueue_batch():
-                """Fire-and-forget AI job enqueueing."""
-                try:
-                    tasks = [
-                        asyncio.to_thread(
-                            store.enqueue_ai_job,
-                            account_id=acc_id,
-                            gmail_message_id=msg_id,
-                            job_type="email_summarize_v1"
-                        )
-                        for acc_id, msg_id in ai_job_queue
-                    ]
-                    results = await asyncio.gather(*tasks, return_exceptions=True)
-                    success_count = sum(1 for r in results if r and not isinstance(r, Exception))
-                    logger.info(f"[SYNC] Enqueued {success_count}/{len(ai_job_queue)} AI jobs")
-                except Exception as e:
-                    logger.warning(f"[SYNC] Batch AI job enqueue failed: {e}")
-
-            # Fire-and-forget (doesn't block sync response)
-            asyncio.create_task(enqueue_batch())
-            logger.info(f"[SYNC] Batch AI job enqueuing started ({len(ai_job_queue)} jobs)")
+        logger.info(f"[SYNC] AI jobs created: {ai_job_count} (new emails only, anti-backfill active)")
 
         # Emit socket event for new emails
         try:
@@ -750,8 +765,19 @@ async def _sync_now_impl(account_id: str):
                     logger.warning(f"[SYNC] Failed to emit summary event: {e}")
 
         logger.info(f"[SYNC] ========== SYNC REQUEST COMPLETED ==========")
-        logger.info(f"[SYNC] Final status: {stored_count} emails saved to database")
-        return {"status": "done", "count": stored_count, "processed_count": stored_count}
+        logger.info(f"[SYNC] Final status: {stored_count} emails saved, {ai_job_count} AI jobs created")
+
+        # D3 FIX: Return deterministic status including failures
+        response = {
+            "status": "done" if not failed_saves else "partial",
+            "count": stored_count,
+            "ai_jobs_created": ai_job_count,
+            "processed_count": stored_count
+        }
+        if failed_saves:
+            response["failed_count"] = len(failed_saves)
+            response["failures"] = failed_saves[:5]  # Return first 5 failures for debugging
+        return response
 
     except Exception as e:
         logger.error(f"[SYNC] ========== SYNC FAILED ==========")
