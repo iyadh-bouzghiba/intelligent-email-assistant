@@ -367,6 +367,19 @@ export const App = () => {
     return () => document.removeEventListener("mousedown", onMouseDown, true);
   }, [showAccountMenu]);
 
+  // Connect/disconnect WebSocket based on account state
+  useEffect(() => {
+    if (activeEmail) {
+      try {
+        websocketService.connect();
+      } catch (e) {
+        console.error("[WebSocket] Connect failed:", e);
+      }
+    } else {
+      websocketService.disconnect();
+    }
+  }, [activeEmail]);
+
   // Refetch emails when active account changes
   useEffect(() => {
     activeEmailRef.current = activeEmail; // Keep ref in sync for closures
