@@ -57,6 +57,10 @@ export const App = () => {
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [selectedReplyItem, setSelectedReplyItem] = useState<Briefing | null>(null);
+  const [replyBody, setReplyBody] = useState('');
+  const [sending, setSending] = useState(false);
+  const [panelError, setPanelError] = useState<string | null>(null);
 
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) return;
@@ -204,6 +208,8 @@ export const App = () => {
           ai_summary_text: e.ai_summary_text,
           ai_summary_model: e.ai_summary_model,
           gmail_message_id: e.gmail_message_id,
+          body: e.body || '',
+          thread_id: e.thread_id,
         };
 
         // CRITICAL: Trigger Sentinel Alert for high-urgency emails
@@ -500,6 +506,38 @@ export const App = () => {
       await fetchEmails();
     } catch (err) {
       console.error('[DISCONNECT-ALL] Failed:', err);
+    }
+  };
+
+  const handleSendReply = async () => {
+    if (!selectedReplyItem?.thread_id) {
+      setPanelError('No thread ID available');
+      return;
+    }
+
+    if (!replyBody.trim()) {
+      setPanelError('Reply body cannot be empty');
+      return;
+    }
+
+    setSending(true);
+    setPanelError(null);
+
+    try {
+      const result = await apiService.sendThreadReply(selectedReplyItem.thread_id, replyBody.trim());
+      if (result.success) {
+        setSelectedReplyItem(null);
+        setReplyBody('');
+        setPanelError(null);
+        await fetchEmails(activeEmail);
+      } else {
+        setPanelError(result.error || 'Failed to send reply');
+      }
+    } catch (err: any) {
+      console.error('[SEND-REPLY] Failed:', err);
+      setPanelError(err.message || 'Network error sending reply');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -1007,6 +1045,18 @@ export const App = () => {
                       >
                         Details <ChevronRight size={11} />
                       </button>
+                      {item.thread_id && (
+                        <button
+                          onClick={() => {
+                            setSelectedReplyItem(item);
+                            setReplyBody('');
+                            setPanelError(null);
+                          }}
+                          className="text-[9px] font-bold text-indigo-500 hover:text-indigo-400 uppercase flex items-center gap-1 transition-colors"
+                        >
+                          Reply <ChevronRight size={11} />
+                        </button>
+                      )}
                     </div>
                     <div className="text-[8px] font-bold text-slate-600 uppercase">{item.account}</div>
                   </div>
@@ -1231,6 +1281,94 @@ export const App = () => {
                   className="flex-1 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition-all shadow-lg shadow-rose-900/30"
                 >
                   Disconnect
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Send Reply Modal */}
+      <AnimatePresence>
+        {selectedReplyItem && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            onClick={() => setSelectedReplyItem(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-2xl bg-[#1e293b] rounded-3xl border border-white/10 shadow-2xl p-8"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-white font-black text-xl">Send Reply</h3>
+                <button
+                  onClick={() => setSelectedReplyItem(null)}
+                  className="text-slate-400 hover:text-white transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="mb-6 p-4 rounded-xl bg-white/5 border border-white/10">
+                <div className="mb-2">
+                  <span className="text-slate-400 text-xs font-bold">Subject:</span>
+                  <p className="text-white text-sm font-semibold">{selectedReplyItem.subject}</p>
+                </div>
+                <div className="mb-2">
+                  <span className="text-slate-400 text-xs font-bold">From:</span>
+                  <p className="text-slate-300 text-sm">{selectedReplyItem.sender}</p>
+                </div>
+                <div className="mb-2">
+                  <span className="text-slate-400 text-xs font-bold">Date:</span>
+                  <p className="text-slate-300 text-sm">{selectedReplyItem.date}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-xs font-bold">Message:</span>
+                  <p className="text-slate-300 text-sm mt-1 max-h-32 overflow-y-auto custom-scrollbar">
+                    {selectedReplyItem.body || selectedReplyItem.summary}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-slate-400 text-sm font-bold mb-2">
+                  Your Reply
+                </label>
+                <textarea
+                  value={replyBody}
+                  onChange={(e) => setReplyBody(e.target.value)}
+                  placeholder="Type your reply here..."
+                  className="w-full h-40 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 resize-none"
+                  autoFocus
+                />
+              </div>
+
+              {panelError && (
+                <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">
+                  {panelError}
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setSelectedReplyItem(null)}
+                  className="flex-1 px-6 py-3 rounded-xl border border-white/10 text-slate-400 hover:text-white text-sm font-bold transition-all"
+                  disabled={sending}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendReply}
+                  disabled={!replyBody.trim() || sending}
+                  className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-bold transition-all shadow-lg shadow-indigo-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {sending ? 'Sending...' : 'Send Reply'}
                 </button>
               </div>
             </motion.div>

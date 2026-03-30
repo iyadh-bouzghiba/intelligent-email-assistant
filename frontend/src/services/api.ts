@@ -7,6 +7,8 @@ import {
     SimulateEmailRequest,
     BriefingResponse,
     AccountsResponse,
+    SendEmailRequest,
+    SendEmailResponse,
 } from "@types";
 
 // Fail-fast environment contract
@@ -76,6 +78,25 @@ export const apiService = {
             `${API_ROOT}/threads/${thread_id}/draft`
         );
         return response.data;
+    },
+
+    sendThreadReply: async (
+        thread_id: string,
+        body: string
+    ): Promise<SendEmailResponse> => {
+        try {
+            const response = await api.post(
+                `${API_ROOT}/threads/${encodeURIComponent(thread_id)}/send`,
+                { body }
+            );
+            return response.data;
+        } catch (error: any) {
+            console.error('[API] sendThreadReply failed:', error);
+            return {
+                success: false,
+                error: error.response?.data?.error || error.message || 'Network error'
+            };
+        }
     },
 
     simulateEmail: async (
