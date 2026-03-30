@@ -72,6 +72,8 @@ export interface Briefing {
     ai_summary_text?: string;
     ai_summary_model?: string;
     gmail_message_id?: string;
+    body?: string;
+    thread_id?: string;
 }
 
 export interface BriefingResponse {
@@ -90,4 +92,15 @@ export interface AccountInfo {
 
 export interface AccountsResponse {
     accounts: AccountInfo[];
+}
+
+export interface SendEmailRequest {
+    body: string;
+}
+
+export interface SendEmailResponse {
+    success: boolean;
+    message_id?: string;
+    thread_id?: string;
+    error?: string;
 }
