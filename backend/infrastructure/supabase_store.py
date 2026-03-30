@@ -102,6 +102,57 @@ class SupabaseStore:
         )
         return None
 
+    def save_email_atomic(self, subject, sender, date, body=None, message_id=None, tenant_id="primary", account_id="default", create_ai_job=False):
+        """
+        Atomically saves email + conditionally creates AI job via single RPC call.
+
+        This is the HARDENING PATCH replacement for save_email() + enqueue_ai_job().
+        Guarantees atomicity: email and job created in same database transaction.
+
+        Args:
+            create_ai_job: If True, creates AI job atomically with email insert.
+                          Use True for first 30 emails (cost control).
+
+        Returns:
+            RPC response with {email_id, job_id, job_created} or None on failure
+        """
+        from datetime import datetime, timezone
+        import logging
+        logger = logging.getLogger("supabase_store")
+
+        if not message_id:
+            logger.error("[ATOMIC-SAVE] Missing gmail_message_id - SKIPPING to prevent corruption")
+            return None
+
+        # Validate timestamp (same logic as save_email)
+        validated_date = date
+        if isinstance(date, str):
+            if not ('+' in date or date.endswith('Z')):
+                validated_date = f"{date}+00:00" if not date.endswith('Z') else date
+
+        try:
+            result = self.client.rpc('save_email_with_ai_job', {
+                'p_subject': subject,
+                'p_sender': sender,
+                'p_date': validated_date,
+                'p_body': body or '',
+                'p_message_id': message_id,
+                'p_account_id': account_id,
+                'p_tenant_id': tenant_id,
+                'p_create_ai_job': create_ai_job
+            }).execute()
+
+            if result and result.data:
+                logger.info(f"[ATOMIC-SAVE] Email saved: {message_id[:8]}..., AI job: {create_ai_job}")
+                return result
+            else:
+                logger.error(f"[ATOMIC-SAVE] RPC returned no data for {message_id[:8]}...")
+                return None
+
+        except Exception as e:
+            logger.error(f"[ATOMIC-SAVE] RPC failed for {message_id[:8]}...: {type(e).__name__}: {e}")
+            return None
+
     def get_emails(self, limit=50, account_id=None):
         """
         Fetches emails from Supabase.
