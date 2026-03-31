@@ -39,6 +39,7 @@ const getEmailInitials = (email: string): string => {
 
 export const App = () => {
   const [briefings, setBriefings] = useState<Briefing[]>([]);
+  const briefingsRef = useRef<Briefing[]>([]); // Keep current briefings accessible in closures
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -56,6 +57,7 @@ export const App = () => {
   const lastSyncTimeRef = useRef<number>(0); // Track last sync timestamp for cooldown
   const syncingRef = useRef<boolean>(false); // Ref-based lock for synchronous check (prevents race conditions)
   const initDoneRef = useRef<boolean>(false); // Prevent double initializeApp in React 18 StrictMode
+  const inFlightSummarizingRef = useRef<Set<string>>(new Set()); // Track in-flight summarization IDs (dedupe guard)
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [summarizingIds, setSummarizingIds] = useState<Set<string>>(new Set());
@@ -273,6 +275,24 @@ export const App = () => {
       });
 
       setBriefings(mapped);
+
+      // Reconcile completed summaries: release IDs that now have ai_summary_text
+      // This prevents stuck in-flight/pending state across fetch cycles
+      const inFlightIds = Array.from(inFlightSummarizingRef.current);
+      const nowCompleted = inFlightIds.filter(id => {
+        const email = mapped.find(e => e.gmail_message_id === id);
+        return email?.ai_summary_text; // Has summary = completed
+      });
+      if (nowCompleted.length > 0) {
+        nowCompleted.forEach(id => inFlightSummarizingRef.current.delete(id));
+        setSummarizingIds(prev => {
+          const updated = new Set(prev);
+          nowCompleted.forEach(id => updated.delete(id));
+          return updated;
+        });
+        console.log(`[RECONCILE] Released ${nowCompleted.length} completed IDs from in-flight tracking`);
+      }
+
       setAccounts(loadedAccounts);
       const firstConnected = loadedAccounts.find(a => a.connected);
       if (firstConnected && !accountIdToUse) {
@@ -308,13 +328,25 @@ export const App = () => {
   };
 
   const autoSummarizeEmails = async (emails: Briefing[], accountId: string) => {
-    const unsummarized = emails.filter(e => !e.ai_summary_text && e.gmail_message_id);
+    // Filter out emails that are already summarized OR already in-flight
+    const unsummarized = emails.filter(e =>
+      !e.ai_summary_text &&
+      e.gmail_message_id &&
+      !inFlightSummarizingRef.current.has(e.gmail_message_id)
+    );
     if (unsummarized.length === 0) return;
 
     console.log('[AUTO-SUMMARIZE] Starting for', unsummarized.length, 'emails');
 
-    // Mark all as pending
-    setSummarizingIds(new Set(unsummarized.map(e => e.gmail_message_id!)));
+    // Mark all as in-flight (ref for dedupe guard)
+    unsummarized.forEach(e => inFlightSummarizingRef.current.add(e.gmail_message_id!));
+
+    // Mark all as pending (state for UI indicators) - merge with existing to handle overlapping calls
+    setSummarizingIds(prev => {
+      const updated = new Set(prev);
+      unsummarized.forEach(e => updated.add(e.gmail_message_id!));
+      return updated;
+    });
 
     const BATCH_SIZE = 5;
     for (let i = 0; i < unsummarized.length; i += BATCH_SIZE) {
@@ -340,7 +372,28 @@ export const App = () => {
     console.log('[AUTO-SUMMARIZE] All jobs queued. Refreshing in 8s...');
     setTimeout(async () => {
       await fetchEmails(accountId);
-      setSummarizingIds(new Set());
+
+      // Wait briefly for state propagation from fetchEmails
+      await new Promise(r => setTimeout(r, 100));
+
+      // Check which of the queued IDs now have summaries (evidence-based cleanup)
+      const queuedIds = unsummarized.map(e => e.gmail_message_id!);
+      const completed = queuedIds.filter(id => {
+        const email = briefingsRef.current.find(e => e.gmail_message_id === id);
+        return email?.ai_summary_text; // Has summary = completed
+      });
+
+      // Release only confirmed-complete IDs from in-flight tracking
+      completed.forEach(id => inFlightSummarizingRef.current.delete(id));
+
+      // Remove only confirmed-complete IDs from pending UI state (merge-safe)
+      setSummarizingIds(prev => {
+        const updated = new Set(prev);
+        completed.forEach(id => updated.delete(id));
+        return updated;
+      });
+
+      console.log(`[AUTO-SUMMARIZE] Cleanup: ${completed.length}/${queuedIds.length} confirmed complete`);
     }, 8000);
   };
 
@@ -506,6 +559,8 @@ export const App = () => {
     } else {
       websocketService.disconnect();
     }
+    // Clear in-flight summarization tracking on account change
+    inFlightSummarizingRef.current.clear();
   }, [activeEmail]);
 
   useEffect(() => {
@@ -529,6 +584,11 @@ export const App = () => {
       localStorage.setItem('last_selected_account', activeEmail);
     }
   }, [activeEmail]);
+
+  // Keep briefingsRef in sync with briefings state (for closure access)
+  useEffect(() => {
+    briefingsRef.current = briefings;
+  }, [briefings]);
 
   // Detect OAuth callback success and auto-activate the newly connected account
   // CRITICAL: Retry logic with exponential backoff to handle replication delays
