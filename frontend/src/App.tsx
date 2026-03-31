@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiService } from '@services';
 import { websocketService } from '@services/websocket';
-import { Sparkles, RefreshCw, Mail, Shield, AlertCircle, Clock, CheckCircle2, ChevronRight, Brain, LogOut } from 'lucide-react';
+import { Sparkles, RefreshCw, Mail, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Briefing, AccountInfo } from '@types';
 
@@ -39,7 +39,6 @@ const getEmailInitials = (email: string): string => {
 
 export const App = () => {
   const [briefings, setBriefings] = useState<Briefing[]>([]);
-  const [account, setAccount] = useState<string>('Syncing...');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -54,12 +53,21 @@ export const App = () => {
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const accountButtonRef = useRef<HTMLButtonElement | null>(null);
   const activeEmailRef = useRef<string | null>(null); // Track current activeEmail for closures
+  const lastSyncTimeRef = useRef<number>(0); // Track last sync timestamp for cooldown
+  const syncingRef = useRef<boolean>(false); // Ref-based lock for synchronous check (prevents race conditions)
+  const initDoneRef = useRef<boolean>(false); // Prevent double initializeApp in React 18 StrictMode
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [showScrollTop, setShowScrollTop] = useState(false);
-  const [selectedReplyItem, setSelectedReplyItem] = useState<Briefing | null>(null);
+  const [summarizingIds, setSummarizingIds] = useState<Set<string>>(new Set());
+  const [selectedEmailDetail, setSelectedEmailDetail] = useState<Briefing | null>(null);
+  const [offlineAccounts, setOfflineAccounts] = useState<Set<string>>(new Set());
+  const [showMaxAccountsMsg, setShowMaxAccountsMsg] = useState(false);
+  const [scrollToActions, setScrollToActions] = useState(false);
+  const actionItemsRef = useRef<HTMLDivElement | null>(null);
+  const [showReplyCompose, setShowReplyCompose] = useState(false);
   const [replyBody, setReplyBody] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendSuccess, setSendSuccess] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
 
   const requestNotificationPermission = async () => {
@@ -90,21 +98,41 @@ export const App = () => {
     }
   };
 
-  // Smart email categorization based on content analysis
+  // Smart email categorization based on content analysis with refined priority
   const categorizeEmail = (subject: string, sender: string, body: string, aiSummary?: string): 'Security' | 'Financial' | 'Work' | 'Personal' | 'Marketing' | 'General' => {
     const text = `${subject} ${sender} ${body} ${aiSummary || ''}`.toLowerCase();
 
-    // Security keywords (highest priority)
-    const securityKeywords = ['security', 'alert', 'password', 'verify', 'suspicious', 'login', 'unauthorized', 'breach', '2fa', 'mfa', 'authentication', 'suspicious activity', 'account locked'];
-    if (securityKeywords.some(keyword => text.includes(keyword))) return 'Security';
+    // HIGH PRIORITY: Work-related keywords (itinerary, travel, business)
+    // Checked BEFORE security to prevent false positives
+    const workKeywords = [
+      'meeting', 'deadline', 'project', 'review', 'presentation', 'report', 'urgent', 'asap',
+      'feedback', 'approval', 'task', 'jira', 'confluence', 'slack',
+      'itinerary', 'travel', 'flight', 'booking', 'reservation', 'conference', 'trip details',
+      'boarding pass', 'check-in', 'hotel', 'rental car'
+    ];
+    if (workKeywords.some(keyword => text.includes(keyword))) {
+      // Exception: If explicitly mentions account security/compromise, still classify as Security
+      const criticalSecurityPhrases = [
+        'account locked', 'unauthorized access', 'suspicious activity', 'password reset required',
+        'account compromised', 'unusual activity', 'verify your identity'
+      ];
+      if (criticalSecurityPhrases.some(phrase => text.includes(phrase))) {
+        return 'Security';
+      }
+      return 'Work';
+    }
+
+    // CRITICAL PRIORITY: Genuine security threats (refined to avoid false positives)
+    const criticalSecurityKeywords = [
+      'account locked', 'unauthorized', 'breach', 'suspicious activity', 'verify your identity',
+      'password reset required', 'account compromised', 'unusual activity', 'confirm your identity',
+      'security code', 'two-factor authentication required'
+    ];
+    if (criticalSecurityKeywords.some(keyword => text.includes(keyword))) return 'Security';
 
     // Financial keywords
     const financialKeywords = ['invoice', 'payment', 'bank', 'transaction', 'receipt', 'refund', 'billing', 'charge', 'purchase', 'order', 'card', 'paypal', 'stripe', 'revenue', 'expense'];
     if (financialKeywords.some(keyword => text.includes(keyword))) return 'Financial';
-
-    // Work-related keywords
-    const workKeywords = ['meeting', 'deadline', 'project', 'review', 'presentation', 'report', 'urgent', 'asap', 'feedback', 'approval', 'task', 'jira', 'confluence', 'slack'];
-    if (workKeywords.some(keyword => text.includes(keyword))) return 'Work';
 
     // Marketing keywords
     const marketingKeywords = ['unsubscribe', 'newsletter', 'promotion', 'discount', 'sale', 'offer', 'deal', 'subscribe', 'marketing'];
@@ -139,6 +167,31 @@ export const App = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Escape key closes details panel
+  useEffect(() => {
+    if (!selectedEmailDetail) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedEmailDetail(null);
+        setPanelError(null);
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [selectedEmailDetail]);
+
+  // Auto-scroll to action items when panel opens via "View N more" button
+  useEffect(() => {
+    if (scrollToActions && selectedEmailDetail && actionItemsRef.current) {
+      // Wait for panel slide animation to finish (250ms transition)
+      const timer = setTimeout(() => {
+        actionItemsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setScrollToActions(false);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [scrollToActions, selectedEmailDetail]);
 
   const fetchEmails = async (overrideAccountId?: string | null) => {
     // Note: We avoid setting full loading:true during background polling for smoothness
@@ -192,8 +245,8 @@ export const App = () => {
           e.ai_summary_text
         );
 
-        const briefing = {
-          account: e.account_id || 'Unknown',  // CRITICAL: Use REAL account_id from email record
+        const briefing: Briefing = {
+          account: e.account_id || 'Unknown',
           subject: e.subject || 'No Subject',
           sender: e.sender || 'Unknown',
           date: formattedDate,
@@ -202,14 +255,13 @@ export const App = () => {
           should_alert: e.ai_summary_json?.urgency === 'high',
           summary: displaySummary,
           action: primaryAction,
+          body: e.body || '',
 
-          // NEW: Pass through AI summary fields for detailed display
           ai_summary_json: e.ai_summary_json,
           ai_summary_text: e.ai_summary_text,
           ai_summary_model: e.ai_summary_model,
           gmail_message_id: e.gmail_message_id,
-          body: e.body || '',
-          thread_id: e.thread_id,
+          thread_id: e.thread_id, // Gmail thread ID for send functionality
         };
 
         // CRITICAL: Trigger Sentinel Alert for high-urgency emails
@@ -223,14 +275,17 @@ export const App = () => {
       setBriefings(mapped);
       setAccounts(loadedAccounts);
       const firstConnected = loadedAccounts.find(a => a.connected);
-      // CRITICAL: Check accountIdToUse (not activeEmail) to avoid race condition
-      // When user explicitly selects an account, we must respect that choice
       if (firstConnected && !accountIdToUse) {
-        setAccount(firstConnected.account_id);
         setActiveEmail(firstConnected.account_id);
       }
       setError(null);
-      setConsecutiveFailures(0); // Reset on success
+      setConsecutiveFailures(0);
+
+      // Auto-summarize unsummarized emails after load
+      const effectiveId = accountIdToUse || firstConnected?.account_id;
+      if (effectiveId) {
+        autoSummarizeEmails(mapped, effectiveId);
+      }
     } catch (err: any) {
       console.warn("📡 [STRATEGY] Link degraded, maintaining last known state.");
       setConsecutiveFailures((prev: number) => {
@@ -252,19 +307,55 @@ export const App = () => {
     }
   };
 
-  const autoSync = async () => {
-    // Single-flight lock
-    if (syncing) return;
+  const autoSummarizeEmails = async (emails: Briefing[], accountId: string) => {
+    const unsummarized = emails.filter(e => !e.ai_summary_text && e.gmail_message_id);
+    if (unsummarized.length === 0) return;
 
-    // Only run when tab is visible
-    if (document.visibilityState !== 'visible') return;
+    console.log('[AUTO-SUMMARIZE] Starting for', unsummarized.length, 'emails');
 
-    // CRITICAL: Skip auto-sync if no account is active (prevents "default" auth errors)
-    if (!activeEmail) {
-      console.log('[AUTO-SYNC] Skipped - no account selected');
-      return;
+    // Mark all as pending
+    setSummarizingIds(new Set(unsummarized.map(e => e.gmail_message_id!)));
+
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < unsummarized.length; i += BATCH_SIZE) {
+      const batch = unsummarized.slice(i, i + BATCH_SIZE);
+      try {
+        await Promise.all(
+          batch.map(email =>
+            apiService.summarizeEmail(email.gmail_message_id!, accountId)
+          )
+        );
+        console.log(`[AUTO-SUMMARIZE] Batch ${Math.floor(i / BATCH_SIZE) + 1} queued (${batch.length} emails)`);
+      } catch (err) {
+        console.warn('[AUTO-SUMMARIZE] Batch failed:', err);
+      }
+
+      // Wait 500ms between batches
+      if (i + BATCH_SIZE < unsummarized.length) {
+        await new Promise(r => setTimeout(r, 500));
+      }
     }
 
+    // After all batches queued, poll for results
+    console.log('[AUTO-SUMMARIZE] All jobs queued. Refreshing in 8s...');
+    setTimeout(async () => {
+      await fetchEmails(accountId);
+      setSummarizingIds(new Set());
+    }, 8000);
+  };
+
+  const autoSync = async () => {
+    // All guards must pass BEFORE claiming cooldown or lock
+    const now = Date.now();
+    const COOLDOWN_MS = 60000; // 60 seconds
+    if (now - lastSyncTimeRef.current < COOLDOWN_MS) return;
+    if (syncingRef.current) return;
+    if (document.visibilityState !== 'visible') return;
+    if (!activeEmailRef.current) return;
+
+    // All guards passed — claim cooldown + lock atomically
+    lastSyncTimeRef.current = now;
+    syncingRef.current = true;
     setSyncing(true);
 
     try {
@@ -272,34 +363,82 @@ export const App = () => {
       await apiService.checkHealth();
 
       // Execute sync
-      const result = await apiService.syncNow(activeEmail);
+      const result = await apiService.syncNow(activeEmailRef.current);
 
       if (result.status === 'done' && result.count && result.count > 0) {
         console.log(`[AUTO-SYNC] Processed ${result.processed_count ?? result.count} emails`);
         // Refetch emails for active account to update UI
-        await fetchEmails(activeEmail);
+        await fetchEmails(activeEmailRef.current);
         // Reset failures on success
         setConsecutiveFailures(0);
       } else if (result.status === 'auth_required') {
-        console.warn('[AUTO-SYNC] Auth required, skipping');
+        console.warn('[AUTO-SYNC] Auth required, marking offline');
+        if (activeEmailRef.current) {
+          setOfflineAccounts(prev => new Set(prev).add(activeEmailRef.current!));
+        }
       }
     } catch (error) {
       console.warn('[AUTO-SYNC] Failed', error);
     } finally {
+      syncingRef.current = false;
       setSyncing(false);
     }
   };
 
   useEffect(() => {
-    // Initial load: Load accounts but DO NOT auto-select (user must choose)
+    // Initial load: Load accounts and auto-select first connected account (Phase 2)
     const initializeApp = async () => {
       try {
         const accountsData = await apiService.listAccounts();
         const loadedAccounts: AccountInfo[] = accountsData.accounts || [];
         setAccounts(loadedAccounts);
 
-        // CRITICAL: Do NOT auto-select first account - user must explicitly choose
-        // This provides professional UX where user is in control
+        // Account selection logic:
+        // 0 connected -> onboarding screen (activeEmail stays null)
+        // 1 connected -> auto-select it
+        // >1 connected + localStorage match -> auto-select saved
+        // >1 connected + no localStorage match -> show "Select Account" screen
+        const connectedList = loadedAccounts.filter(a => a.connected);
+        const lastSelected = localStorage.getItem('last_selected_account');
+
+        let accountToSelect: AccountInfo | null = null;
+
+        if (connectedList.length === 0) {
+          // Scenario A: No accounts -> onboarding
+          console.log('[INIT] No connected accounts -> showing onboarding');
+        } else if (connectedList.length === 1) {
+          // Scenario B: Single account -> auto-select
+          accountToSelect = connectedList[0];
+          console.log(`[INIT] Single account -> auto-selecting: ${accountToSelect.account_id}`);
+        } else {
+          // Scenario C: Multiple accounts
+          const savedMatch = lastSelected ? connectedList.find(a => a.account_id === lastSelected) : null;
+          if (savedMatch) {
+            accountToSelect = savedMatch;
+            console.log(`[INIT] Returning user -> auto-selecting saved: ${savedMatch.account_id}`);
+          } else {
+            console.log(`[INIT] Multiple accounts, no saved preference -> showing selection screen`);
+          }
+        }
+
+        if (accountToSelect) {
+          setActiveEmail(accountToSelect.account_id);
+          localStorage.setItem('last_selected_account', accountToSelect.account_id);
+
+          // Trigger initial sync and fetch
+          try {
+            const syncResult = await apiService.syncNow(accountToSelect.account_id);
+            if (syncResult.status === 'auth_required') {
+              setOfflineAccounts(prev => new Set(prev).add(accountToSelect!.account_id));
+            }
+            await fetchEmails(accountToSelect.account_id);
+            // Start cooldown clock from init so autoSync waits 60s
+            lastSyncTimeRef.current = Date.now();
+          } catch (err) {
+            console.warn('[INIT] Initial sync failed:', err);
+          }
+        }
+
         setLoading(false);
       } catch (error) {
         console.warn('[STRATEGY] Failed to load accounts on init', error);
@@ -307,7 +446,10 @@ export const App = () => {
       }
     };
 
-    initializeApp();
+    if (!initDoneRef.current) {
+      initDoneRef.current = true;
+      initializeApp();
+    }
 
     // Note: autoSync removed from init - will sync when user selects account
 
@@ -353,20 +495,6 @@ export const App = () => {
     };
   }, []);
 
-  useEffect(() => {
-    if (!showAccountMenu) return;
-    const onMouseDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      const menuEl = accountMenuRef.current;
-      const btnEl = accountButtonRef.current;
-      if (menuEl && menuEl.contains(target)) return;
-      if (btnEl && btnEl.contains(target)) return;
-      setShowAccountMenu(false);
-    };
-    document.addEventListener("mousedown", onMouseDown, true);
-    return () => document.removeEventListener("mousedown", onMouseDown, true);
-  }, [showAccountMenu]);
-
   // Connect/disconnect WebSocket based on account state
   useEffect(() => {
     if (activeEmail) {
@@ -380,12 +508,25 @@ export const App = () => {
     }
   }, [activeEmail]);
 
-  // Refetch emails when active account changes
   useEffect(() => {
-    activeEmailRef.current = activeEmail; // Keep ref in sync for closures
+    if (!showAccountMenu) { setShowMaxAccountsMsg(false); return; }
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const menuEl = accountMenuRef.current;
+      const btnEl = accountButtonRef.current;
+      if (menuEl && menuEl.contains(target)) return;
+      if (btnEl && btnEl.contains(target)) return;
+      setShowAccountMenu(false);
+    };
+    document.addEventListener("mousedown", onMouseDown, true);
+    return () => document.removeEventListener("mousedown", onMouseDown, true);
+  }, [showAccountMenu]);
+
+  // Keep activeEmailRef in sync with activeEmail state + persist to localStorage
+  useEffect(() => {
+    activeEmailRef.current = activeEmail;
     if (activeEmail) {
-      console.log(`[STRATEGY] Active account changed to: ${activeEmail}`);
-      fetchEmails(activeEmail);
+      localStorage.setItem('last_selected_account', activeEmail);
     }
   }, [activeEmail]);
 
@@ -405,7 +546,7 @@ export const App = () => {
 
     if (!newAccountId) {
       console.error('[OAUTH-CALLBACK] CRITICAL: account_id parameter missing from callback URL');
-      alert('OAuth completed but account information was lost. Please try connecting again.');
+      setError('OAuth completed but account information was lost. Please try connecting again.');
       return;
     }
 
@@ -435,8 +576,10 @@ export const App = () => {
         if (targetAccount) {
           console.log(`[OAUTH-CALLBACK] ✅ SUCCESS - Activating: ${newAccountId}`);
           setActiveEmail(newAccountId);
-          setAccount(newAccountId);
-          return; // Success - stop retrying
+          localStorage.setItem('last_selected_account', newAccountId);
+          setOfflineAccounts(prev => { const next = new Set(prev); next.delete(newAccountId); return next; });
+          fetchEmails(newAccountId);
+          return;
         }
 
         // Account not found yet - retry if attempts remaining
@@ -446,7 +589,7 @@ export const App = () => {
         } else {
           // Max retries exceeded - show error
           console.error(`[OAUTH-CALLBACK] ❌ FAILED - Account ${newAccountId} not found after ${MAX_RETRIES} attempts`);
-          alert(`Failed to activate account ${newAccountId}.\n\nThe account was connected but couldn't be activated automatically.\n\nPlease select it manually from the account dropdown.`);
+          setError(`Failed to activate ${newAccountId}. Please select it manually from the account dropdown.`);
           // Leave user on account selection screen - don't auto-activate wrong account
         }
       } catch (error) {
@@ -454,7 +597,7 @@ export const App = () => {
         if (retryCount < MAX_RETRIES) {
           setTimeout(attemptActivation, delay);
         } else {
-          alert('Failed to load accounts after OAuth. Please refresh the page.');
+          setError('Failed to load accounts after OAuth. Please refresh the page.');
         }
       }
     };
@@ -462,15 +605,6 @@ export const App = () => {
     // Start activation attempts
     attemptActivation();
   }, []);
-
-  const getPriorityStyles = (priority: string) => {
-    switch (priority) {
-      case 'High': return 'text-rose-500 bg-rose-600/20 border-rose-600/30 font-black shadow-[0_0_15px_rgba(225,29,72,0.2)]';
-      case 'Medium': return 'text-amber-400 bg-amber-500/10 border-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.1)]';
-      case 'Low': return 'text-slate-400 bg-slate-500/10 border-slate-500/20 shadow-none';
-      default: return 'text-slate-500 bg-slate-500/10 border-slate-500/20';
-    }
-  };
 
   const getCategoryStyles = (category: string) => {
     switch (category) {
@@ -499,37 +633,27 @@ export const App = () => {
       // If disconnected account was active, clear active email
       if (activeEmail === account_id) {
         setActiveEmail(null);
+        localStorage.removeItem('last_selected_account');
         setBriefings([]); // Clear emails since no account is active
         console.log(`[DISCONNECT] Cleared active account (was ${account_id})`);
       }
     } catch (err) {
       console.error('[DISCONNECT] Failed to disconnect account:', account_id, err);
-      alert(`Failed to disconnect ${account_id}. Please try again.`);
+      setError(`Failed to disconnect ${account_id}. Please try again.`);
     }
   };
 
   const connectedAccounts = accounts.filter(a => a.connected);
   const hasLegacyAccounts = connectedAccounts.some(a => a.account_id === 'default' || a.account_id === 'PRIMARY');
 
-  const handleDisconnectAll = async () => {
-    try {
-      await apiService.disconnectAllAccounts();
-      setAccounts([]);
-      setActiveEmail(null);
-      await fetchEmails();
-    } catch (err) {
-      console.error('[DISCONNECT-ALL] Failed:', err);
-    }
-  };
-
   const handleSendReply = async () => {
-    if (!selectedReplyItem?.thread_id) {
-      setPanelError('No thread ID available');
+    if (!selectedEmailDetail?.thread_id) {
+      setPanelError('Cannot send: thread ID missing. Please refresh and try again.');
       return;
     }
 
     if (!replyBody.trim()) {
-      setPanelError('Reply body cannot be empty');
+      setPanelError('Reply body cannot be empty.');
       return;
     }
 
@@ -537,26 +661,87 @@ export const App = () => {
     setPanelError(null);
 
     try {
-      const result = await apiService.sendThreadReply(selectedReplyItem.thread_id, replyBody.trim());
+      const result = await apiService.sendThreadReply(selectedEmailDetail.thread_id, replyBody.trim());
+
       if (result.success) {
-        setSelectedReplyItem(null);
+        console.log('[SEND] Email sent successfully:', result.message_id);
+        setSendSuccess(true);
         setReplyBody('');
+        setShowReplyCompose(false);
         setPanelError(null);
+
+        // Refetch emails to update UI
         await fetchEmails(activeEmail);
+
+        // Auto-hide success message after 3s
+        setTimeout(() => setSendSuccess(false), 3000);
       } else {
-        setPanelError(result.error || 'Failed to send reply');
+        setPanelError(result.error || 'Failed to send email. Please try again.');
       }
     } catch (err: any) {
-      console.error('[SEND-REPLY] Failed:', err);
-      setPanelError(err.message || 'Network error sending reply');
+      console.error('[SEND] Unexpected error:', err);
+      setPanelError('Network error: Could not send email.');
     } finally {
       setSending(false);
     }
   };
 
-  const filteredBriefings = filterCategory === 'All'
+  const handleDisconnectAll = async () => {
+    try {
+      await apiService.disconnectAllAccounts();
+      setAccounts([]);
+      setActiveEmail(null);
+      localStorage.removeItem('last_selected_account');
+      await fetchEmails();
+    } catch (err) {
+      console.error('[DISCONNECT-ALL] Failed:', err);
+    }
+  };
+
+  // Filter out self-generated security alerts (from app's own Gmail API access)
+  const isSelfGeneratedAlert = (briefing: Briefing): boolean => {
+    // Check if this is a security alert category
+    if (briefing.category !== 'Security') return false;
+
+    // Expanded domain matching patterns
+    const appIdentifiers = [
+      'intelligent-email-assistant',
+      'intelligent-email',
+      'onrender.com',
+      'onrender',
+      'executive brain',
+      'executivebrain',
+      'strategic intelligence'
+    ];
+
+    // Check all text fields for app-related content
+    const textToCheck = [
+      briefing.summary?.toLowerCase() || '',
+      briefing.subject?.toLowerCase() || '',
+      briefing.sender?.toLowerCase() || '',
+      briefing.action?.toLowerCase() || ''
+    ].join(' ');
+
+    // Check for Google security alert patterns related to our app
+    const isGoogleSecurityAlert = (
+      (briefing.sender?.toLowerCase().includes('google') ||
+       briefing.sender?.toLowerCase().includes('no-reply@accounts.google.com')) &&
+      briefing.subject?.toLowerCase().includes('security alert')
+    );
+
+    // If it's a Google security alert, check if it mentions our app domains
+    if (isGoogleSecurityAlert) {
+      return appIdentifiers.some(id => textToCheck.includes(id));
+    }
+
+    // Otherwise, check if any of our identifiers appear in the content
+    return appIdentifiers.some(id => textToCheck.includes(id));
+  };
+
+  const filteredBriefings = (filterCategory === 'All'
     ? briefings
-    : briefings.filter(b => b.category === filterCategory);
+    : briefings.filter(b => b.category === filterCategory))
+    .filter(b => !isSelfGeneratedAlert(b)); // Remove self-generated alerts
 
   const currentItems = filteredBriefings.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
   const totalPages = Math.ceil(filteredBriefings.length / ITEMS_PER_PAGE);
@@ -616,7 +801,7 @@ export const App = () => {
                       <>
                         <span className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(activeEmail)} text-[10px] font-black text-white flex-shrink-0 shadow-lg`}>
                           {getEmailInitials(activeEmail)}
-                          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-[#0f172a]" />
+                          <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0f172a] ${activeEmail && offlineAccounts.has(activeEmail) ? 'bg-[#EF4444]' : 'bg-[#22C55E]'}`} />
                         </span>
                         <span className="hidden sm:inline text-[11px] font-bold text-slate-300 truncate max-w-[140px]">
                           {activeEmail.split('@')[0]}
@@ -668,27 +853,34 @@ export const App = () => {
                                   <div className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(info.account_id)} text-[10px] font-black text-white flex-shrink-0 shadow-md`}>
                                     {getEmailInitials(info.account_id)}
                                   </div>
-                                  {/* ONLINE/OFFLINE indicator badge */}
-                                  <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0f172a] ${isActive ? 'bg-emerald-400' : 'bg-slate-600'}`}
-                                        title={isActive ? 'Online (Active)' : 'Offline (Inactive)'} />
+                                  {/* 3-state indicator: ACTIVE(green) / ONLINE(blue) / OFFLINE(red) */}
+                                  <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0f172a] ${
+                                    offlineAccounts.has(info.account_id) ? 'bg-[#EF4444]' : isActive ? 'bg-[#22C55E]' : 'bg-[#3B82F6]'
+                                  }`} title={offlineAccounts.has(info.account_id) ? 'Offline' : isActive ? 'Active' : 'Online'} />
                                 </div>
                                 <button
                                   onClick={async () => {
                                     console.log(`[DROPDOWN] Switching to account: ${info.account_id}`);
                                     setActiveEmail(info.account_id);
+                                    localStorage.setItem('last_selected_account', info.account_id);
                                     setShowAccountMenu(false);
                                     setLoading(true);
                                     try {
-                                      // Trigger sync for selected account
                                       console.log(`[SYNC] Syncing account: ${info.account_id}`);
                                       const syncResult = await apiService.syncNow(info.account_id);
                                       console.log(`[SYNC] Sync result:`, syncResult);
+                                      if (syncResult.status === 'auth_required') {
+                                        setOfflineAccounts(prev => new Set(prev).add(info.account_id));
+                                      } else {
+                                        setOfflineAccounts(prev => { const next = new Set(prev); next.delete(info.account_id); return next; });
+                                      }
                                       console.log(`[FETCH] Fetching emails for: ${info.account_id}`);
                                       await fetchEmails(info.account_id);
+                                      lastSyncTimeRef.current = Date.now(); // Reset cooldown so autoSync waits 60s
                                       console.log(`[DROPDOWN] Switched to ${info.account_id} successfully`);
                                     } catch (err) {
                                       console.error(`[DROPDOWN] Failed to switch to ${info.account_id}:`, err);
-                                      alert(`Failed to load emails for ${info.account_id}. Check console for details.`);
+                                      setError(`Failed to load emails for ${info.account_id}.`);
                                     } finally {
                                       setLoading(false);
                                     }
@@ -696,11 +888,12 @@ export const App = () => {
                                   className={`text-[11px] font-bold truncate flex-1 text-left ${isActive ? 'text-indigo-400' : 'text-slate-300'}`}
                                 >
                                   <div className="truncate">{info.account_id}</div>
-                                  {isActive && (
-                                    <div className="text-[9px] font-black text-emerald-400 uppercase tracking-wider mt-0.5">● Online</div>
-                                  )}
-                                  {!isActive && (
-                                    <div className="text-[9px] font-bold text-slate-600 uppercase tracking-wider mt-0.5">○ Offline</div>
+                                  {offlineAccounts.has(info.account_id) ? (
+                                    <div className="text-[9px] font-black text-[#EF4444] uppercase tracking-wider mt-0.5">● Offline</div>
+                                  ) : isActive ? (
+                                    <div className="text-[9px] font-black text-[#22C55E] uppercase tracking-wider mt-0.5">● Active</div>
+                                  ) : (
+                                    <div className="text-[9px] font-bold text-[#3B82F6] uppercase tracking-wider mt-0.5">● Online</div>
                                   )}
                                 </button>
                                 <button
@@ -714,14 +907,22 @@ export const App = () => {
                             );
                           })}
                         <div className="border-t border-white/5 px-4 py-3">
+                          {showMaxAccountsMsg && (
+                            <p className="text-[10px] text-[#EF4444] mb-2">Maximum {MAX_CONNECTED_ACCOUNTS} accounts. Disconnect one first.</p>
+                          )}
                           {connectedAccounts.length >= MAX_CONNECTED_ACCOUNTS ? (
-                            <p className="text-[10px] text-slate-500">Max accounts reached. Disconnect one to add another.</p>
+                            <button
+                              onClick={() => setShowMaxAccountsMsg(true)}
+                              className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
+                            >
+                              + Add account
+                            </button>
                           ) : (
                             <a
                               href={apiService.getGoogleAuthUrl()}
                               className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
                             >
-                              + Connect another account
+                              + Add account
                             </a>
                           )}
                         </div>
@@ -749,10 +950,12 @@ export const App = () => {
 
                   // Always fetch emails after sync attempt
                   await fetchEmails(activeEmail);
+                  lastSyncTimeRef.current = Date.now(); // Reset cooldown so autoSync waits 60s
                 } catch (err) {
                   console.error('[REFRESH] Sync error:', err);
                   // Still try to fetch emails from database
                   await fetchEmails(activeEmail);
+                  lastSyncTimeRef.current = Date.now(); // Reset cooldown even on error (sync was attempted)
                 }
               }}
               disabled={loading}
@@ -872,42 +1075,38 @@ export const App = () => {
           )}
         </AnimatePresence>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-12">
+        <div className="flex flex-col gap-4 mb-12 max-w-[720px] mx-auto">
           <AnimatePresence mode="popLayout">
             {loading ? (
               [...Array(currentItems.length || ITEMS_PER_PAGE)].map((_, i) => (
                 <motion.div
                   key={`skeleton-${i}`}
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.4, delay: i * 0.1 }}
-                  className="h-[350px] rounded-[2.5rem] bg-white/[0.02] border border-white/5 relative overflow-hidden p-10 flex flex-col"
+                  transition={{ duration: 0.3, delay: i * 0.05 }}
+                  className="rounded-2xl bg-white/[0.02] border border-white/5 relative overflow-hidden p-6 flex flex-col gap-3"
                 >
-                  <div className="flex items-start justify-between mb-8">
-                    <div className="flex flex-col gap-3">
-                      <div className="w-24 h-5 rounded-full bg-white/5 animate-pulse" />
-                      <div className="w-48 h-8 rounded-lg bg-white/5 animate-pulse" />
-                    </div>
+                  <div className="flex gap-2">
+                    <div className="w-16 h-5 rounded-full bg-white/5 animate-pulse" />
+                    <div className="w-16 h-5 rounded-full bg-white/5 animate-pulse" />
                   </div>
-                  <div className="w-full h-12 rounded-xl bg-white/5 animate-pulse mb-6" />
-                  <div className="w-2/3 h-6 rounded-lg bg-white/5 animate-pulse mb-10" />
-                  <div className="flex-grow rounded-3xl bg-white/5 animate-pulse" />
+                  <div className="w-3/4 h-6 rounded-lg bg-white/5 animate-pulse" />
+                  <div className="w-full h-16 rounded-xl bg-white/5 animate-pulse" />
+                  <div className="w-1/2 h-4 rounded-lg bg-white/5 animate-pulse" />
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.015] to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
                 </motion.div>
               ))
             ) : currentItems.length > 0 ? (
               currentItems.map((item, index) => {
                 const cardId = `${item.gmail_message_id || item.subject}-${index}`;
-                const isExpanded = expandedCards.has(cardId);
                 const urgency = item.ai_summary_json?.urgency || 'medium';
 
-                // Color-coded urgency styles
-                const getUrgencyColor = () => {
+                const getPriorityBadgeStyle = () => {
                   switch(urgency) {
-                    case 'high': return 'bg-red-500/10 border-red-500/30 text-red-400';
-                    case 'low': return 'bg-green-500/10 border-green-500/30 text-green-400';
-                    default: return 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400';
+                    case 'high': return 'bg-[#FF3B5C] text-white border-[#FF3B5C] font-bold';
+                    case 'low': return 'bg-[#3D4A5C] text-[#94A3B8] border-[#3D4A5C]';
+                    default: return 'bg-[#FFB800] text-[#1a1a1a] border-[#FFB800] font-bold';
                   }
                 };
 
@@ -915,34 +1114,38 @@ export const App = () => {
                 <motion.div
                   key={cardId}
                   layout
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.4, delay: index * 0.05 }}
-                  className="group relative flex flex-col h-[350px] p-6 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-500 shadow-xl hover:shadow-indigo-500/5"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: index * 0.03 }}
+                  className="group relative flex flex-col p-6 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-300 shadow-xl hover:shadow-indigo-500/5"
                 >
-                  {/* AI Badge - Top Right with Gradient */}
-                  {item.ai_summary_text && (
-                    <div className="absolute top-4 right-4 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border border-indigo-400/30 backdrop-blur-sm">
-                      <Sparkles size={10} className="text-indigo-300" />
-                      <span className="text-[8px] font-black text-indigo-300 uppercase tracking-wider">AI</span>
-                    </div>
-                  )}
-
-                  {/* Header - Compact badges and metadata */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getUrgencyColor()}`}>
+                  {/* Header row: badges + AI indicator */}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getPriorityBadgeStyle()}`}>
                         {urgency}
-                      </div>
-                      <div className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border transition-all duration-500 ${getCategoryStyles(item.category)}`}>
+                      </span>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getCategoryStyles(item.category)}`}>
                         {item.category}
-                      </div>
+                      </span>
                     </div>
+                    {item.ai_summary_text && (
+                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-500/15 border border-indigo-400/30">
+                        <Sparkles size={10} className={`text-indigo-300 ${summarizingIds.has(item.gmail_message_id || '') ? 'animate-pulse' : ''}`} />
+                        <span className="text-[8px] font-black text-indigo-300 uppercase tracking-wider">AI</span>
+                      </div>
+                    )}
+                    {!item.ai_summary_text && item.gmail_message_id && summarizingIds.has(item.gmail_message_id) && (
+                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-500/10 border border-indigo-400/20">
+                        <Sparkles size={10} className="text-indigo-400 animate-pulse" />
+                        <span className="text-[8px] font-black text-indigo-400 uppercase tracking-wider">Queued</span>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Subject and sender - Compact */}
+                  {/* Subject and sender */}
                   <div className="mb-3">
-                    <h3 className="text-lg font-black text-white mb-1 tracking-tight line-clamp-2 leading-tight group-hover:text-indigo-400 transition-colors duration-500">
+                    <h3 className="text-lg font-black text-white mb-1 tracking-tight leading-tight group-hover:text-indigo-400 transition-colors duration-300">
                       {item.subject}
                     </h3>
                     <div className="flex items-center justify-between text-xs text-slate-500">
@@ -954,124 +1157,69 @@ export const App = () => {
                     </div>
                   </div>
 
-                  {/* Summary Section - Truncated with Read More */}
-                  <div className="flex-grow overflow-hidden mb-3">
+                  {/* Summary - 3-line clamp with fade, 14px body */}
+                  <div className="mb-3 relative">
                     <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
-                      <p className={`text-sm leading-relaxed text-slate-200 font-medium ${!isExpanded ? 'line-clamp-2' : ''}`}>
+                      <p className="text-sm leading-[1.6] text-slate-200 line-clamp-3">
                         {item.summary}
                       </p>
-                      {item.summary && item.summary.length > 120 && (
-                        <button
-                          onClick={() => {
-                            const newExpanded = new Set(expandedCards);
-                            if (isExpanded) {
-                              newExpanded.delete(cardId);
-                            } else {
-                              newExpanded.add(cardId);
-                            }
-                            setExpandedCards(newExpanded);
-                          }}
-                          className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 mt-1 transition-colors"
-                        >
-                          {isExpanded ? 'Show less' : 'Read more'}
-                        </button>
-                      )}
+                      <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-[#0f172a]/80 to-transparent rounded-b-xl pointer-events-none" />
                     </div>
 
-                    {/* Action Items as Pills */}
+                    {/* Action Items - Full text bullets */}
                     {item.ai_summary_json?.action_items && item.ai_summary_json.action_items.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {item.ai_summary_json.action_items.slice(0, 3).map((action: string, idx: number) => (
-                          <span
-                            key={idx}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-[10px] font-semibold text-indigo-300"
-                            title={action}
-                          >
-                            <span className="w-1 h-1 rounded-full bg-indigo-400"></span>
-                            <span className="truncate max-w-[120px]">{action}</span>
-                          </span>
-                        ))}
+                      <div className="mt-2">
+                        <ul className="space-y-1 list-disc pl-4">
+                          {item.ai_summary_json.action_items.slice(0, 3).map((action: string, idx: number) => (
+                            <li key={idx} className="text-xs leading-relaxed text-slate-300">{action}</li>
+                          ))}
+                        </ul>
                         {item.ai_summary_json.action_items.length > 3 && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-500/10 border border-slate-500/20 text-[10px] font-bold text-slate-400">
-                            +{item.ai_summary_json.action_items.length - 3}
-                          </span>
+                          <button
+                            onClick={() => { setScrollToActions(true); setSelectedEmailDetail(item); }}
+                            className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 mt-1.5 transition-colors"
+                          >
+                            View {item.ai_summary_json.action_items.length - 3} more action{item.ai_summary_json.action_items.length - 3 > 1 ? 's' : ''} &rarr;
+                          </button>
                         )}
                       </div>
                     )}
                   </div>
 
-                  {/* Recommended Action - Compact */}
-                  {item.action && item.action !== 'None' && (
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-500/5 border border-indigo-500/20">
-                      <CheckCircle2 size={14} className="text-indigo-400 shrink-0" />
-                      <p className="text-[11px] font-bold text-slate-100 truncate">{item.action}</p>
-                    </div>
-                  )}
-
-                  {/* Footer - Compact buttons */}
+                  {/* Footer */}
                   <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      {!item.ai_summary_text && item.gmail_message_id && (
+                      {/* Queued indicator for pending summaries */}
+                      {!item.ai_summary_text && item.gmail_message_id && summarizingIds.has(item.gmail_message_id) && (
+                        <span className="text-[9px] font-bold text-indigo-400 uppercase flex items-center gap-1">
+                          <Sparkles size={11} className="animate-pulse" />
+                          Queued...
+                        </span>
+                      )}
+                      {/* Re-summarize for cards that already have summaries */}
+                      {item.ai_summary_text && item.gmail_message_id && (
                         <button
                           onClick={async () => {
-                            console.log('[SUMMARIZE] Requesting:', item.gmail_message_id);
-                            const updatedBriefings = briefings.map(b =>
-                              b.gmail_message_id === item.gmail_message_id
-                                ? { ...b, summary: '⏳ Generating AI summary...' }
-                                : b
-                            );
-                            setBriefings(updatedBriefings);
-
-                            try {
-                              const result = await apiService.summarizeEmail(
-                                item.gmail_message_id!,
-                                activeEmail || 'default'
-                              );
-
-                              if (result.status === 'queued') {
-                                console.log('[SUMMARIZE] Job queued:', result.job_id);
-                                const feedbackBriefings = briefings.map(b =>
-                                  b.gmail_message_id === item.gmail_message_id
-                                    ? { ...b, summary: '✓ AI summary queued! Refreshing in 5s...' }
-                                    : b
-                                );
-                                setBriefings(feedbackBriefings);
-                                setTimeout(() => fetchEmails(activeEmail), 5000);
-                              } else {
-                                setBriefings(briefings);
-                              }
-                            } catch (error) {
-                              console.error('[SUMMARIZE] Error:', error);
-                              setBriefings(briefings);
-                            }
+                            setSummarizingIds(prev => new Set(prev).add(item.gmail_message_id!));
+                            await apiService.summarizeEmail(item.gmail_message_id!, activeEmail || 'default');
+                            setTimeout(() => {
+                              fetchEmails(activeEmail);
+                              setSummarizingIds(prev => { const next = new Set(prev); next.delete(item.gmail_message_id!); return next; });
+                            }, 8000);
                           }}
-                          className="text-[9px] font-bold text-indigo-500 hover:text-indigo-400 uppercase flex items-center gap-1 transition-colors"
-                          title="Generate AI summary"
+                          className="text-[9px] font-bold text-slate-500 hover:text-indigo-400 uppercase flex items-center gap-1 transition-colors"
                         >
                           <Sparkles size={11} />
-                          Summarize
+                          Re-summarize
                         </button>
                       )}
                       <button
-                        onClick={() => alert(`Details for "${item.subject}" coming soon.`)}
+                        onClick={() => setSelectedEmailDetail(item)}
                         className="text-[9px] font-bold text-slate-500 hover:text-slate-300 uppercase flex items-center gap-1 transition-colors"
                       >
                         Details <ChevronRight size={11} />
                       </button>
-                      {item.thread_id && (
-                        <button
-                          onClick={() => {
-                            setSelectedReplyItem(item);
-                            setReplyBody('');
-                            setPanelError(null);
-                          }}
-                          className="text-[9px] font-bold text-indigo-500 hover:text-indigo-400 uppercase flex items-center gap-1 transition-colors"
-                        >
-                          Reply <ChevronRight size={11} />
-                        </button>
-                      )}
                     </div>
-                    <div className="text-[8px] font-bold text-slate-600 uppercase">{item.account}</div>
                   </div>
                 </motion.div>
                 );
@@ -1080,7 +1228,7 @@ export const App = () => {
 
             {/* BATCH LIMIT INDICATOR: Inform users about auto-summary limits */}
             {currentItems.length > 30 && (
-              <div className="col-span-full mt-8 mb-4 p-6 rounded-2xl bg-gradient-to-r from-indigo-500/10 to-violet-500/10 border border-indigo-500/20">
+              <div className="w-full mt-8 mb-4 p-6 rounded-2xl bg-gradient-to-r from-indigo-500/10 to-violet-500/10 border border-indigo-500/20">
                 <div className="flex items-start gap-4">
                   <div className="flex-shrink-0 w-10 h-10 rounded-full bg-indigo-600/20 flex items-center justify-center border border-indigo-500/30">
                     <Sparkles size={20} className="text-indigo-400" />
@@ -1104,7 +1252,7 @@ export const App = () => {
 
             {connectedAccounts.length === 0 && !error ? (
               /* ONBOARDING GUIDE: Professional zero-account state with step-by-step instructions */
-              <div className="col-span-full py-16 flex flex-col items-center gap-8 text-center max-w-4xl mx-auto">
+              <div className="w-full py-16 flex flex-col items-center gap-8 text-center max-w-4xl mx-auto">
                 <div className="w-28 h-28 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-2xl">
                   <Mail size={48} className="text-indigo-400" />
                   <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-pulse" />
@@ -1162,7 +1310,7 @@ export const App = () => {
               </div>
             ) : !activeEmail && connectedAccounts.length > 0 ? (
               /* CRITICAL: Show "Select Account" when accounts exist but none is active */
-              <div className="col-span-full py-32 flex flex-col items-center gap-6 text-center">
+              <div className="w-full py-32 flex flex-col items-center gap-6 text-center">
                 <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-xl">
                   <Mail size={40} className="text-indigo-400" />
                   <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-pulse" />
@@ -1179,17 +1327,24 @@ export const App = () => {
                         onClick={async () => {
                           console.log(`[ACCOUNT-SELECT] Selecting account: ${acc.account_id}`);
                           setActiveEmail(acc.account_id);
+                          localStorage.setItem('last_selected_account', acc.account_id);
                           setLoading(true);
                           try {
                             console.log(`[SYNC] Syncing account: ${acc.account_id}`);
                             const syncResult = await apiService.syncNow(acc.account_id);
                             console.log(`[SYNC] Sync result:`, syncResult);
+                            if (syncResult.status === 'auth_required') {
+                              setOfflineAccounts(prev => new Set(prev).add(acc.account_id));
+                            } else {
+                              setOfflineAccounts(prev => { const next = new Set(prev); next.delete(acc.account_id); return next; });
+                            }
                             console.log(`[FETCH] Fetching emails for: ${acc.account_id}`);
                             await fetchEmails(acc.account_id);
+                            lastSyncTimeRef.current = Date.now(); // Reset cooldown so autoSync waits 60s
                             console.log(`[ACCOUNT-SELECT] Completed for ${acc.account_id}`);
                           } catch (err) {
                             console.error(`[ACCOUNT-SELECT] Failed for ${acc.account_id}:`, err);
-                            alert(`Failed to load emails for ${acc.account_id}. Check console for details.`);
+                            setError(`Failed to load emails for ${acc.account_id}.`);
                           } finally {
                             setLoading(false);
                           }
@@ -1208,7 +1363,7 @@ export const App = () => {
                 </div>
               </div>
             ) : !error && (
-              <div className="col-span-full py-32 flex flex-col items-center gap-6 text-center">
+              <div className="w-full py-32 flex flex-col items-center gap-6 text-center">
                 <div className="w-24 h-24 rounded-full bg-white/[0.03] flex items-center justify-center text-slate-600 border border-white/5 relative shadow-inner">
                   <Mail size={40} className="text-indigo-500/20" />
                   <div className="absolute inset-0 rounded-full border border-indigo-500/10 animate-ping" />
@@ -1301,95 +1456,232 @@ export const App = () => {
         )}
       </AnimatePresence>
 
-      {/* Send Reply Modal */}
+      {/* Email Details Panel - Slides from right */}
       <AnimatePresence>
-        {selectedReplyItem && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
-            onClick={() => setSelectedReplyItem(null)}
-          >
+        {selectedEmailDetail && (
+          <>
             <motion.div
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-2xl bg-[#1e293b] rounded-3xl border border-white/10 shadow-2xl p-8"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm"
+              onClick={() => {
+                setSelectedEmailDetail(null);
+                setPanelError(null);
+              }}
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="fixed top-0 right-0 z-[200] h-screen w-full md:w-[60vw] bg-[#0f172a] border-l border-white/10 shadow-2xl flex flex-col"
             >
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-white font-black text-xl">Send Reply</h3>
-                <button
-                  onClick={() => setSelectedReplyItem(null)}
-                  className="text-slate-400 hover:text-white transition-colors"
-                >
-                  ✕
-                </button>
+              {/* Panel Header - Sticky */}
+              <div className="sticky top-0 z-10 bg-[#0f172a]/95 backdrop-blur-sm border-b border-white/5 px-6 py-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-xl font-black text-white mb-2 leading-tight">{selectedEmailDetail.subject}</h2>
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+                      <span className="font-semibold text-slate-300">{selectedEmailDetail.sender}</span>
+                      <span className="text-slate-600">|</span>
+                      <span>{selectedEmailDetail.date}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-3">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
+                        selectedEmailDetail.priority === 'High' ? 'bg-[#FF3B5C] text-white border-[#FF3B5C]' :
+                        selectedEmailDetail.priority === 'Medium' ? 'bg-[#FFB800] text-[#1a1a1a] border-[#FFB800]' :
+                        'bg-[#3D4A5C] text-[#94A3B8] border-[#3D4A5C]'
+                      }`}>
+                        {selectedEmailDetail.priority}
+                      </span>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getCategoryStyles(selectedEmailDetail.category)}`}>
+                        {selectedEmailDetail.category}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedEmailDetail(null);
+                      setPanelError(null);
+                    }}
+                    className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors flex-shrink-0"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
               </div>
 
-              <div className="mb-6 p-4 rounded-xl bg-white/5 border border-white/10">
-                <div className="mb-2">
-                  <span className="text-slate-400 text-xs font-bold">Subject:</span>
-                  <p className="text-white text-sm font-semibold">{selectedReplyItem.subject}</p>
-                </div>
-                <div className="mb-2">
-                  <span className="text-slate-400 text-xs font-bold">From:</span>
-                  <p className="text-slate-300 text-sm">{selectedReplyItem.sender}</p>
-                </div>
-                <div className="mb-2">
-                  <span className="text-slate-400 text-xs font-bold">Date:</span>
-                  <p className="text-slate-300 text-sm">{selectedReplyItem.date}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400 text-xs font-bold">Message:</span>
-                  <p className="text-slate-300 text-sm mt-1 max-h-32 overflow-y-auto custom-scrollbar">
-                    {selectedReplyItem.body || selectedReplyItem.summary}
-                  </p>
+              {/* Panel Body - Scrollable */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-6 space-y-6">
+                {/* Section 1: AI Analysis */}
+                {selectedEmailDetail.ai_summary_text && (
+                  <div className="space-y-4 border-t border-white/5 pt-6">
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={16} className="text-indigo-400" />
+                      <h3 className="text-sm font-black text-indigo-400 uppercase tracking-wider">AI Analysis</h3>
+                      {selectedEmailDetail.ai_summary_model && (
+                        <span className="text-[9px] text-slate-600 font-bold">{selectedEmailDetail.ai_summary_model}</span>
+                      )}
+                    </div>
+
+                    {/* Overview */}
+                    <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
+                      <p className="text-sm leading-relaxed text-slate-200">{selectedEmailDetail.ai_summary_text}</p>
+                    </div>
+
+                    {/* Action Items */}
+                    {selectedEmailDetail.ai_summary_json?.action_items && selectedEmailDetail.ai_summary_json.action_items.length > 0 && (
+                      <div ref={actionItemsRef} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
+                        <p className="text-xs font-black text-indigo-400 uppercase tracking-wider mb-3">Action Items</p>
+                        <ol className="space-y-2 list-decimal list-inside">
+                          {selectedEmailDetail.ai_summary_json.action_items.map((action: string, idx: number) => (
+                            <li key={idx} className="text-sm leading-relaxed text-slate-300">{action}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+
+                    {/* Urgency */}
+                    {selectedEmailDetail.ai_summary_json?.urgency && (
+                      <p className="text-xs text-slate-500">Urgency: <span className="font-bold text-slate-400 capitalize">{selectedEmailDetail.ai_summary_json.urgency}</span></p>
+                    )}
+                  </div>
+                )}
+
+                {/* Section 2: Full Message */}
+                <div className="space-y-3 border-t border-white/5 pt-6">
+                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider">Full Message</h3>
+                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 max-h-[50vh] overflow-y-auto custom-scrollbar">
+                    <pre className="text-[13px] leading-[1.7] text-slate-300 whitespace-pre-wrap font-sans break-words">
+                      {selectedEmailDetail.body || selectedEmailDetail.summary || 'No message body available.'}
+                    </pre>
+                  </div>
                 </div>
               </div>
 
-              <div className="mb-6">
-                <label className="block text-slate-400 text-sm font-bold mb-2">
-                  Your Reply
-                </label>
-                <textarea
-                  value={replyBody}
-                  onChange={(e) => setReplyBody(e.target.value)}
-                  placeholder="Type your reply here..."
-                  className="w-full h-40 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 resize-none"
-                  autoFocus
-                />
-              </div>
-
+              {/* Panel Error (visible inside panel) */}
               {panelError && (
-                <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">
-                  {panelError}
+                <div className="space-y-3 border-t border-white/5 pt-6">
+                  <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">
+                    <AlertCircle size={16} className="flex-shrink-0" />
+                    <span className="font-bold">{panelError}</span>
+                  </div>
                 </div>
               )}
 
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setSelectedReplyItem(null)}
-                  className="flex-1 px-6 py-3 rounded-xl border border-white/10 text-slate-400 hover:text-white text-sm font-bold transition-all"
-                  disabled={sending}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSendReply}
-                  disabled={!replyBody.trim() || sending}
-                  className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-bold transition-all shadow-lg shadow-indigo-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {sending ? 'Sending...' : 'Send Reply'}
-                </button>
+              {/* Section 4: Reply Compose (conditional) */}
+              {showReplyCompose && (
+                <div className="space-y-3 border-t border-white/5 pt-6">
+                  <h3 className="text-sm font-black text-indigo-400 uppercase tracking-wider">Compose Reply</h3>
+                  <textarea
+                    value={replyBody}
+                    onChange={(e) => setReplyBody(e.target.value)}
+                    placeholder="Type your reply here..."
+                    rows={8}
+                    className="w-full p-4 rounded-xl bg-white/[0.03] border border-white/10 text-slate-200 placeholder-slate-600 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
+                  />
+                  {sendSuccess && (
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm">
+                      <span className="font-bold">✓ Reply sent successfully!</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Section 5: Actions - Sticky bottom */}
+              <div className="sticky bottom-0 bg-[#0f172a]/95 backdrop-blur-sm border-t border-white/5 px-6 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      setSelectedEmailDetail(null);
+                      setShowReplyCompose(false);
+                      setReplyBody('');
+                      setSendSuccess(false);
+                      setPanelError(null);
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300 hover:text-white text-sm font-bold transition-all"
+                  >
+                    Close
+                  </button>
+                  {!selectedEmailDetail.ai_summary_text && selectedEmailDetail.gmail_message_id && (
+                    <button
+                      onClick={async () => {
+                        const id = selectedEmailDetail.gmail_message_id!;
+                        setSummarizingIds(prev => new Set(prev).add(id));
+                        await apiService.summarizeEmail(id, activeEmail || 'default');
+                        console.log('[PANEL] Summarization queued for', id);
+                        setTimeout(() => {
+                          fetchEmails(activeEmail);
+                          setSummarizingIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+                        }, 8000);
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300 hover:text-white text-sm font-bold transition-all flex items-center gap-2"
+                    >
+                      <Sparkles size={14} />
+                      Summarize
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  {showReplyCompose ? (
+                    <>
+                      <button
+                        onClick={() => {
+                          setShowReplyCompose(false);
+                          setReplyBody('');
+                          setPanelError(null);
+                        }}
+                        className="px-5 py-2.5 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300 hover:text-white text-sm font-bold transition-all"
+                        disabled={sending}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSendReply}
+                        disabled={sending || !replyBody.trim() || !selectedEmailDetail.thread_id}
+                        className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2"
+                      >
+                        {sending ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" />
+                            Sending...
+                          </>
+                        ) : (
+                          <>
+                            <Mail size={14} />
+                            Send Reply
+                          </>
+                        )}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setPanelError(null);
+
+                        if (!selectedEmailDetail.thread_id) {
+                          setPanelError('Cannot reply: thread ID missing. Please refresh your emails and try again.');
+                          return;
+                        }
+
+                        setShowReplyCompose(true);
+                        setSendSuccess(false);
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2"
+                    >
+                      <Mail size={14} />
+                      Draft Reply
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
-          </motion.div>
+          </>
         )}
       </AnimatePresence>
 
-      {/* Scroll to Top Button - Bottom Left */}
+      {/* Scroll to Top Button - Bottom Right */}
       <AnimatePresence>
         {showScrollTop && (
           <motion.button
@@ -1398,7 +1690,7 @@ export const App = () => {
             exit={{ opacity: 0, y: 20, scale: 0.8 }}
             transition={{ duration: 0.3, ease: 'easeOut' }}
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="fixed bottom-8 left-8 z-50 group"
+            className="fixed bottom-8 right-8 z-50 group"
             title="Scroll to top (Ctrl+Home)"
           >
             <div className="relative">
