@@ -174,8 +174,12 @@ def run_engine(token_data: dict, max_emails: int = 30):
                 raw_body = get_message_body(payload)
                 cleaned_body = raw_body.strip()
 
+                gmail_thread_id = msg.get('threadId', '')
+                logger.info(f"[GMAIL-THREAD] {subject[:30]}... | Gmail message_id: {msg['id']} | thread_id: {gmail_thread_id or '<empty>'}")
+
                 emails_data.append({
                     "message_id": msg['id'],  # Gmail message ID
+                    "thread_id": gmail_thread_id,
                     "subject": subject,
                     "sender": sender_raw,
                     "date": date_iso,  # ISO timestamp
