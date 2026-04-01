@@ -18,6 +18,7 @@ CREATE OR REPLACE FUNCTION public.save_email_with_ai_job(
   p_message_id text,
   p_account_id text,
   p_tenant_id text,
+  p_thread_id text DEFAULT NULL,
   p_create_ai_job boolean DEFAULT false
 )
 RETURNS json
@@ -39,6 +40,7 @@ BEGIN
     gmail_message_id,
     account_id,
     tenant_id,
+    thread_id,
     created_at,
     updated_at
   )
@@ -50,11 +52,13 @@ BEGIN
     p_message_id,
     p_account_id,
     p_tenant_id,
+    p_thread_id,
     now(),
     now()
   )
   ON CONFLICT (account_id, gmail_message_id) DO UPDATE
-  SET updated_at = now()
+  SET updated_at = now(),
+      thread_id = COALESCE(EXCLUDED.thread_id, emails.thread_id)
   RETURNING id INTO v_email_id;
 
   -- Atomic operation 2: Conditionally create AI job (same transaction)

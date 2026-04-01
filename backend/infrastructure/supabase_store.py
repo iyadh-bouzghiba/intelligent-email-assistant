@@ -102,7 +102,7 @@ class SupabaseStore:
         )
         return None
 
-    def save_email_atomic(self, subject, sender, date, body=None, message_id=None, tenant_id="primary", account_id="default", create_ai_job=False):
+    def save_email_atomic(self, subject, sender, date, body=None, message_id=None, tenant_id="primary", account_id="default", create_ai_job=False, thread_id=None):
         """
         Atomically saves email + conditionally creates AI job via single RPC call.
 
@@ -139,7 +139,8 @@ class SupabaseStore:
                 'p_message_id': message_id,
                 'p_account_id': account_id,
                 'p_tenant_id': tenant_id,
-                'p_create_ai_job': create_ai_job
+                'p_create_ai_job': create_ai_job,
+                'p_thread_id': thread_id
             }).execute()
 
             if result and result.data:

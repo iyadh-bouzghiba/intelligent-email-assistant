@@ -666,6 +666,9 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30):
                 is_new_email = (m_id not in existing_message_ids)
                 create_ai_job = (is_new_email and ai_job_count < 20)
 
+                gmail_thread_id = email.get("thread_id") or email.get("threadId")
+                logger.info(f"[SYNC-THREAD] Saving {m_id[:8]}... thread_id={gmail_thread_id!r}")
+
                 result = await asyncio.to_thread(
                     store.save_email_atomic,
                     subject=email.get("subject", "No Subject"),
@@ -675,7 +678,8 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30):
                     message_id=m_id,
                     account_id=effective_account_id,
                     tenant_id="primary",
-                    create_ai_job=create_ai_job
+                    create_ai_job=create_ai_job,
+                    thread_id=gmail_thread_id
                 )
 
                 # Validate atomic save succeeded
