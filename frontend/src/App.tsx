@@ -1161,6 +1161,7 @@ export const App = () => {
               currentItems.map((item, index) => {
                 const cardId = `${item.gmail_message_id || item.subject}-${index}`;
                 const urgency = item.ai_summary_json?.urgency || 'medium';
+                const urgencyLabel = urgency === 'high' ? 'URGENT' : urgency === 'low' ? 'ROUTINE' : 'MEDIUM';
 
                 const getPriorityBadgeStyle = () => {
                   switch(urgency) {
@@ -1183,7 +1184,7 @@ export const App = () => {
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getPriorityBadgeStyle()}`}>
-                        {urgency}
+                        {urgencyLabel}
                       </span>
                       <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getCategoryStyles(item.category)}`}>
                         {item.category}
@@ -1215,11 +1216,21 @@ export const App = () => {
                         <span className="text-[10px] font-medium">{item.date}</span>
                       </div>
                     </div>
+                    {item.ai_summary_json?.urgency && (
+                      <p className={`text-[10px] font-bold uppercase tracking-wider mt-1.5 ${
+                        urgency === 'high' ? 'text-rose-400' : urgency === 'low' ? 'text-slate-500' : 'text-amber-400'
+                      }`}>
+                        {urgency === 'high' ? '↩ Action or reply required' : urgency === 'low' ? '· For reference' : '· Review recommended'}
+                      </p>
+                    )}
                   </div>
 
                   {/* Summary - 3-line clamp with fade, 14px body */}
                   <div className="mb-3 relative">
                     <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
+                      <p className="text-[8px] font-black uppercase tracking-widest text-indigo-400/60 mb-1.5">
+                        {item.ai_summary_text ? 'AI Overview' : 'Message Preview'}
+                      </p>
                       <p className="text-sm leading-[1.6] text-slate-200 line-clamp-3">
                         {item.summary}
                       </p>
@@ -1577,11 +1588,24 @@ export const App = () => {
                 {/* Section 1: AI Analysis */}
                 {selectedEmailDetail.ai_summary_text && (
                   <div className="space-y-4 border-t border-white/5 pt-6">
-                    <div className="flex items-center gap-2">
-                      <Sparkles size={16} className="text-indigo-400" />
-                      <h3 className="text-sm font-black text-indigo-400 uppercase tracking-wider">AI Analysis</h3>
-                      {selectedEmailDetail.ai_summary_model && (
-                        <span className="text-[9px] text-slate-600 font-bold">{selectedEmailDetail.ai_summary_model}</span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Sparkles size={16} className="text-indigo-400" />
+                        <h3 className="text-sm font-black text-indigo-400 uppercase tracking-wider">AI Analysis</h3>
+                        {selectedEmailDetail.ai_summary_model && (
+                          <span className="text-[9px] text-slate-600 font-bold">{selectedEmailDetail.ai_summary_model}</span>
+                        )}
+                      </div>
+                      {selectedEmailDetail.ai_summary_json?.urgency && (
+                        <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border ${
+                          selectedEmailDetail.ai_summary_json.urgency === 'high' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' :
+                          selectedEmailDetail.ai_summary_json.urgency === 'low' ? 'bg-slate-500/10 text-slate-400 border-slate-500/20' :
+                          'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                        }`}>
+                          {selectedEmailDetail.ai_summary_json.urgency === 'high' ? 'Act Now' :
+                           selectedEmailDetail.ai_summary_json.urgency === 'low' ? 'For Reference' :
+                           'Review Recommended'}
+                        </span>
                       )}
                     </div>
 
@@ -1602,10 +1626,6 @@ export const App = () => {
                       </div>
                     )}
 
-                    {/* Urgency */}
-                    {selectedEmailDetail.ai_summary_json?.urgency && (
-                      <p className="text-xs text-slate-500">Urgency: <span className="font-bold text-slate-400 capitalize">{selectedEmailDetail.ai_summary_json.urgency}</span></p>
-                    )}
                   </div>
                 )}
 
