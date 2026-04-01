@@ -71,6 +71,13 @@ export const App = () => {
   const [sending, setSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
+  const [sendToast, setSendToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const showSendToast = (type: 'success' | 'error', message: string) => {
+    setSendToast({ type, message });
+    const duration = type === 'success' ? 3500 : 4500;
+    setTimeout(() => setSendToast(null), duration);
+  };
 
   // --- Detail panel state helpers ---
   // Resets all transient compose/reply state inside the panel
@@ -754,6 +761,7 @@ export const App = () => {
         setReplyBody('');
         setShowReplyCompose(false);
         setPanelError(null);
+        showSendToast('success', 'Reply sent successfully.');
 
         // Refetch emails to update UI
         await fetchEmails(activeEmail);
@@ -761,11 +769,15 @@ export const App = () => {
         // Auto-hide success message after 3s
         setTimeout(() => setSendSuccess(false), 3000);
       } else {
-        setPanelError(result.error || 'Failed to send email. Please try again.');
+        const errMsg = result.error || 'Failed to send email. Please try again.';
+        setPanelError(errMsg);
+        showSendToast('error', errMsg);
       }
     } catch (err: any) {
       console.error('[SEND] Unexpected error:', err);
-      setPanelError('Network error: Could not send email.');
+      const netMsg = 'Network error: Could not send email.';
+      setPanelError(netMsg);
+      showSendToast('error', netMsg);
     } finally {
       setSending(false);
     }
@@ -1807,6 +1819,31 @@ export const App = () => {
               <div className="absolute inset-0 rounded-2xl border-2 border-indigo-400/30 animate-ping opacity-20" />
             </div>
           </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* Send feedback toast */}
+      <AnimatePresence>
+        {sendToast && (
+          <motion.div
+            key="send-toast"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] flex items-center gap-3 px-5 py-3 rounded-2xl border shadow-2xl text-sm font-bold pointer-events-none ${
+              sendToast.type === 'success'
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-emerald-500/10'
+                : 'bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-rose-500/10'
+            }`}
+          >
+            {sendToast.type === 'success' ? (
+              <Shield size={16} className="flex-shrink-0 text-emerald-400" />
+            ) : (
+              <AlertCircle size={16} className="flex-shrink-0 text-rose-400" />
+            )}
+            <span>{sendToast.message}</span>
+          </motion.div>
         )}
       </AnimatePresence>
 
