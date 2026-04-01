@@ -72,6 +72,30 @@ export const App = () => {
   const [sendSuccess, setSendSuccess] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
 
+  // --- Detail panel state helpers ---
+  // Resets all transient compose/reply state inside the panel
+  const resetPanelTransientState = () => {
+    setShowReplyCompose(false);
+    setReplyBody('');
+    setSendSuccess(false);
+    setPanelError(null);
+    setScrollToActions(false);
+  };
+
+  // Closes the panel and resets all transient state
+  const closeDetailPanel = () => {
+    setSelectedEmailDetail(null);
+    resetPanelTransientState();
+  };
+
+  // Opens the panel for an item — always resets transient state first
+  const openDetailPanel = (item: Briefing, jumpToActions = false) => {
+    resetPanelTransientState();
+    if (jumpToActions) setScrollToActions(true);
+    setSelectedEmailDetail(item);
+  };
+  // --- End detail panel state helpers ---
+
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") {
@@ -175,8 +199,7 @@ export const App = () => {
     if (!selectedEmailDetail) return;
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setSelectedEmailDetail(null);
-        setPanelError(null);
+        closeDetailPanel();
       }
     };
     window.addEventListener('keydown', handleEsc);
@@ -561,6 +584,8 @@ export const App = () => {
     }
     // Clear in-flight summarization tracking on account change
     inFlightSummarizingRef.current.clear();
+    // Close detail panel on account change to prevent stale panel state
+    closeDetailPanel();
   }, [activeEmail]);
 
   useEffect(() => {
@@ -1247,7 +1272,7 @@ export const App = () => {
                         </ul>
                         {item.ai_summary_json.action_items.length > 3 && (
                           <button
-                            onClick={() => { setScrollToActions(true); setSelectedEmailDetail(item); }}
+                            onClick={() => { openDetailPanel(item, true); }}
                             className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 mt-1.5 transition-colors"
                           >
                             View {item.ai_summary_json.action_items.length - 3} more action{item.ai_summary_json.action_items.length - 3 > 1 ? 's' : ''} &rarr;
@@ -1285,7 +1310,7 @@ export const App = () => {
                         </button>
                       )}
                       <button
-                        onClick={() => setSelectedEmailDetail(item)}
+                        onClick={() => openDetailPanel(item)}
                         className="text-[9px] font-bold text-slate-500 hover:text-slate-300 uppercase flex items-center gap-1 transition-colors"
                       >
                         Details <ChevronRight size={11} />
@@ -1536,10 +1561,7 @@ export const App = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm"
-              onClick={() => {
-                setSelectedEmailDetail(null);
-                setPanelError(null);
-              }}
+              onClick={() => closeDetailPanel()}
             />
             <motion.div
               initial={{ x: '100%' }}
@@ -1572,10 +1594,7 @@ export const App = () => {
                     </div>
                   </div>
                   <button
-                    onClick={() => {
-                      setSelectedEmailDetail(null);
-                      setPanelError(null);
-                    }}
+                    onClick={() => closeDetailPanel()}
                     className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors flex-shrink-0"
                   >
                     <X size={20} />
@@ -1673,13 +1692,7 @@ export const App = () => {
               <div className="sticky bottom-0 bg-[#0f172a]/95 backdrop-blur-sm border-t border-white/5 px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => {
-                      setSelectedEmailDetail(null);
-                      setShowReplyCompose(false);
-                      setReplyBody('');
-                      setSendSuccess(false);
-                      setPanelError(null);
-                    }}
+                    onClick={() => closeDetailPanel()}
                     className="px-5 py-2.5 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300 hover:text-white text-sm font-bold transition-all"
                   >
                     Close
