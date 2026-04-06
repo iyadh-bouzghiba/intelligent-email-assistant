@@ -142,22 +142,12 @@ class SupabaseStore:
                 'p_message_id': message_id,
                 'p_account_id': account_id,
                 'p_tenant_id': tenant_id,
+                'p_thread_id': thread_id,
                 'p_create_ai_job': create_ai_job
             }).execute()
 
             if result and result.data:
                 logger.info(f"[ATOMIC-SAVE] Email saved: {message_id[:8]}..., AI job: {create_ai_job}")
-
-                # Update thread_id separately (RPC doesn't handle it)
-                if thread_id:
-                    try:
-                        self.client.table("emails").update(
-                            {"thread_id": thread_id}
-                        ).eq("gmail_message_id", message_id).eq("account_id", account_id).execute()
-                        logger.info(f"[ATOMIC-SAVE] thread_id updated for {message_id[:8]}...")
-                    except Exception as thread_err:
-                        logger.warning(f"[ATOMIC-SAVE] Failed to update thread_id: {thread_err}")
-
                 return result
             else:
                 logger.error(f"[ATOMIC-SAVE] RPC returned no data for {message_id[:8]}...")
