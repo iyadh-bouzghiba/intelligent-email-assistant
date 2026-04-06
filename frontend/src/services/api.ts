@@ -208,23 +208,4 @@ export const apiService = {
         }
     },
 
-    // Send email reply
-    sendThreadReply: async (
-        thread_id: string,
-        body: string
-    ): Promise<SendEmailResponse> => {
-        try {
-            const payload: SendEmailRequest = { body };
-            const response = await api.post(
-                `${API_ROOT}/threads/${encodeURIComponent(thread_id)}/send`,
-                payload
-            );
-            console.log(`📡 API: Email sent for thread ${thread_id}`);
-            return response.data;
-        } catch (error: any) {
-            console.warn(`📡 API: Send failed for thread ${thread_id}`, error);
-            const errorMsg = error.response?.data?.error || error.message || "Network error";
-            return { success: false, error: errorMsg };
-        }
-    },
 };
