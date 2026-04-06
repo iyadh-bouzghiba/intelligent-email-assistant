@@ -165,6 +165,7 @@ export const apiService = {
         try {
             const response = await api.post(`${API_ROOT}/sync-now`, null, {
                 params: account_id ? { account_id } : {},
+                timeout: 30000,
             });
             return response.data;
         } catch (error) {
