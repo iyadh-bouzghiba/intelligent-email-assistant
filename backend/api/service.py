@@ -22,6 +22,7 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from email.utils import parseaddr
+
 from fastapi import FastAPI, HTTPException, Request, Response, APIRouter, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -374,14 +375,14 @@ async def debug_config():
     Debug endpoint to verify OAuth configuration at runtime.
     CRITICAL: Verifies redirect URI matches Google Cloud Console.
 
-    Expected LOCAL: http://localhost:8000/auth/callback/google
+    Expected LOCAL: http://127.0.0.1:8888/auth/callback/google
     Expected PROD: https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google
     """
     if not debug_allowed():
         raise HTTPException(status_code=404)
     from backend.config import Config
-    port = os.getenv("PORT", "8000")
-    base_url = os.getenv("BASE_URL", "http://localhost:8000").rstrip("/")
+    port = os.getenv("PORT", "8888")
+    base_url = os.getenv("BASE_URL", "http://127.0.0.1:8888").rstrip("/")
 
     return {
         "PORT": port,
@@ -389,7 +390,7 @@ async def debug_config():
         "REDIRECT_URI": Config.get_callback_url(),
         "GOOGLE_CLIENT_ID": os.getenv("GOOGLE_CLIENT_ID", "NOT_SET")[:20] + "...",
         "FRONTEND_URL": os.getenv("FRONTEND_URL", "http://localhost:5173"),
-        "ENVIRONMENT": "LOCAL" if "localhost" in base_url else "PRODUCTION"
+        "ENVIRONMENT": "LOCAL" if ("localhost" in base_url or "127.0.0.1" in base_url) else "PRODUCTION"
     }
 
 
@@ -546,11 +547,17 @@ async def list_emails_with_summaries(account_id: Optional[str] = Query(None)):
 @api_router.post("/sync-now")
 async def sync_now(
     account_id: str = Query("default"),
-    max_emails: int = Query(30, description="Maximum emails to fetch (default: 30)")
+    max_emails: int = Query(30, description="Maximum emails to fetch (default: 30, validation: 10)"),
+    backfill_limit: int = Query(0, description="Maximum legacy emails to backfill (default: 0=skip, validation: 10)")
 ):
     """
     User-driven Gmail sync endpoint with timeout protection.
     Executes ONE Gmail fetch + store cycle immediately.
+
+    Args:
+        account_id: Account identifier
+        max_emails: Maximum emails to fetch (default 30, use 10 for deterministic validation)
+        backfill_limit: Maximum legacy emails to backfill thread_id (default 0=skip, use 10 for validation)
 
     Returns status-only (no email contents):
     - {"status": "auth_required"} if no valid credentials
@@ -562,7 +569,7 @@ async def sync_now(
     try:
         # Wrap with 25s timeout (Render has 30s timeout - leave 5s buffer)
         return await asyncio.wait_for(
-            _sync_now_impl(account_id, max_emails),
+            _sync_now_impl(account_id, max_emails, backfill_limit),
             timeout=25.0
         )
     except asyncio.TimeoutError:
@@ -573,7 +580,7 @@ async def sync_now(
         return {"status": "error", "message": str(e)}
 
 
-async def _sync_now_impl(account_id: str, max_emails: int = 30):
+async def _sync_now_impl(account_id: str, max_emails: int = 30, backfill_limit: int = 0):
     """Internal sync implementation (extracted for timeout wrapping)."""
     try:
         logger.info("[SYNC] ========== SYNC REQUEST STARTED ==========")
@@ -621,7 +628,7 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30):
 
         logger.info(f"[SYNC] Gmail fetch successful: {len(emails)} emails retrieved")
 
-        # Store emails in Supabase
+        # Store emails in Supabase with atomic AI job creation
         logger.info(f"[SYNC] Initializing Supabase store...")
         store = safe_get_store()
         if not store:
@@ -641,15 +648,14 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30):
             )
             if existing_result and existing_result.data:
                 existing_message_ids = {e['gmail_message_id'] for e in existing_result.data}
-                logger.info(f"[SYNC] Found {len(existing_message_ids)} existing emails for anti-backfill")
+                logger.info(f"[SYNC] Found {len(existing_message_ids)} existing emails in DB")
         except Exception as e:
-            logger.warning(f"[SYNC] Failed to query existing emails: {e}")
-            # Continue with empty set - will treat all as new
+            logger.warning(f"[SYNC] Could not query existing emails: {e}")
 
         stored_count = 0
         ai_job_count = 0
-        failed_saves = []
         new_thread_ids = []
+        failed_saves = []  # D3: Track failures deterministically
 
         for email in emails:
             try:
@@ -661,13 +667,12 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30):
                     logger.warning(f"[SYNC] Skip email without gmail_message_id: {email.get('subject', 'No Subject')}")
                     continue
 
-                # Anti-backfill logic: Only create AI jobs for NEW emails
+                # D2 FIX: Atomic save with conditional AI job creation
+                # COST POLICY: Only NEW emails (not in DB) get automatic AI jobs
+                # First 20 NEW emails get AI jobs (cost control)
                 # Existing emails never get auto-backfilled
                 is_new_email = (m_id not in existing_message_ids)
                 create_ai_job = (is_new_email and ai_job_count < 20)
-
-                gmail_thread_id = email.get("thread_id") or email.get("threadId")
-                logger.info(f"[SYNC-THREAD] Saving {m_id[:8]}... thread_id={gmail_thread_id!r}")
 
                 result = await asyncio.to_thread(
                     store.save_email_atomic,
@@ -679,7 +684,7 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30):
                     account_id=effective_account_id,
                     tenant_id="primary",
                     create_ai_job=create_ai_job,
-                    thread_id=gmail_thread_id
+                    thread_id=email.get("thread_id")  # CRITICAL: Gmail thread ID for send functionality
                 )
 
                 # Validate atomic save succeeded
@@ -695,29 +700,93 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30):
                     if job_was_created:
                         ai_job_count += 1
 
-                    # Track thread_id for auto-summary
-                    thread_id = f"{email.get('subject', '')}_{email.get('sender', '')}".replace(' ', '_')[:50]
-                    new_thread_ids.append((thread_id, email))
+                    new_or_existing = "NEW" if is_new_email else "existing"
+                    logger.info(f"[SYNC] ✓ Saved email {stored_count}/{len(emails)} ({new_or_existing}): {email.get('subject', 'No Subject')[:50]} (AI job: {create_ai_job})")
+
+                    # Track real Gmail thread_id for email_threads table
+                    gmail_thread_id = email.get('thread_id', '')
+                    if gmail_thread_id:
+                        new_thread_ids.append((gmail_thread_id, email))
                 else:
+                    # D3 FIX: Track failed saves deterministically
                     failed_saves.append({
-                        "gmail_message_id": m_id,
-                        "subject": email.get('subject', 'No Subject')[:50]
+                        'message_id': m_id,
+                        'subject': email.get('subject', 'No Subject')[:50],
+                        'error': 'RPC returned no data'
                     })
                     logger.error(f"[SYNC] Failed to save email: {email.get('subject', 'No Subject')[:50]}")
 
             except Exception as e:
+                # D3 FIX: Track exceptions deterministically
                 failed_saves.append({
-                    "gmail_message_id": m_id,
-                    "subject": email.get('subject', 'No Subject')[:50],
-                    "error": str(e)
+                    'message_id': email.get("message_id", "unknown"),
+                    'subject': email.get('subject', 'No Subject')[:50],
+                    'error': f"{type(e).__name__}: {str(e)}"
                 })
                 logger.error(f"[SYNC] Exception while storing email: {e}")
                 logger.error(f"[SYNC] Email subject: {email.get('subject', 'No Subject')[:50]}")
                 import traceback
                 logger.error(f"[SYNC] Traceback: {traceback.format_exc()}")
 
-        logger.info(f"[SYNC] Storage complete: {stored_count}/{len(emails)} emails saved successfully")
-        logger.info(f"[SYNC] AI jobs created: {ai_job_count} (new emails only, anti-backfill active)")
+        # D3 FIX: Deterministic failure reporting
+        if failed_saves:
+            logger.error(f"[SYNC] Storage failures: {len(failed_saves)}/{len(emails)} emails failed")
+            for fail in failed_saves[:5]:  # Log first 5 failures
+                logger.error(f"[SYNC] Failed: {fail['message_id'][:8]}... ({fail['subject']}): {fail['error']}")
+
+        logger.info(f"[SYNC] Storage complete: {stored_count}/{len(emails)} emails saved, {ai_job_count} AI jobs created")
+
+        # D2 FIX: AI jobs already created atomically - no separate enqueue needed
+        # D1 FIX: No fire-and-forget - all operations completed before response
+        logger.info(f"[SYNC] Atomic save completed: {stored_count} emails, {ai_job_count} AI jobs")
+
+        # CRITICAL: Save threads to email_threads table for send functionality
+        # Deduplicate threads by thread_id (multiple emails can belong to same thread)
+        if new_thread_ids:
+            unique_threads = {}
+            for thread_id, email in new_thread_ids:
+                if thread_id not in unique_threads:
+                    unique_threads[thread_id] = email
+
+            # CRITICAL FIX: Build complete payloads BEFORE asyncio.to_thread
+            # Eliminates ALL closure issues by passing only explicit arguments
+            timestamp_now = datetime.now(timezone.utc).isoformat()
+
+            def upsert_thread_sync(db_client, payload: dict, conflict_spec: str):
+                """Pure synchronous helper - no closures, only explicit args."""
+                return db_client.table("email_threads").upsert(
+                    payload,
+                    on_conflict=conflict_spec
+                ).execute()
+
+            threads_saved = 0
+            for thread_id, email in unique_threads.items():
+                try:
+                    # Debug: Prove thread_id correctness
+                    msg_id = email.get('message_id', 'unknown')
+                    logger.info(f"[SYNC] Thread save candidate: thread_id={thread_id[:16]}..., message_id={msg_id[:16]}...")
+
+                    # Build complete payload with NO closures
+                    thread_payload = {
+                        "thread_id": thread_id,
+                        "account_id": effective_account_id,
+                        "subject": email.get("subject", "No Subject"),
+                        "summary": None,  # Will be filled by AI later
+                        "created_at": timestamp_now
+                    }
+
+                    # Call with ONLY explicit arguments - zero closures
+                    await asyncio.to_thread(
+                        upsert_thread_sync,
+                        store.client,
+                        thread_payload,
+                        "thread_id,account_id"
+                    )
+                    threads_saved += 1
+                except Exception as ex:
+                    logger.warning(f"[SYNC] Failed to save thread {thread_id}: {ex}")
+
+            logger.info(f"[SYNC] Saved {threads_saved} unique threads to email_threads table")
 
         # Emit socket event for new emails
         try:
@@ -734,7 +803,7 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30):
         if auto_summary_enabled and has_mistral_key and new_thread_ids:
             from backend.services.summarizer import Summarizer
             from backend.data.models import ThreadState, ThreadSummary
-            from datetime import datetime
+            # datetime already imported at module level (line 22)
 
             summarizer = Summarizer()
             summarized_count = 0
@@ -768,6 +837,67 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30):
                 except Exception as e:
                     logger.warning(f"[SYNC] Failed to emit summary event: {e}")
 
+        # BACKFILL FIX: Enrich existing emails that have NULL thread_id
+        # This covers emails synced before the thread_id write-path fix
+        # Controlled by backfill_limit parameter (default 0 = skip)
+        if backfill_limit > 0:
+            try:
+                logger.info(f"[SYNC] Backfilling thread_id for existing emails (limit: {backfill_limit})...")
+                from backend.integrations.gmail import GmailClient
+
+                # Query emails where thread_id is NULL
+                null_thread_emails = await asyncio.to_thread(
+                    lambda: store.client.table("emails")
+                        .select("gmail_message_id")
+                        .eq("account_id", effective_account_id)
+                        .is_("thread_id", "null")
+                        .limit(backfill_limit)
+                        .execute()
+                )
+
+                if null_thread_emails.data and len(null_thread_emails.data) > 0:
+                    logger.info(f"[SYNC] Found {len(null_thread_emails.data)} emails missing thread_id")
+
+                    # Create Gmail client with same credentials used for sync
+                    gmail_client = GmailClient(token_data)
+                    backfilled_count = 0
+
+                    for email_row in null_thread_emails.data:
+                        try:
+                            gmail_message_id = email_row.get("gmail_message_id")
+                            if not gmail_message_id:
+                                continue
+
+                            # Fetch message metadata from Gmail API to get thread_id
+                            msg_data = await asyncio.to_thread(
+                                lambda mid=gmail_message_id: gmail_client.service.users().messages().get(
+                                    userId='me',
+                                    id=mid,
+                                    format='minimal'
+                                ).execute()
+                            )
+
+                            fetched_thread_id = msg_data.get('threadId')
+                            if fetched_thread_id:
+                                # Update database with thread_id
+                                await asyncio.to_thread(
+                                    lambda tid=fetched_thread_id, mid=gmail_message_id: store.client.table("emails").update(
+                                        {"thread_id": tid}
+                                    ).eq("gmail_message_id", mid).eq("account_id", effective_account_id).execute()
+                                )
+                                backfilled_count += 1
+                        except Exception as backfill_err:
+                            logger.warning(f"[SYNC] Backfill failed for {gmail_message_id[:8]}...: {backfill_err}")
+
+                    logger.info(f"[SYNC] Backfilled thread_id for {backfilled_count}/{len(null_thread_emails.data)} emails")
+                else:
+                    logger.info("[SYNC] No emails found missing thread_id")
+            except Exception as backfill_error:
+                # Don't fail sync if backfill fails - this is a best-effort enhancement
+                logger.warning(f"[SYNC] thread_id backfill process failed: {backfill_error}")
+        else:
+            logger.info("[SYNC] Legacy backfill skipped (backfill_limit=0)")
+
         logger.info(f"[SYNC] ========== SYNC REQUEST COMPLETED ==========")
         logger.info(f"[SYNC] Final status: {stored_count} emails saved, {ai_job_count} AI jobs created")
 
@@ -778,9 +908,14 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30):
             "ai_jobs_created": ai_job_count,
             "processed_count": stored_count
         }
+
         if failed_saves:
             response["failed_count"] = len(failed_saves)
-            response["failures"] = failed_saves[:5]  # Return first 5 failures for debugging
+            response["failures"] = [
+                {"message_id": f["message_id"][:16], "error": f["error"]}
+                for f in failed_saves[:10]  # Return first 10 failures
+            ]
+
         return response
 
     except Exception as e:
@@ -859,50 +994,65 @@ async def get_email_summary(
 
 
 @api_router.get("/threads")
-async def list_threads():
-    if not assistant:
-        # Skeletal Mode / Early Boot
+async def list_threads(account_id: str = Query(None)):
+    """
+    List real tracked Gmail threads from database.
+    CRITICAL: Returns same data source as send endpoint (email_threads table).
+    Supports optional account_id filtering.
+    """
+    store = safe_get_store()
+    if not store:
         return {
             "count": 0,
-            "threads": [{
-                "thread_id": "BOOT",
-                "summary": "System Initializing...",
-                "overview": "Waiting for Brain startup sequence.",
-                "confidence_score": 0.0,
-                "timestamp": datetime.now().isoformat(), 
-            }]
+            "threads": [],
+            "error": "Database unavailable"
         }
 
-    threads_list = []
-    current_threads = getattr(assistant, "threads", {})
+    try:
+        # Query email_threads table (same source as send endpoint)
+        # CRITICAL: Filter by account_id if provided
+        query = store.client.table("email_threads").select(
+            "thread_id, account_id, subject, summary, created_at"
+        )
 
-    for thread_id, thread in current_threads.items():
-        summary_obj = getattr(thread, "current_summary", None)
-        overview_text = getattr(summary_obj, "overview", None) or "Analyzing intel..."
+        if account_id:
+            query = query.eq("account_id", account_id)
 
-        threads_list.append({
-            "thread_id": thread_id,
-            "account_id": getattr(thread, "account_id", "primary"),
-            "summary": overview_text,
-            "overview": overview_text,
-            "confidence_score": getattr(summary_obj, "confidence_score", 0.95)
-            if summary_obj else 0,
-            "timestamp": getattr(thread, "last_updated", datetime.now().isoformat()),
-        })
+        thread_records = await asyncio.to_thread(
+            lambda q=query: q.order("created_at", desc=True).limit(100).execute()
+        )
 
-    if not threads_list:
+        if not thread_records.data:
+            return {
+                "count": 0,
+                "threads": []
+            }
+
+        # Transform to API format
+        threads_list = [
+            {
+                "thread_id": t.get("thread_id"),
+                "account_id": t.get("account_id", "default"),
+                "summary": t.get("summary") or t.get("subject") or "No summary",
+                "overview": t.get("summary") or t.get("subject") or "No overview",
+                "confidence_score": 1.0,  # Real tracked threads
+                "timestamp": t.get("created_at", datetime.now(timezone.utc).isoformat()),
+            }
+            for t in thread_records.data
+        ]
+
         return {
-            "count": 1,
-            "threads": [{
-                "thread_id": "SYS-INIT",
-                "summary": "Strategic Protocol: Backend Link Active.",
-                "overview": "Backend is live. GMAIL_CREDENTIALS detected.",
-                "confidence_score": 1.0,
-                "timestamp": datetime.now().isoformat(),
-            }],
+            "count": len(threads_list),
+            "threads": threads_list
         }
 
-    return {"count": len(threads_list), "threads": threads_list}
+    except Exception as e:
+        logger.error(f"[THREADS] Failed to list threads: {e}")
+        return {
+            "count": 0,
+            "threads": [],
+            "error": str(e)
+        }
 
 @api_router.get("/threads/{thread_id}")
 async def get_thread(thread_id: str):
@@ -972,7 +1122,7 @@ async def summarize_thread(thread_id: str):
         # Store in assistant.threads (in-memory for now)
         if assistant:
             from backend.data.models import ThreadState, ThreadSummary
-            from datetime import datetime
+            # datetime already imported at module level (line 22)
 
             assistant.threads[thread_id] = ThreadState(
                 thread_id=thread_id,
@@ -1005,6 +1155,7 @@ async def draft_thread_reply(thread_id: str):
     """Stub: trigger draft-reply generation for a thread."""
     require_schema_ok()
     return {"thread_id": thread_id, "status": "queued", "draft": None, "message": "Draft generation scheduled"}
+
 
 class SendEmailRequest(BaseModel):
     """Request model for sending email replies - backend owns reply context."""
@@ -1049,16 +1200,42 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
                 .execute()
             )
 
-            # Explicit 0-row detection
+            # Explicit 0-row detection - try emails table as fallback
             if not thread_records.data or len(thread_records.data) == 0:
-                logger.warning(f"[SEND] Thread {thread_id} not found in database")
-                return {
-                    "success": False,
-                    "error": f"Thread {thread_id} not tracked in database - sync emails first"
-                }
+                logger.warning(f"[SEND] Thread {thread_id} not found in email_threads - trying emails table fallback")
+                email_records = await asyncio.to_thread(
+                    lambda: store.client.table("emails")
+                    .select("account_id")
+                    .eq("thread_id", thread_id)
+                    .execute()
+                )
+                if not email_records.data or len(email_records.data) == 0:
+                    logger.warning(f"[SEND] Thread {thread_id} not found in emails table either")
+                    return {
+                        "success": False,
+                        "error": f"Thread {thread_id} not tracked in database - sync emails first"
+                    }
+                unique_accounts = list(set(r.get('account_id') for r in email_records.data if r.get('account_id')))
+                if len(unique_accounts) > 1:
+                    logger.error(f"[SEND] Thread {thread_id} ambiguous across {len(unique_accounts)} accounts: {unique_accounts}")
+                    return {
+                        "success": False,
+                        "error": f"Thread {thread_id} exists in multiple accounts {unique_accounts}. Cannot determine reply context."
+                    }
+                account_id = unique_accounts[0]
+                logger.info(f"[SEND] Derived account_id: {account_id} (fallback from emails table)")
+                try:
+                    await asyncio.to_thread(
+                        lambda: store.client.table("email_threads")
+                        .upsert({"thread_id": thread_id, "account_id": account_id}, on_conflict="thread_id")
+                        .execute()
+                    )
+                    logger.info(f"[SEND] Upserted thread {thread_id} into email_threads for account {account_id}")
+                except Exception as upsert_err:
+                    logger.warning(f"[SEND] email_threads upsert failed (non-fatal): {upsert_err}")
 
             # Explicit >1-row detection (multi-account ambiguity)
-            if len(thread_records.data) > 1:
+            elif len(thread_records.data) > 1:
                 ambiguous_accounts = [r.get('account_id') for r in thread_records.data]
                 logger.error(f"[SEND] Thread {thread_id} is ambiguous across {len(thread_records.data)} accounts: {ambiguous_accounts}")
                 return {
@@ -1067,8 +1244,9 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
                 }
 
             # Safe: exactly 1 row
-            account_id = thread_records.data[0].get('account_id', 'default')
-            logger.info(f"[SEND] Derived account_id: {account_id} (unique match)")
+            else:
+                account_id = thread_records.data[0].get('account_id', 'default')
+                logger.info(f"[SEND] Derived account_id: {account_id} (unique match)")
 
         except Exception as e:
             logger.error(f"[SEND] Database query failed: {e}")
@@ -1220,26 +1398,44 @@ async def export_data(tenant_id: str = "primary"):
 @api_router.get("/accounts")
 async def list_accounts():
     """
-    Lists all connected Google accounts (no secrets exposed).
-    Returns account_id, updated_at, scopes.
+    Lists all connected Google accounts with truthful credential status.
+
+    For each account:
+    - connected: True if a credentials row exists
+    - auth_required: True if credentials row exists but tokens cannot be decrypted
+                     (e.g. after FERNET key rotation) — user must re-authenticate
+    - send_scope: True if gmail.send scope is present in stored scopes
     """
     store = safe_get_store()
     if not store:
         return {"accounts": []}
     try:
         creds = await asyncio.to_thread(store.list_credentials, "google")
-        accounts = [
-            {
-                "account_id": c.get("account_id"),
+        credential_store = CredentialStore(persistence)
+        accounts = []
+        for c in (creds or []):
+            account_id = c.get("account_id")
+            scopes = c.get("scopes", [])
+            # Attempt decrypt to distinguish "row exists" from "usable credentials"
+            try:
+                token_data = await asyncio.to_thread(
+                    credential_store.load_credentials, account_id
+                )
+                auth_required = (token_data is None or "token" not in token_data)
+            except Exception:
+                auth_required = True
+            send_scope = any("gmail.send" in (s or "") for s in scopes)
+            accounts.append({
+                "account_id": account_id,
                 "connected": True,
+                "auth_required": auth_required,
+                "send_scope": send_scope,
                 "updated_at": c.get("updated_at"),
-                "scopes": c.get("scopes", []),
-            }
-            for c in (creds or [])
-        ]
+                "scopes": scopes,
+            })
         return {"accounts": accounts}
     except Exception as e:
-        print(f"[WARN] [ACCOUNTS] List failed: {e}")
+        logger.warning(f"[ACCOUNTS] List failed: {e}")
         return {"accounts": []}
 
 @api_router.post("/accounts/{account_id}/disconnect")
@@ -1347,7 +1543,7 @@ async def check_oauth_config():
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-    render_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:8000")
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "http://127.0.0.1:8888")
 
     return {
         "oauth_configured": bool(client_id and client_secret),
@@ -1442,7 +1638,7 @@ async def google_oauth_callback(code: str, state: str = None, account_id: str = 
     Exchanges authorization code for tokens and stores them encrypted.
 
     CANONICAL CALLBACK ROUTE: /auth/callback/google
-    LOCAL: http://localhost:8000/auth/callback/google
+    LOCAL: http://127.0.0.1:8888/auth/callback/google
     PROD: https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google
     """
     from backend.config import Config

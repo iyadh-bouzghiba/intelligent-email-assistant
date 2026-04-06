@@ -62,6 +62,7 @@ export interface Briefing {
     should_alert: boolean;
     summary: string;
     action: string;
+    body?: string;
 
     // AI summary fields (from backend)
     ai_summary_json?: {
@@ -72,8 +73,7 @@ export interface Briefing {
     ai_summary_text?: string;
     ai_summary_model?: string;
     gmail_message_id?: string;
-    body?: string;
-    thread_id?: string;
+    thread_id?: string; // Gmail thread ID (required for send functionality)
 }
 
 export interface BriefingResponse {
@@ -86,6 +86,8 @@ export interface BriefingResponse {
 export interface AccountInfo {
     account_id: string;
     connected: boolean;
+    auth_required?: boolean;   // true = credentials row exists but cannot decrypt (re-auth needed)
+    send_scope?: boolean;      // true = gmail.send scope is present
     updated_at?: string | null;
     scopes?: string[];
 }
