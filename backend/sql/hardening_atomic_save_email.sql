@@ -57,8 +57,9 @@ BEGIN
     now()
   )
   ON CONFLICT (account_id, gmail_message_id) DO UPDATE
-  SET updated_at = now(),
-      thread_id = COALESCE(EXCLUDED.thread_id, emails.thread_id)
+  SET
+    updated_at = now(),
+    thread_id = COALESCE(EXCLUDED.thread_id, emails.thread_id)
   RETURNING id INTO v_email_id;
 
   -- Atomic operation 2: Conditionally create AI job (same transaction)

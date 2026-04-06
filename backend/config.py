@@ -7,9 +7,10 @@ to prevent silent failures in production.
 
 import os
 from typing import Optional
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 
 class Config:
@@ -21,7 +22,7 @@ class Config:
     # OAuth2 - REQUIRED for production
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
-    GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/callback/google")
+    GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://127.0.0.1:8888/auth/callback/google")
     
     # JWT - REQUIRED for authentication
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "")
@@ -123,12 +124,8 @@ class Config:
             Example: https://your-app.onrender.com/auth/callback/google
             
         LOCAL/DEVELOPMENT:
-            Defaults to http://localhost:8000/auth/callback/google
+            Defaults to http://127.0.0.1:8888/auth/callback/google
         """
-        if cls.is_production():
-            # In production, use the configured redirect URI from environment
-            # This is critical for Render deployments.
-            return cls.GOOGLE_REDIRECT_URI
-        else:
-            # In development, always use the canonical localhost path on port 8000
-            return "http://localhost:8000/auth/callback/google"
+        # Always prefer the explicit GOOGLE_REDIRECT_URI env var (set in .env or by platform).
+        # The class-level default guarantees a safe local fallback of 127.0.0.1:8888.
+        return cls.GOOGLE_REDIRECT_URI
