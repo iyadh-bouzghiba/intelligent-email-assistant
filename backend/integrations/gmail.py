@@ -6,6 +6,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
+from email.mime.text import MIMEText
 
 class GmailClient:
     """
@@ -126,3 +127,195 @@ class GmailClient:
             is_html = False
 
         return body, is_html
+
+    def get_thread_latest_inbound_message(self, thread_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch the latest INBOUND (non-SENT) message from a Gmail thread.
+        CRITICAL: Filters out SENT messages to prevent self-reply loops.
+
+        Args:
+            thread_id: Gmail thread ID
+
+        Returns:
+            dict with: gmail_message_id, subject, from, reply_to (if present)
+            None if thread not found or no inbound messages
+
+        Raises:
+            RuntimeError: If Gmail API call fails
+        """
+        try:
+            # Fetch thread with all messages (need labelIds to filter SENT)
+            thread = self.service.users().threads().get(
+                userId='me',
+                id=thread_id,
+                format='metadata',
+                metadataHeaders=['From', 'Reply-To', 'Subject', 'Message-ID']
+            ).execute()
+
+            messages = thread.get('messages', [])
+            if not messages:
+                return None
+
+            # CRITICAL: Filter to inbound messages only (exclude SENT)
+            # This prevents replying to own sent messages (self-reply loop)
+            inbound_messages = [
+                m for m in messages
+                if 'SENT' not in m.get('labelIds', [])
+            ]
+
+            if not inbound_messages:
+                # No inbound messages found (thread only contains sent messages)
+                return None
+
+            # Get the latest inbound message (last in filtered list)
+            latest_inbound = inbound_messages[-1]
+
+            # Extract headers
+            payload = latest_inbound.get('payload', {})
+            headers = {h['name'].lower(): h['value'] for h in payload.get('headers', [])}
+
+            return {
+                'gmail_message_id': latest_inbound.get('id', ''),
+                'subject': headers.get('subject', '(No Subject)'),
+                'from': headers.get('from', ''),
+                'reply_to': headers.get('reply-to', '')
+            }
+        except HttpError as e:
+            if e.resp.status == 404:
+                return None
+            raise RuntimeError(f"Failed to fetch thread {thread_id}: {e}")
+
+    def get_reply_headers(self, parent_message_id: str) -> Dict[str, Any]:
+        """
+        Fetch RFC-compliant reply headers from a parent message.
+
+        Args:
+            parent_message_id: Gmail message ID (stored in DB as gmail_message_id)
+
+        Returns:
+            dict with: rfc_message_id, reply_to, references, in_reply_to, subject, thread_id
+
+        Raises:
+            RuntimeError: If Gmail API call fails
+        """
+        try:
+            # Fetch full message to access all headers
+            raw_msg = self.service.users().messages().get(
+                userId='me',
+                id=parent_message_id,
+                format='full'
+            ).execute()
+
+            # Extract headers
+            payload = raw_msg.get('payload', {})
+            headers = {h['name'].lower(): h['value'] for h in payload.get('headers', [])}
+
+            # Extract RFC Message-ID (CRITICAL: different from Gmail message_id)
+            rfc_message_id = headers.get('message-id', '')
+
+            # Determine reply-to address (fallback to From if Reply-To not present)
+            reply_to = headers.get('reply-to', headers.get('from', ''))
+
+            # Build References header (append parent's Message-ID to existing References)
+            existing_references = headers.get('references', '').strip()
+            if existing_references and rfc_message_id:
+                references = f"{existing_references} {rfc_message_id}"
+            elif rfc_message_id:
+                references = rfc_message_id
+            else:
+                references = ''
+
+            # In-Reply-To should be parent's Message-ID
+            in_reply_to = rfc_message_id
+
+            # Extract subject for "Re:" prefix handling
+            subject = headers.get('subject', '(No Subject)')
+
+            # Extract Gmail threadId for Gmail-native threading
+            thread_id = raw_msg.get('threadId', '')
+
+            return {
+                'rfc_message_id': rfc_message_id,
+                'reply_to': reply_to,
+                'references': references,
+                'in_reply_to': in_reply_to,
+                'subject': subject,
+                'thread_id': thread_id
+            }
+        except HttpError as e:
+            raise RuntimeError(f"Failed to fetch reply headers for {parent_message_id}: {e}")
+
+    def send_message(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        gmail_thread_id: Optional[str] = None,
+        in_reply_to: Optional[str] = None,
+        references: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Send an email via Gmail API with RFC-compliant threading headers.
+
+        Args:
+            to: Recipient email address
+            subject: Email subject (will normalize "Re:" prefix)
+            body: Plain-text email body (UTF-8)
+            gmail_thread_id: Gmail threadId for Gmail-native threading (optional)
+            in_reply_to: RFC Message-ID of parent message (optional)
+            references: RFC References header value (optional)
+
+        Returns:
+            dict with: success (bool), message_id (str), thread_id (str), error (str|None)
+        """
+        try:
+            # Normalize subject with "Re:" prefix
+            normalized_subject = subject
+            if subject and not subject.lower().startswith('re:'):
+                normalized_subject = f"Re: {subject}"
+
+            # Build RFC-compliant MIME message
+            message = MIMEText(body, 'plain', 'utf-8')
+            message['To'] = to
+            message['Subject'] = normalized_subject
+
+            # Add threading headers if provided
+            if in_reply_to:
+                message['In-Reply-To'] = in_reply_to
+            if references:
+                message['References'] = references
+
+            # Encode message for Gmail API
+            raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
+
+            # Build request body
+            send_body = {'raw': raw_message}
+            if gmail_thread_id:
+                send_body['threadId'] = gmail_thread_id
+
+            # Send via Gmail API
+            result = self.service.users().messages().send(
+                userId='me',
+                body=send_body
+            ).execute()
+
+            return {
+                'success': True,
+                'message_id': result.get('id', ''),
+                'thread_id': result.get('threadId', ''),
+                'error': None
+            }
+        except HttpError as e:
+            return {
+                'success': False,
+                'message_id': '',
+                'thread_id': '',
+                'error': f"Gmail API error: {str(e)}"
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'message_id': '',
+                'thread_id': '',
+                'error': f"Unexpected error: {str(e)}"
+            }

@@ -35,7 +35,7 @@ class SupabaseStore:
             logger.warning(f"Supabase thread fetch error: {e}")
             return type('obj', (object,), {'data': []})
 
-    def save_email(self, subject, sender, date, body=None, message_id=None, tenant_id="primary", account_id="default"):
+    def save_email(self, subject, sender, date, body=None, message_id=None, tenant_id="primary", account_id="default", thread_id=None):
         """
         Upserts an email into Supabase.
         Deduplication is handled by (account_id, gmail_message_id) unique index.
@@ -45,6 +45,7 @@ class SupabaseStore:
 
         CRITICAL: account_id MUST be included in payload for multi-account isolation.
         CRITICAL: Timestamp validation ensures UTC timezone consistency.
+        CRITICAL: thread_id required for email send functionality.
         """
         from datetime import datetime, timezone
         import logging
@@ -71,7 +72,8 @@ class SupabaseStore:
             "body": body,
             "tenant_id": tenant_id,
             "account_id": account_id,  # CRITICAL: Required for multi-account email isolation
-            "updated_at": datetime.now(timezone.utc).isoformat()  # ✅ FIXED: Use timezone-aware datetime
+            "updated_at": datetime.now(timezone.utc).isoformat(),  # ✅ FIXED: Use timezone-aware datetime
+            "thread_id": thread_id  # CRITICAL: Gmail thread ID for send functionality
         }
 
         if message_id:
@@ -101,6 +103,69 @@ class SupabaseStore:
             f"(tenant={tenant_id}, subject={subject_truncated}, date={date})"
         )
         return None
+
+    def save_email_atomic(self, subject, sender, date, body=None, message_id=None, tenant_id="primary", account_id="default", create_ai_job=False, thread_id=None):
+        """
+        Atomically saves email + conditionally creates AI job via single RPC call.
+
+        This is the HARDENING PATCH replacement for save_email() + enqueue_ai_job().
+        Guarantees atomicity: email and job created in same database transaction.
+
+        Args:
+            create_ai_job: If True, creates AI job atomically with email insert.
+                          Use True for first 30 emails (cost control).
+            thread_id: Gmail thread ID for send functionality (optional).
+
+        Returns:
+            RPC response with {email_id, job_id, job_created} or None on failure
+        """
+        from datetime import datetime, timezone
+        import logging
+        logger = logging.getLogger("supabase_store")
+
+        if not message_id:
+            logger.error("[ATOMIC-SAVE] Missing gmail_message_id - SKIPPING to prevent corruption")
+            return None
+
+        # Validate timestamp (same logic as save_email)
+        validated_date = date
+        if isinstance(date, str):
+            if not ('+' in date or date.endswith('Z')):
+                validated_date = f"{date}+00:00" if not date.endswith('Z') else date
+
+        try:
+            result = self.client.rpc('save_email_with_ai_job', {
+                'p_subject': subject,
+                'p_sender': sender,
+                'p_date': validated_date,
+                'p_body': body or '',
+                'p_message_id': message_id,
+                'p_account_id': account_id,
+                'p_tenant_id': tenant_id,
+                'p_create_ai_job': create_ai_job
+            }).execute()
+
+            if result and result.data:
+                logger.info(f"[ATOMIC-SAVE] Email saved: {message_id[:8]}..., AI job: {create_ai_job}")
+
+                # Update thread_id separately (RPC doesn't handle it)
+                if thread_id:
+                    try:
+                        self.client.table("emails").update(
+                            {"thread_id": thread_id}
+                        ).eq("gmail_message_id", message_id).eq("account_id", account_id).execute()
+                        logger.info(f"[ATOMIC-SAVE] thread_id updated for {message_id[:8]}...")
+                    except Exception as thread_err:
+                        logger.warning(f"[ATOMIC-SAVE] Failed to update thread_id: {thread_err}")
+
+                return result
+            else:
+                logger.error(f"[ATOMIC-SAVE] RPC returned no data for {message_id[:8]}...")
+                return None
+
+        except Exception as e:
+            logger.error(f"[ATOMIC-SAVE] RPC failed for {message_id[:8]}...: {type(e).__name__}: {e}")
+            return None
 
     def get_emails(self, limit=50, account_id=None):
         """

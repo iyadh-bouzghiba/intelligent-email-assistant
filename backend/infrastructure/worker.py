@@ -346,6 +346,20 @@ def run_worker_loop():
 
             # PHASE 3: REAL-TIME BACKPRESSURE (Batch Commits)
             if emails:
+                # CRITICAL: Identify existing emails to prevent backfill
+                # Only NEW emails (not in DB) are eligible for automatic AI jobs
+                existing_message_ids = set()
+                try:
+                    existing_result = control.store.client.table("emails").select("gmail_message_id").eq(
+                        "account_id", account_id
+                    ).execute()
+                    if existing_result and existing_result.data:
+                        existing_message_ids = {e['gmail_message_id'] for e in existing_result.data}
+                        logger.info(f"[WORKER] Found {len(existing_message_ids)} existing emails in DB")
+                except Exception as e:
+                    logger.warning(f"[WORKER] Could not query existing emails: {e}")
+
+                ai_job_count = 0  # Track newly created AI jobs separately
                 batch_size = 25
                 for i in range(0, len(emails), batch_size):
                     batch = emails[i : i + batch_size]
@@ -362,34 +376,45 @@ def run_worker_loop():
                         # Deduplication key originates from source-of-truth date
                         date_val = email.get('date') or datetime.now(timezone.utc).isoformat()
 
-                        logger.info(f"[WORKER] Ingesting: {email.get('subject', 'No Subject')} (gmail_id={m_id})")
+                        # D2 FIX: Atomic email+job save with cost control
+                        # COST POLICY: Only NEW emails (not in DB) get automatic AI jobs
+                        # First 20 NEW emails get AI jobs (cost control)
+                        # Existing emails never get auto-backfilled
+                        is_new_email = (m_id not in existing_message_ids)
+                        create_ai_job = (is_new_email and ai_job_count < 20)
 
-                        control.store.save_email(
+                        new_or_existing = "NEW" if is_new_email else "existing"
+                        logger.info(f"[WORKER] Ingesting ({new_or_existing}): {email.get('subject', 'No Subject')} (gmail_id={m_id})")
+
+                        result = control.store.save_email_atomic(
                             subject=email.get('subject', 'No Subject'),
                             sender=email.get('sender', 'Unknown'),
                             date=date_val,
-                            body=email.get('body', ''),  # INGEST-FIX-02: Use Gmail body, not AI summary
+                            body=email.get('body', ''),
                             message_id=m_id,
                             tenant_id="primary",
-                            account_id=account_id
+                            account_id=account_id,
+                            create_ai_job=create_ai_job
                         )
                         written_count += 1
 
-                        # CRITICAL: Enqueue AI summarization job for recent emails only (30-email limit)
-                        if written_count <= 30:
-                            control.store.enqueue_ai_job(
-                                account_id=account_id,
-                                gmail_message_id=m_id,
-                                job_type="email_summarize_v1"
+                        # Track newly created AI jobs (not pre-existing)
+                        if result and result.data:
+                            job_was_created = (
+                                create_ai_job and
+                                result.data.get('job_created') and
+                                not result.data.get('job_existed')
                             )
+                            if job_was_created:
+                                ai_job_count += 1
 
                     # Sleep between batches for backpressure
                     if i + batch_size < len(emails):
                         logger.info(f"[WORKER] Batch commit complete. Cooling for 500ms...")
                         time.sleep(0.5)
 
-                control.log_audit("ingestion_complete", "supabase", {"count": written_count})
-                logger.info(f"[WORKER] Supabase write complete: {written_count} email(s) ingested")
+                control.log_audit("ingestion_complete", "supabase", {"count": written_count, "ai_jobs": ai_job_count})
+                logger.info(f"[WORKER] Supabase write complete: {written_count} email(s) ingested, {ai_job_count} AI job(s) created")
 
                 # Emit realtime notification ONLY if written_count > 0
                 if written_count > 0 and SOCKETIO_AVAILABLE:

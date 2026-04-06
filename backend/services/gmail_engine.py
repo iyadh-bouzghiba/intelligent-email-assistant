@@ -53,11 +53,21 @@ def get_message_body(payload):
                     body += decoded_data
     return body
 
-def run_engine(token_data: dict):
+def run_engine(token_data: dict, max_emails: int = 30):
+    """
+    Fetches emails from Gmail inbox.
+
+    Args:
+        token_data: OAuth credentials dict
+        max_emails: Maximum number of emails to fetch (default: 30)
+
+    Returns:
+        List of email dicts with message_id, thread_id, subject, sender, date, body
+    """
     if not token_data or 'token' not in token_data:
         print("⚠️ Gmail Authentication Required. Please provide valid token data.")
         return []
-    
+
     try:
         creds = Credentials(
             token=token_data['token'],
@@ -73,20 +83,20 @@ def run_engine(token_data: dict):
     # 2. Build Service
     service = build('gmail', 'v1', credentials=creds)
 
-    # 3. The Fetcher - Fetch ALL INBOX emails with pagination
+    # 3. The Fetcher - Fetch inbox emails with pagination
     emails_data = []
     try:
-        # CRITICAL: Fetch ALL inbox emails (not just unread/filtered)
+        # CRITICAL: Fetch inbox emails (not just unread/filtered)
         # This ensures complete email sync across all accounts
         query = "in:inbox"
 
         # Pagination: Gmail API returns max 500 per request
-        # CRITICAL: Optimized to 30 emails to reliably avoid timeout on Render free tier
+        # Default: 30 emails to reliably avoid timeout on Render free tier
         # Each email requires separate API call (~0.5s each)
         # 30 emails × 0.5s + overhead = ~18-20s (safely under 30s timeout)
+        # For validation: use lower max_emails to ensure deterministic completion
         page_token = None
         total_fetched = 0
-        max_emails = 30  # Optimized: fast sync, no timeout noise, professional UX
 
         while total_fetched < max_emails:
             # Fetch batch of emails
@@ -175,8 +185,12 @@ def run_engine(token_data: dict):
                 raw_body = get_message_body(payload)
                 cleaned_body = raw_body.strip()
 
+                # CRITICAL: Extract Gmail threadId for send functionality
+                thread_id = msg.get('threadId', '')
+
                 emails_data.append({
                     "message_id": msg['id'],  # Gmail message ID
+                    "thread_id": thread_id,    # Gmail thread ID (required for send)
                     "subject": subject,
                     "sender": sender_raw,
                     "date": date_iso,  # ISO timestamp

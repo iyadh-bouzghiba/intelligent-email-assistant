@@ -83,3 +83,21 @@ AUTH_*.md
 AUTHENTICATION_*.md
 CRITICAL_FIXES_*.md
 SECURITY_FIX_*.md
+
+# =========================================================
+# GITIGNORE-PATCH-01: Local-only session/IDE artifacts
+# =========================================================
+# IDE/agent tool permission config — never commit
+.claude/settings.local.json
+
+# Session-scoped comparison and summary docs — local only
+BEFORE_AFTER_COMPARISON.md
+DEPLOYMENT_CHECKLIST.md
+EXECUTIVE_SUMMARY.md
+FIXES_SUMMARY.md
+
+# =========================================================
+# GITIGNORE-PATCH-01B: Local-only session archive folders
+# =========================================================
+artifacts/
+handoff_artifacts/
