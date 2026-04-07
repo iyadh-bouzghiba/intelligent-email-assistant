@@ -444,9 +444,9 @@ async def debug_imports():
     }
 
 @app.get("/accounts")
-async def list_accounts_route():
-    """Returns valid accounts list for frontend synchronization."""
-    return {"accounts": ["primary-access@gmail.com"]}
+async def list_accounts_root():
+    """Compatibility bridge: root /accounts delegates to canonical /api/accounts."""
+    return await list_accounts()
 
 # ------------------------------------------------------------------
 # FRONTEND BRIDGE ROUTES
@@ -464,16 +464,9 @@ async def process_briefing():
         return {"briefings": [], "account": "primary", "error": str(e)}
 
 @app.get("/emails")
-async def list_emails_root():
-    """Bridge: frontend GET /emails \u2192 /api/emails (Supabase source of truth)."""
-    store = safe_get_store()
-    if not store:
-        return []
-    try:
-        return (await asyncio.to_thread(store.get_emails)).data
-    except Exception as e:
-        print(f"[WARN] /emails fetch error: {e}")
-        return []
+async def list_emails_root(account_id: Optional[str] = Query(None)):
+    """Compatibility bridge: root /emails delegates to canonical /api/emails."""
+    return await list_emails(account_id)
 
 # ------------------------------------------------------------------
 # API ROUTES
