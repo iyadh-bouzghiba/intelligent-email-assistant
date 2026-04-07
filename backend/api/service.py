@@ -795,48 +795,6 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30, backfill_limit: 
         except Exception as e:
             logger.warning(f"[SYNC] Failed to emit socket event: {e}")
 
-        # Auto-summary for NEW emails only (Mode A)
-        auto_summary_enabled = os.getenv("AUTO_SUMMARY", "false").lower() == "true"
-        has_mistral_key = bool(os.getenv("MISTRAL_API_KEY"))
-        max_per_cycle = int(os.getenv("SUMMARY_MAX_PER_CYCLE", "5"))
-
-        if auto_summary_enabled and has_mistral_key and new_thread_ids:
-            from backend.services.summarizer import Summarizer
-            from backend.data.models import ThreadState, ThreadSummary
-            # datetime already imported at module level (line 22)
-
-            summarizer = Summarizer()
-            summarized_count = 0
-
-            for thread_id, email_data in new_thread_ids[:max_per_cycle]:
-                try:
-                    summary = await asyncio.to_thread(summarizer.summarize, email_data)
-
-                    # Store in assistant.threads
-                    if assistant:
-                        assistant.threads[thread_id] = ThreadState(
-                            thread_id=thread_id,
-                            history=[],
-                            current_summary=ThreadSummary(
-                                thread_id=thread_id,
-                                overview=summary,
-                                key_points=[],
-                                action_items=[],
-                                confidence_score=0.95
-                            ),
-                            last_updated=datetime.now()
-                        )
-                    summarized_count += 1
-                except Exception as e:
-                    logger.warning(f"[SYNC] Auto-summary failed for {thread_id}: {e}")
-
-            # Emit socket event for summaries
-            if summarized_count > 0:
-                try:
-                    await sio.emit("summary_ready", {"count_summarized": summarized_count})
-                except Exception as e:
-                    logger.warning(f"[SYNC] Failed to emit summary event: {e}")
-
         # BACKFILL FIX: Enrich existing emails that have NULL thread_id
         # This covers emails synced before the thread_id write-path fix
         # Controlled by backfill_limit parameter (default 0 = skip)
@@ -1073,75 +1031,13 @@ async def get_thread(thread_id: str):
 @api_router.post("/threads/{thread_id}/summarize")
 async def summarize_thread(thread_id: str):
     """
-    On-demand summarization for a specific thread (email).
-    Returns status-only (no email content).
-
-    Status responses:
-    - {"status": "done"} - summary generated and stored
-    - {"status": "skipped_no_key"} - MISTRAL_API_KEY not set
-    - {"status": "not_found"} - thread/email not found
-    - {"status": "error"} - processing failed
+    Legacy thread summarize route — kept alive for compatibility.
+    The active summarization path is POST /emails/{gmail_message_id}/summarize.
     """
-    try:
-        # Check if MISTRAL_API_KEY exists (Mode A requirement)
-        import os
-        if not os.getenv("MISTRAL_API_KEY"):
-            return {"status": "skipped_no_key"}
-
-        # Fetch email from Supabase by thread_id (treating subject hash as thread_id)
-        store = safe_get_store()
-        if not store:
-            return {"status": "error"}
-
-        emails_response = await asyncio.to_thread(store.get_emails, limit=200)
-        emails = emails_response.data if emails_response else []
-
-        # Find email matching thread_id (simple hash match for now)
-        target_email = None
-        for email in emails:
-            email_thread_id = f"{email.get('subject', '')}_{email.get('sender', '')}".replace(' ', '_')[:50]
-            if email_thread_id == thread_id or str(email.get('id')) == thread_id:
-                target_email = email
-                break
-
-        if not target_email:
-            return {"status": "not_found"}
-
-        # Summarize using existing Summarizer
-        from backend.services.summarizer import Summarizer
-        summarizer = Summarizer()
-
-        email_data = {
-            "subject": target_email.get("subject", "No Subject"),
-            "sender": target_email.get("sender", "Unknown"),
-            "body": target_email.get("body", "")
-        }
-
-        summary = await asyncio.to_thread(summarizer.summarize, email_data)
-
-        # Store in assistant.threads (in-memory for now)
-        if assistant:
-            from backend.data.models import ThreadState, ThreadSummary
-            # datetime already imported at module level (line 22)
-
-            assistant.threads[thread_id] = ThreadState(
-                thread_id=thread_id,
-                history=[],
-                current_summary=ThreadSummary(
-                    thread_id=thread_id,
-                    overview=summary,
-                    key_points=[],
-                    action_items=[],
-                    confidence_score=0.95
-                ),
-                last_updated=datetime.now()
-            )
-
-        return {"status": "done"}
-
-    except Exception as e:
-        print(f"[ERROR] [SUMMARIZE] Thread summarization failed: {e}")
-        return {"status": "error"}
+    return {
+        "status": "deprecated",
+        "message": "Use POST /api/emails/{gmail_message_id}/summarize instead."
+    }
 
 
 @api_router.post("/threads/{thread_id}/analyze")
