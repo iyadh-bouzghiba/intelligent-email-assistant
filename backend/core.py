@@ -5,12 +5,11 @@ import os
 from datetime import datetime
 
 from backend.services.gmail_engine import run_engine
-from backend.services.summarizer import Summarizer
 from backend.data.models import ThreadState, ThreadSummary
 
 
-def _load_token_data() -> dict:
-    """Load OAuth token from CredentialStore (Supabase first, file fallback in dev only).
+def _load_token_data(account_id: str = "default") -> dict:
+    """Load OAuth token from CredentialStore for the given account_id.
     Returns empty dict on any failure; run_engine will warn and return []."""
     # PRIMARY: Read from CredentialStore (handles Supabase + file fallback with env checks)
     try:
@@ -19,9 +18,9 @@ def _load_token_data() -> dict:
 
         persistence = PersistenceManager()
         credential_store = CredentialStore(persistence)
-        tokens = credential_store.load_credentials("default")
+        tokens = credential_store.load_credentials(account_id)
         if tokens:
-            print("[OK] [CORE] Loaded Gmail credentials from CredentialStore")
+            print(f"[OK] [CORE] Loaded Gmail credentials for {account_id} from CredentialStore")
             return tokens
     except Exception as e:
         print(f"[WARN] [CORE] Failed to load from CredentialStore: {e}")
@@ -41,15 +40,15 @@ def _load_token_data() -> dict:
             except Exception as e:
                 print(f"[WARN] [CORE] Failed to load from legacy file {path}: {e}")
 
-    print("[WARN] [CORE] No credentials available. OAuth flow required via /auth/google")
+    print(f"[WARN] [CORE] No credentials available for {account_id}. OAuth flow required via /auth/google")
     return {}
 
 
 class EmailAssistant:
-    def __init__(self):
-        self.brain = Summarizer()
+    def __init__(self, account_id: str = "default", enable_summary: bool = True):
+        self.account_id = account_id
         self.threads: Dict[str, ThreadState] = {}
-        self._token_data = _load_token_data()
+        self._token_data = _load_token_data(account_id)
 
     def process_emails(self):
         """
@@ -67,7 +66,7 @@ class EmailAssistant:
 
         results = []
         for email in emails:
-            summary = self.brain.summarize(email)
+            summary = ""
 
             # INGEST-FIX-02: Robust ID extraction with fallback chain
             # Gmail engine returns "message_id", but defend against upstream changes
@@ -82,28 +81,28 @@ class EmailAssistant:
                 "sender": email.get('sender', 'Unknown'),
                 "date": email.get('date'),  # ISO timestamp from Gmail
                 "body": email.get('body', ''),  # Email content
-                "summary": summary  # AI-generated summary
+                "summary": summary  # AI-generated summary (empty when enable_summary=False)
             })
         return results
 
     async def process_all_accounts(self):
         """
-        Architectural Adapter: Bridges single-tenant domain logic 
+        Architectural Adapter: Bridges single-tenant domain logic
         with the multi-account capable shell.
-        
+
         NOW CALLS process_emails() INTERNALLY per strict contract.
         """
         print("🧠 Brain: Executing Single-Tenant Processing Sequence (Wrapped)...")
-        
+
         # Offload blocking Legacy Domain Logic to thread
         results = await asyncio.to_thread(self.process_emails)
-        
+
         if not results:
             print("📭 Brain: No new threads to analyze.")
             return
 
         print(f"🧠 Brain: Adapting {len(results)} legacy items to Platform State...")
-        
+
         for item in results:
             # Map Dict -> Domain Model
             summary_model = ThreadSummary(
@@ -113,38 +112,38 @@ class EmailAssistant:
                 action_items=[],
                 confidence_score=0.95
             )
-            
+
             # Update State
             self.threads[item["thread_id"]] = ThreadState(
                 thread_id=item["thread_id"],
-                history=[], 
+                history=[],
                 current_summary=summary_model,
                 last_updated=datetime.now()
             )
-            
+
         print(f"✅ Brain: Intelligence Sync Complete. {len(self.threads)} threads active.")
 
 def main():
     """Logic for running directly via terminal (python core.py)"""
     print("🚀 INTELLIGENT EMAIL ASSISTANT: Starting Orchestration...\n")
-    
+
     assistant = EmailAssistant()
     results = assistant.process_emails()
-    
+
     if not results:
         print("📭 No emails found or engine failed.")
         return
 
     print(f"🧠 Brain Initialized. Summarizing {len(results)} emails...\n")
-    
+
     print("✨ AI-Generated Executive Briefing ✨\n")
     print("="*60)
-    
+
     for item in results:
         priority = "Medium"
         if "PRIORITY: High" in item["summary"]: priority = "High"
         elif "PRIORITY: Low" in item["summary"]: priority = "Low"
-        
+
         print(f"[{priority}] {item['subject']}")
         print(f"{item['summary']}")
         print("-" * 60)
