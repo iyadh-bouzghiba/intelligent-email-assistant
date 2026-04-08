@@ -1049,6 +1049,7 @@ async def draft_thread_reply(thread_id: str):
 class SendEmailRequest(BaseModel):
     """Request model for sending email replies - backend owns reply context."""
     body: str
+    subject: Optional[str] = None
 
 
 @api_router.post("/threads/{thread_id}/send")
@@ -1226,11 +1227,18 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
         # Step 7: Extract headers for send
         in_reply_to = reply_headers.get('in_reply_to', '')
         references = reply_headers.get('references', '')
-        subject = reply_headers.get('subject', '(No Subject)')
+        raw_subject = reply_headers.get('subject', '(No Subject)')
+
+        # Subject: use client-provided subject if given, else derive from thread.
+        # Normalize: ensure exactly one "Re: " prefix regardless of source.
+        client_subject = (request.subject or '').strip()
+        base_subject = client_subject if client_subject else raw_subject
+        subject = base_subject if base_subject.lower().startswith('re:') else f"Re: {base_subject}"
 
         logger.info(f"[SEND] Reply context - Subject: {subject}, To: {recipient}")
 
         # Step 8: Send email via Gmail API
+        # Frontend owns the visible quoted reply body — send it as-is.
         result = await asyncio.to_thread(
             gmail_client.send_message,
             to=recipient,
@@ -1243,7 +1251,8 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
 
         if result['success']:
             logger.info(f"[SEND] Email sent successfully - Message ID: {result['message_id']}")
-            result['sent_to'] = recipient  # Include recipient in response
+            result['sent_to'] = recipient
+            result['subject'] = subject
         else:
             logger.error(f"[SEND] Email send failed - Error: {result['error']}")
 
