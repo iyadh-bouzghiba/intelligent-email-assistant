@@ -67,6 +67,9 @@ export const App = () => {
   const replyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [showReplyCompose, setShowReplyCompose] = useState(false);
   const [replyBody, setReplyBody] = useState('');
+  const [replySubject, setReplySubject] = useState('');
+  const [replyTemplate, setReplyTemplate] = useState('');
+  const [sentToAddress, setSentToAddress] = useState('');
   const [sending, setSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
@@ -186,10 +189,16 @@ export const App = () => {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [selectedEmailDetail]);
 
-  // Autofocus reply textarea when compose opens
+  // Autofocus reply textarea when compose opens; place caret at top deterministically
   useEffect(() => {
     if (showReplyCompose && replyTextareaRef.current) {
-      const timer = setTimeout(() => replyTextareaRef.current?.focus(), 50);
+      const timer = setTimeout(() => {
+        const el = replyTextareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(0, 0);
+        el.scrollTop = 0;
+      }, 50);
       return () => clearTimeout(timer);
     }
   }, [showReplyCompose]);
@@ -628,8 +637,9 @@ export const App = () => {
       return;
     }
 
-    if (!replyBody.trim()) {
-      setPanelError('Reply body cannot be empty.');
+    const userText = replyBody.replace(replyTemplate, '').trim();
+    if (!userText) {
+      setPanelError('Please type your reply above the quoted message.');
       return;
     }
 
@@ -637,26 +647,30 @@ export const App = () => {
     setPanelError(null);
 
     try {
-      const result = await apiService.sendThreadReply(selectedEmailDetail.thread_id, replyBody.trim());
+      const result = await apiService.sendThreadReply(
+        selectedEmailDetail.thread_id,
+        replyBody.trim(),
+        replySubject || undefined
+      );
 
       if (result.success) {
         console.log('[SEND] Email sent successfully:', result.message_id);
+        setSentToAddress(result.sent_to || '');
         setSendSuccess(true);
         setReplyBody('');
+        setReplySubject('');
+        setReplyTemplate('');
         setShowReplyCompose(false);
         setPanelError(null);
 
-        // Refetch emails to update UI
         await fetchEmails(activeEmail);
-
-        // Auto-hide success message after 3s
-        setTimeout(() => setSendSuccess(false), 3000);
+        setTimeout(() => { setSendSuccess(false); setSentToAddress(''); }, 4000);
       } else {
-        setPanelError(result.error || 'Failed to send email. Please try again.');
+        setPanelError(result.error || 'Failed to send. Please check your connection and try again.');
       }
     } catch (err: any) {
       console.error('[SEND] Unexpected error:', err);
-      setPanelError('Network error: Could not send email.');
+      setPanelError('Network error: Could not reach the server. Please try again.');
     } finally {
       setSending(false);
     }
@@ -667,6 +681,9 @@ export const App = () => {
     setSelectedEmailDetail(null);
     setShowReplyCompose(false);
     setReplyBody('');
+    setReplySubject('');
+    setReplyTemplate('');
+    setSentToAddress('');
     setSending(false);
     setSendSuccess(false);
     setPanelError(null);
@@ -684,6 +701,9 @@ export const App = () => {
   const openEmailDetail = (item: Briefing, scrollToAct = false) => {
     setShowReplyCompose(false);
     setReplyBody('');
+    setReplySubject('');
+    setReplyTemplate('');
+    setSentToAddress('');
     setSendSuccess(false);
     setPanelError(null);
     setScrollToActions(scrollToAct);
@@ -1008,10 +1028,13 @@ export const App = () => {
             initial={{ opacity: 0, y: 50, x: '-50%' }}
             animate={{ opacity: 1, y: 0, x: '-50%' }}
             exit={{ opacity: 0, y: 50, x: '-50%' }}
-            className="fixed bottom-10 left-1/2 z-[300] px-6 py-3 rounded-2xl bg-emerald-600 text-white font-black text-xs uppercase tracking-[0.15em] shadow-2xl shadow-emerald-500/40 border border-white/10 flex items-center gap-3"
+            className="fixed bottom-10 left-1/2 z-[300] px-6 py-3 rounded-2xl bg-emerald-600 text-white font-black text-xs shadow-2xl shadow-emerald-500/40 border border-white/10 flex items-center gap-3"
           >
             <Mail size={16} />
-            Reply sent successfully
+            <span>
+              Email sent successfully
+              {sentToAddress && <span className="font-normal opacity-80"> → {sentToAddress}</span>}
+            </span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1616,7 +1639,7 @@ export const App = () => {
                     <div className="flex items-center justify-between">
                       <h3 className="text-xs font-black text-indigo-400 uppercase tracking-wider">Reply</h3>
                       <button
-                        onClick={() => { setShowReplyCompose(false); setReplyBody(''); setPanelError(null); }}
+                        onClick={() => { setShowReplyCompose(false); setReplyBody(''); setReplySubject(''); setReplyTemplate(''); setPanelError(null); }}
                         className="p-1.5 rounded-lg hover:bg-white/10 text-slate-500 hover:text-slate-300 transition-colors"
                         disabled={sending}
                         title="Discard draft"
@@ -1630,12 +1653,19 @@ export const App = () => {
                         <span className="font-bold">{panelError}</span>
                       </div>
                     )}
+                    <input
+                      type="text"
+                      value={replySubject}
+                      onChange={(e) => setReplySubject(e.target.value)}
+                      placeholder="Subject"
+                      className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
+                    />
                     <textarea
                       ref={replyTextareaRef}
                       value={replyBody}
                       onChange={(e) => setReplyBody(e.target.value)}
                       placeholder="Type your reply here..."
-                      rows={5}
+                      rows={6}
                       className="w-full p-3 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
                     />
                   </div>
@@ -1683,7 +1713,7 @@ export const App = () => {
                     {showReplyCompose ? (
                       <button
                         onClick={handleSendReply}
-                        disabled={sending || !replyBody.trim() || !selectedEmailDetail.thread_id}
+                        disabled={sending || !replyBody.replace(replyTemplate, '').trim() || !selectedEmailDetail.thread_id}
                         className="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-1.5"
                       >
                         {sending ? (
@@ -1706,6 +1736,16 @@ export const App = () => {
                             setPanelError('Cannot reply: thread ID missing. Please refresh your emails and try again.');
                             return;
                           }
+                          const rawSubject = selectedEmailDetail.subject || '';
+                          const normalizedSubject = rawSubject.toLowerCase().startsWith('re:') ? rawSubject : `Re: ${rawSubject}`;
+                          const senderLine = selectedEmailDetail.sender || '';
+                          const dateLine = selectedEmailDetail.date ? `On ${selectedEmailDetail.date}, ${senderLine} wrote:` : `${senderLine} wrote:`;
+                          const originalBody = selectedEmailDetail.body || selectedEmailDetail.summary || '';
+                          const quotedLines = originalBody.split('\n').map((l: string) => `> ${l}`).join('\n');
+                          const template = quotedLines ? `\n\n${'—'.repeat(40)}\n${dateLine}\n${quotedLines}` : '';
+                          setReplySubject(normalizedSubject);
+                          setReplyTemplate(template);
+                          setReplyBody(template);
                           setShowReplyCompose(true);
                           setSendSuccess(false);
                         }}

@@ -98,11 +98,14 @@ export interface AccountsResponse {
 
 export interface SendEmailRequest {
     body: string;
+    subject?: string;
 }
 
 export interface SendEmailResponse {
     success: boolean;
     message_id?: string;
     thread_id?: string;
+    sent_to?: string;
+    subject?: string;
     error?: string;
 }
