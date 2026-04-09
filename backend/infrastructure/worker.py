@@ -275,6 +275,8 @@ def _sync_one_account(
                     account_id=account_id,
                     create_ai_job=create_ai_job,
                     thread_id=email.thread_id,
+                    provider=provider_name,
+                    thread_ref=email.thread_id,
                 )
                 written_count += 1
 

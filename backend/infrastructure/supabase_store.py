@@ -104,7 +104,22 @@ class SupabaseStore:
         )
         return None
 
-    def save_email_atomic(self, subject, sender, date, body=None, message_id=None, tenant_id="primary", account_id="default", create_ai_job=False, thread_id=None):
+    
+    def save_email_atomic(
+        self,
+        subject,
+        sender,
+        date,
+        body=None,
+        message_id=None,
+        tenant_id="primary",
+        account_id="default",
+        create_ai_job=False,
+        thread_id=None,
+        provider="gmail",
+        thread_ref=None,
+    ):
+
         """
         Atomically saves email + conditionally creates AI job via single RPC call.
 
@@ -114,7 +129,11 @@ class SupabaseStore:
         Args:
             create_ai_job: If True, creates AI job atomically with email insert.
                           Use True for first 30 emails (cost control).
-            thread_id: Gmail thread ID for send functionality (optional).
+            
+            thread_id: Legacy provider-native thread ID used by current send flow (optional).
+            provider: Provider identifier (e.g. "gmail", "outlook").
+            thread_ref: Provider-native thread reference for abstraction layer (optional).
+
 
         Returns:
             RPC response with {email_id, job_id, job_created} or None on failure
@@ -143,6 +162,8 @@ class SupabaseStore:
                 'p_account_id': account_id,
                 'p_tenant_id': tenant_id,
                 'p_thread_id': thread_id,
+                'p_provider': provider,
+                'p_thread_ref': thread_ref,
                 'p_create_ai_job': create_ai_job
             }).execute()
 
