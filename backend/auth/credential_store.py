@@ -54,7 +54,7 @@ class CredentialStore:
             from backend.infrastructure.supabase_store import SupabaseStore
             store = SupabaseStore()
             store.save_credential(
-                provider="google",
+                provider="gmail",
                 account_id=user_id,
                 encrypted_payload=encrypted_creds,
                 scopes=encrypted_creds.get('scopes', [])
@@ -104,15 +104,22 @@ class CredentialStore:
         encrypted_creds = None
         source = None
 
-        # PRIMARY: Read from Supabase
+        # PRIMARY: Read from Supabase — canonical provider is "gmail" (BL-02)
         try:
             from backend.infrastructure.supabase_store import SupabaseStore
             store = SupabaseStore()
-            cred_data = store.get_credential(provider="google", account_id=user_id)
+            cred_data = store.get_credential(provider="gmail", account_id=user_id)
             if cred_data:
                 encrypted_creds = cred_data["encrypted_payload"]
                 source = "supabase"
-                logger.info(f"[OK] [CREDENTIAL] Loaded credentials from Supabase for user {user_id}")
+                logger.info(f"[OK] [CREDENTIAL] Loaded credentials from Supabase for user {user_id} (provider=gmail)")
+            else:
+                # Legacy fallback: tolerate pre-BL-02 rows stored as provider="google"
+                cred_data = store.get_credential(provider="google", account_id=user_id)
+                if cred_data:
+                    encrypted_creds = cred_data["encrypted_payload"]
+                    source = "supabase-legacy"
+                    logger.info(f"[OK] [CREDENTIAL] Loaded credentials from Supabase for user {user_id} (provider=google legacy)")
         except Exception as e:
             logger.warning(f"[WARN] [CREDENTIAL] Supabase read failed for user {user_id}: {e}")
 
@@ -163,14 +170,23 @@ class CredentialStore:
         """
         Removes credentials for a user (e.g. on logout).
         """
-        # PRIMARY: Delete from Supabase (source of truth)
+        # PRIMARY: Delete from Supabase — canonical provider is "gmail" (BL-02)
+        try:
+            from backend.infrastructure.supabase_store import SupabaseStore
+            store = SupabaseStore()
+            store.delete_credential(provider="gmail", account_id=user_id)
+            logger.info(f"[OK] [CREDENTIAL] Deleted credentials from Supabase for user {user_id} (provider=gmail)")
+        except Exception as e:
+            logger.warning(f"[WARN] [CREDENTIAL] Supabase delete failed for user {user_id} (provider=gmail): {e}")
+
+        # Best-effort: also purge any legacy provider="google" rows for the same account
         try:
             from backend.infrastructure.supabase_store import SupabaseStore
             store = SupabaseStore()
             store.delete_credential(provider="google", account_id=user_id)
-            logger.info(f"[OK] [CREDENTIAL] Deleted credentials from Supabase for user {user_id}")
+            logger.info(f"[OK] [CREDENTIAL] Purged legacy provider=google row for user {user_id}")
         except Exception as e:
-            logger.warning(f"[WARN] [CREDENTIAL] Supabase delete failed for user {user_id}: {e}")
+            logger.debug(f"[DEBUG] [CREDENTIAL] Legacy google row purge skipped for user {user_id}: {e}")
 
         # FALLBACK: Delete from file storage (dev backup)
         state = self._pm.load()
