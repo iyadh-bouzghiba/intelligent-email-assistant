@@ -14,7 +14,6 @@ Before deploying, ensure you have:
 - [ ] GitHub account with repository access
 - [ ] Render account (free tier works for testing)
 - [ ] Google Cloud Console account (for Gmail OAuth)
-- [ ] Azure Portal account (for Outlook OAuth, optional)
 - [ ] Supabase account with database created
 - [ ] Mistral AI API key
 
@@ -101,12 +100,6 @@ REDIRECT_URI=https://intelligent-email-assistant-3e1a.onrender.com/auth/google/c
 FRONTEND_URL=https://intelligent-email-frontend.onrender.com
 ```
 
-**Optional (Outlook):**
-```bash
-OUTLOOK_CLIENT_ID=your_outlook_client_id_here
-OUTLOOK_CLIENT_SECRET=your_outlook_client_secret_here
-```
-
 #### Frontend Service Environment Variables
 
 Navigate to **Frontend Service → Environment** and add:
@@ -163,47 +156,6 @@ http://localhost:8000/auth/google/callback
    - `GOOGLE_CLIENT_ID`
    - `GOOGLE_CLIENT_SECRET`
 3. Redeploy backend service
-
-### 3.2 Microsoft OAuth (Outlook Integration) — Optional
-
-#### A. Register Application
-
-1. Go to [Azure Portal](https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade)
-2. Click **"New registration"**
-3. Name: `Intelligent Email Assistant`
-4. Supported account types: **Accounts in any organizational directory and personal Microsoft accounts**
-5. Click **"Register"**
-
-#### B. Configure Authentication
-
-1. Navigate to **Authentication → Platform configurations**
-2. Click **"Add a platform" → Web**
-3. Add redirect URIs:
-
-**Production:**
-```
-https://intelligent-email-assistant-3e1a.onrender.com/auth/microsoft/callback
-```
-
-**Local Development:**
-```
-http://localhost:8000/auth/microsoft/callback
-```
-
-#### C. Create Client Secret
-
-1. Navigate to **Certificates & secrets**
-2. Click **"New client secret"**
-3. Description: `Render Production`
-4. Expiry: **24 months**
-5. Click **"Add"**
-6. **IMPORTANT:** Copy the secret value immediately (it won't be shown again)
-
-#### D. Save Credentials
-
-Add to Render Backend environment variables:
-- `OUTLOOK_CLIENT_ID` (Application ID)
-- `OUTLOOK_CLIENT_SECRET` (Client secret value)
 
 ---
 
@@ -300,10 +252,6 @@ curl https://intelligent-email-assistant-3e1a.onrender.com/health
 2. You should be redirected to Google login
 3. After login, you should be redirected back (check for 200, not 404)
 4. Verify in Supabase that tokens are stored (encrypted)
-
-#### Outlook (if configured):
-1. Visit: `https://intelligent-email-assistant-3e1a.onrender.com/auth/microsoft`
-2. Follow similar steps as Gmail
 
 ### 5.3 Test Frontend
 
@@ -414,7 +362,7 @@ Monitor database queries:
 
 **OAuth Secret Rotation:**
 
-1. Generate new credentials in Google Cloud Console / Azure Portal
+1. Generate new credentials in Google Cloud Console
 2. Update environment variables in Render
 3. Redeploy backend
 
@@ -446,8 +394,6 @@ Monitor database queries:
 - **Render Docs:** https://render.com/docs
 - **Supabase Docs:** https://supabase.com/docs
 - **Google OAuth:** https://developers.google.com/identity/protocols/oauth2
-- **Azure OAuth:** https://docs.microsoft.com/en-us/azure/active-directory/develop/
-
 ---
 
 ## ✅ DEPLOYMENT COMPLETE

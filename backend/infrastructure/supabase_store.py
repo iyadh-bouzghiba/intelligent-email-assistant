@@ -131,7 +131,7 @@ class SupabaseStore:
                           Use True for first 30 emails (cost control).
             
             thread_id: Legacy provider-native thread ID used by current send flow (optional).
-            provider: Provider identifier (e.g. "gmail", "outlook").
+            provider: Provider identifier. Currently always "gmail".
             thread_ref: Provider-native thread reference for abstraction layer (optional).
 
 
@@ -318,7 +318,7 @@ class SupabaseStore:
         Upserts encrypted OAuth credentials to Supabase.
 
         Args:
-            provider: OAuth provider (e.g., "google")
+            provider: OAuth provider (e.g., "gmail")
             account_id: User/account identifier (e.g., "default")
             encrypted_payload: Dict with encrypted token/refresh_token and other fields
             scopes: List of OAuth scopes
@@ -355,7 +355,7 @@ class SupabaseStore:
         Retrieves encrypted OAuth credentials from Supabase.
 
         Args:
-            provider: OAuth provider (e.g., "google")
+            provider: OAuth provider (e.g., "gmail")
             account_id: User/account identifier (e.g., "default")
 
         Returns:

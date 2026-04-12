@@ -2,7 +2,7 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "$id": "https://email-assistant.com/schemas/email.schema.json",
     "title": "StandardEmail",
-    "description": "Normalized email format used across all email providers (Gmail, Outlook, etc.)",
+    "description": "Normalized email format for Gmail ingestion and storage.",
     "type": "object",
     "required": [
         "id",

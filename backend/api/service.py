@@ -1296,7 +1296,7 @@ async def export_data(tenant_id: str = "primary"):
 @api_router.get("/accounts")
 async def list_accounts():
     """
-    Lists all connected Google accounts with truthful credential status.
+    Lists all connected Gmail accounts with truthful credential status.
 
     For each account:
     - connected: True if a credentials row exists
@@ -1308,17 +1308,11 @@ async def list_accounts():
     if not store:
         return {"accounts": []}
     try:
-        # Canonical BL-02 provider is "gmail"; also collect legacy "google" rows
         gmail_creds = await asyncio.to_thread(store.list_credentials, "gmail") or []
-        google_creds = await asyncio.to_thread(store.list_credentials, "google") or []
-
-        # Merge: prefer "gmail" rows; include "google" rows only if no "gmail" row exists for that account_id
-        seen_ids: set = {c.get("account_id") for c in gmail_creds}
-        merged_creds = list(gmail_creds) + [c for c in google_creds if c.get("account_id") not in seen_ids]
 
         credential_store = CredentialStore(persistence)
         accounts = []
-        for c in merged_creds:
+        for c in gmail_creds:
             account_id = c.get("account_id")
             scopes = c.get("scopes", [])
             # Attempt decrypt to distinguish "row exists" from "usable credentials"
@@ -1364,14 +1358,9 @@ async def disconnect_all_accounts():
         return {"status": "error", "message": "Store not available"}
 
     try:
-        # Delete canonical BL-02 gmail rows
         gmail_resp = store.client.table("credentials").delete().eq("provider", "gmail").execute()
-        gmail_count = len(gmail_resp.data) if gmail_resp.data else 0
-        # Best-effort: also purge any legacy google rows
-        google_resp = store.client.table("credentials").delete().eq("provider", "google").execute()
-        google_count = len(google_resp.data) if google_resp.data else 0
-        deleted_count = gmail_count + google_count
-        print(f"[OK] [CLEANUP] Deleted {gmail_count} gmail + {google_count} google credentials ({deleted_count} total)")
+        deleted_count = len(gmail_resp.data) if gmail_resp.data else 0
+        print(f"[OK] [CLEANUP] Deleted {deleted_count} gmail credentials")
         return {"status": "success", "deleted_count": deleted_count}
     except Exception as e:
         print(f"[ERROR] [CLEANUP] Failed to delete credentials: {e}")
