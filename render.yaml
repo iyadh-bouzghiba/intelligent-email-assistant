@@ -64,12 +64,6 @@ services:
       - key: GMAIL_PUBSUB_TOPIC
         sync: false
 
-      # --- Microsoft OAuth (Outlook) ---
-      - key: OUTLOOK_CLIENT_ID
-        sync: false
-      - key: OUTLOOK_CLIENT_SECRET
-        sync: false
-
       # --- LLM Provider (Mistral AI) ---
       - key: MISTRAL_API_KEY
         sync: false

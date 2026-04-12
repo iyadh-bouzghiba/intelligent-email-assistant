@@ -276,7 +276,7 @@ CREATE TABLE user_secrets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
 
-  provider TEXT NOT NULL CHECK (provider IN ('google', 'microsoft')),
+  provider TEXT NOT NULL CHECK (provider IN ('gmail')),
 
   access_token TEXT NOT NULL,  -- Encrypted via FERNET_KEY
   refresh_token TEXT NOT NULL, -- Encrypted via FERNET_KEY
