@@ -1050,6 +1050,7 @@ class SendEmailRequest(BaseModel):
     """Request model for sending email replies - backend owns reply context."""
     body: str
     subject: Optional[str] = None
+    cc: Optional[str] = None
 
 
 @api_router.post("/threads/{thread_id}/send")
@@ -1237,8 +1238,28 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
 
         logger.info(f"[SEND] Reply context - Subject: {subject}, To: {recipient}")
 
-        # Step 8: Send email via Gmail API
-        # Frontend owns the visible quoted reply body — send it as-is.
+        # Step 8: Normalize and validate CC addresses
+        normalized_cc = ''
+        if request.cc:
+            seen: set = set()
+            valid_addrs: list = []
+            for raw in re.split(r'[,;]', request.cc):
+                addr = raw.strip()
+                if not addr:
+                    continue
+                _, parsed = parseaddr(addr)
+                if not parsed or '@' not in parsed or '.' not in parsed.split('@', 1)[-1]:
+                    logger.warning(f"[SEND] Invalid CC address rejected: {addr!r}")
+                    return {"success": False, "error": f"Invalid CC address: '{addr}'"}
+                key = parsed.lower()
+                if key not in seen:
+                    seen.add(key)
+                    valid_addrs.append(parsed)
+            normalized_cc = ', '.join(valid_addrs)
+            if normalized_cc:
+                logger.info(f"[SEND] Normalized CC: {normalized_cc}")
+
+        # Step 9: Send email via Gmail API
         result = await asyncio.to_thread(
             gmail_client.send_message,
             to=recipient,
@@ -1246,13 +1267,17 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
             body=request.body,
             gmail_thread_id=thread_id,
             in_reply_to=in_reply_to,
-            references=references
+            references=references,
+            cc=normalized_cc or None
         )
 
         if result['success']:
             logger.info(f"[SEND] Email sent successfully - Message ID: {result['message_id']}")
             result['sent_to'] = recipient
+            result['sent_cc'] = normalized_cc
             result['subject'] = subject
+            if 'thread_id' not in result or not result['thread_id']:
+                result['thread_id'] = thread_id
         else:
             logger.error(f"[SEND] Email send failed - Error: {result['error']}")
 

@@ -75,8 +75,9 @@ export const App = () => {
   const [showReplyCompose, setShowReplyCompose] = useState(false);
   const [replyBody, setReplyBody] = useState('');
   const [replySubject, setReplySubject] = useState('');
-  const [replyTemplate, setReplyTemplate] = useState('');
+  const [replyCC, setReplyCC] = useState('');
   const [sentToAddress, setSentToAddress] = useState('');
+  const [sentCCAddress, setSentCCAddress] = useState('');
   const [sending, setSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
@@ -216,6 +217,7 @@ export const App = () => {
   useEffect(() => {
     setShowReplyCompose(false);
     setReplyBody('');
+    setReplyCC('');
     setSending(false);
     setPanelError(null);
   }, [selectedEmailDetail]);
@@ -769,40 +771,108 @@ export const App = () => {
   const connectedAccounts = accounts.filter(a => a.connected);
   const hasLegacyAccounts = connectedAccounts.some(a => a.account_id === 'default' || a.account_id === 'PRIMARY');
 
+  // ── BL-01: Reply compose helpers ──────────────────────────────────────────
+  const normalizeReplySubject = (subject: string): string => {
+    const trimmed = subject.trim();
+    if (!trimmed) return 'Re: (No Subject)';
+    const withoutRe = trimmed.replace(/^(re:\s*)+/i, '');
+    return `Re: ${withoutRe}`;
+  };
+
+  const buildAttribution = (date: string, sender: string): string => {
+    if (date && sender) return `On ${date}, ${sender} wrote:`;
+    if (sender) return `${sender} wrote:`;
+    if (date) return `On ${date}:`;
+    return 'Original message:';
+  };
+
+  // Conservative sanitizer for the original message body.
+  // Removes quote prefixes, collapses blank lines, stops at prior-thread history markers,
+  // and caps at 500 chars. Used for both the read-only preview and the outbound body.
+  const sanitizeOriginalExcerpt = (body: string): string => {
+    // 1. Normalize line endings
+    const normalized = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalized.split('\n');
+
+    // 2. Stop before obvious prior-thread markers (conservatively)
+    const historyMarkers = [
+      /^On .+ wrote:\s*$/i,
+      /^-{3,}\s*Original Message\s*-{3,}/i,
+      /^From:\s/i,
+    ];
+    const stopIdx = lines.findIndex(l => historyMarkers.some(re => re.test(l.trim())));
+    const relevant = stopIdx === -1 ? lines : lines.slice(0, stopIdx);
+
+    // 3. Strip leading quote prefixes ("> ", ">>", etc.) from each line
+    const stripped = relevant.map(l => l.replace(/^(\s*>+\s?)+/, '').trimEnd());
+
+    // 4. Collapse 2+ consecutive blank lines into 1
+    const collapsed: string[] = [];
+    let blanks = 0;
+    for (const l of stripped) {
+      if (l === '') { if (++blanks <= 1) collapsed.push(l); }
+      else { blanks = 0; collapsed.push(l); }
+    }
+
+    // 5. Join, trim edges, cap at 500 chars
+    const result = collapsed.join('\n').trim();
+    return result.length > 500 ? result.slice(0, 500) + '…' : result;
+  };
+
+  // Builds the outbound plain-text body: user reply + professional attribution + sanitized excerpt.
+  // No ">" markers — clean for all recipients.
+  const buildOutboundBody = (userText: string, date: string, sender: string, body: string): string => {
+    const excerpt = sanitizeOriginalExcerpt(body);
+    return excerpt
+      ? `${userText}\n\n${buildAttribution(date, sender)}\n${excerpt}`
+      : userText;
+  };
+  // ──────────────────────────────────────────────────────────────────────────
+
   const handleSendReply = async () => {
     if (!selectedEmailDetail?.thread_id) {
       setPanelError('Cannot send: thread ID missing. Please refresh and try again.');
       return;
     }
 
-    const userText = replyBody.replace(replyTemplate, '').trim();
+    const userText = replyBody.trim();
     if (!userText) {
-      setPanelError('Please type your reply above the quoted message.');
+      setPanelError('Please type your reply before sending.');
       return;
     }
 
     setSending(true);
     setPanelError(null);
 
+    const originalBody = selectedEmailDetail.body || '';
+    const date = selectedEmailDetail.date || '';
+    const sender = selectedEmailDetail.sender || '';
+    const outboundBody = originalBody
+      ? buildOutboundBody(userText, date, sender, originalBody)
+      : userText;
+    const ccValue = replyCC.trim() || undefined;
+
     try {
       const result = await apiService.sendThreadReply(
         selectedEmailDetail.thread_id,
-        replyBody.trim(),
-        replySubject || undefined
+        outboundBody,
+        replySubject || undefined,
+        ccValue
       );
 
       if (result.success) {
         console.log('[SEND] Email sent successfully:', result.message_id);
         setSentToAddress(result.sent_to || '');
+        setSentCCAddress(result.sent_cc || '');
         setSendSuccess(true);
         setReplyBody('');
         setReplySubject('');
-        setReplyTemplate('');
+        setReplyCC('');
         setShowReplyCompose(false);
         setPanelError(null);
 
         await fetchEmails(activeEmail, { reason: 'post-send' });
-        setTimeout(() => { setSendSuccess(false); setSentToAddress(''); }, 4000);
+        setTimeout(() => { setSendSuccess(false); setSentToAddress(''); setSentCCAddress(''); }, 4000);
       } else {
         setPanelError(result.error || 'Failed to send. Please check your connection and try again.');
       }
@@ -832,8 +902,9 @@ export const App = () => {
     setShowReplyCompose(false);
     setReplyBody('');
     setReplySubject('');
-    setReplyTemplate('');
+    setReplyCC('');
     setSentToAddress('');
+    setSentCCAddress('');
     setSending(false);
     setSendSuccess(false);
     setPanelError(null);
@@ -852,7 +923,7 @@ export const App = () => {
     setShowReplyCompose(false);
     setReplyBody('');
     setReplySubject('');
-    setReplyTemplate('');
+    setReplyCC('');
     setSentToAddress('');
     setSendSuccess(false);
     setPanelError(null);
@@ -1149,8 +1220,8 @@ export const App = () => {
           >
             <Mail size={16} />
             <span>
-              Email sent successfully
-              {sentToAddress && <span className="font-normal opacity-80"> → {sentToAddress}</span>}
+              {sentToAddress ? `Sent to ${sentToAddress}` : 'Email sent successfully'}
+              {sentCCAddress && <span className="font-normal opacity-70"> · cc: {sentCCAddress}</span>}
             </span>
           </motion.div>
         )}
@@ -1739,7 +1810,7 @@ export const App = () => {
                     <div className="flex items-center justify-between">
                       <h3 className="text-xs font-black text-indigo-400 uppercase tracking-wider">Reply</h3>
                       <button
-                        onClick={() => { setShowReplyCompose(false); setReplyBody(''); setReplySubject(''); setReplyTemplate(''); setPanelError(null); }}
+                        onClick={() => { setShowReplyCompose(false); setReplyBody(''); setReplySubject(''); setReplyCC(''); setPanelError(null); }}
                         className="p-1.5 rounded-lg hover:bg-white/10 text-slate-500 hover:text-slate-300 transition-colors"
                         disabled={sending}
                         title="Discard draft"
@@ -1760,14 +1831,34 @@ export const App = () => {
                       placeholder="Subject"
                       className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
                     />
+                    <input
+                      type="text"
+                      value={replyCC}
+                      onChange={(e) => setReplyCC(e.target.value)}
+                      placeholder="Cc (optional — comma or semicolon separated)"
+                      className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
+                    />
                     <textarea
                       ref={replyTextareaRef}
                       value={replyBody}
                       onChange={(e) => setReplyBody(e.target.value)}
-                      placeholder="Type your reply here..."
-                      rows={6}
+                      placeholder="Write your reply here…"
+                      rows={5}
                       className="w-full p-3 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
                     />
+                    {selectedEmailDetail?.body && (() => {
+                      const excerpt = sanitizeOriginalExcerpt(selectedEmailDetail.body);
+                      return excerpt ? (
+                        <div className="px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
+                          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider select-none">
+                            {buildAttribution(selectedEmailDetail.date || '', selectedEmailDetail.sender || '')}
+                          </p>
+                          <p className="text-xs text-slate-500 leading-relaxed line-clamp-5 whitespace-pre-wrap select-none">
+                            {excerpt}
+                          </p>
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                 )}
 
@@ -1811,7 +1902,7 @@ export const App = () => {
                     {showReplyCompose ? (
                       <button
                         onClick={handleSendReply}
-                        disabled={sending || !replyBody.replace(replyTemplate, '').trim() || !selectedEmailDetail.thread_id}
+                        disabled={sending || !replyBody.trim() || !selectedEmailDetail.thread_id}
                         className="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-1.5"
                       >
                         {sending ? (
@@ -1834,16 +1925,10 @@ export const App = () => {
                             setPanelError('Cannot reply: thread ID missing. Please refresh your emails and try again.');
                             return;
                           }
-                          const rawSubject = selectedEmailDetail.subject || '';
-                          const normalizedSubject = rawSubject.toLowerCase().startsWith('re:') ? rawSubject : `Re: ${rawSubject}`;
-                          const senderLine = selectedEmailDetail.sender || '';
-                          const dateLine = selectedEmailDetail.date ? `On ${selectedEmailDetail.date}, ${senderLine} wrote:` : `${senderLine} wrote:`;
-                          const originalBody = selectedEmailDetail.body || selectedEmailDetail.summary || '';
-                          const quotedLines = originalBody.split('\n').map((l: string) => `> ${l}`).join('\n');
-                          const template = quotedLines ? `\n\n${'—'.repeat(40)}\n${dateLine}\n${quotedLines}` : '';
-                          setReplySubject(normalizedSubject);
-                          setReplyTemplate(template);
-                          setReplyBody(template);
+                          const subject = normalizeReplySubject(selectedEmailDetail.subject || '');
+                          setReplySubject(subject);
+                          setReplyBody('');
+                          setReplyCC('');
                           setShowReplyCompose(true);
                           setSendSuccess(false);
                         }}

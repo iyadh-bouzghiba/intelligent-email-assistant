@@ -252,7 +252,8 @@ class GmailClient:
         body: str,
         gmail_thread_id: Optional[str] = None,
         in_reply_to: Optional[str] = None,
-        references: Optional[str] = None
+        references: Optional[str] = None,
+        cc: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Send an email via Gmail API with RFC-compliant threading headers.
@@ -278,6 +279,8 @@ class GmailClient:
             message = MIMEText(body, 'plain', 'utf-8')
             message['To'] = to
             message['Subject'] = normalized_subject
+            if cc:
+                message['Cc'] = cc
 
             # Add threading headers if provided
             if in_reply_to:
