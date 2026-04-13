@@ -83,12 +83,17 @@ export const apiService = {
     sendThreadReply: async (
         thread_id: string,
         body: string,
-        subject?: string
+        subject?: string,
+        cc?: string
     ): Promise<SendEmailResponse> => {
         try {
             const response = await api.post(
                 `${API_ROOT}/threads/${encodeURIComponent(thread_id)}/send`,
-                { body, ...(subject !== undefined ? { subject } : {}) }
+                {
+                    body,
+                    ...(subject !== undefined ? { subject } : {}),
+                    ...(cc ? { cc } : {}),
+                }
             );
             return response.data;
         } catch (error: any) {

@@ -99,6 +99,7 @@ export interface AccountsResponse {
 export interface SendEmailRequest {
     body: string;
     subject?: string;
+    cc?: string;
 }
 
 export interface SendEmailResponse {
@@ -106,6 +107,7 @@ export interface SendEmailResponse {
     message_id?: string;
     thread_id?: string;
     sent_to?: string;
+    sent_cc?: string;
     subject?: string;
     error?: string;
 }
