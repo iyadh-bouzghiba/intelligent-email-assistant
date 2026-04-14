@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiService } from '@services';
 import { websocketService } from '@services/websocket';
-import { Sparkles, RefreshCw, Mail, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, X } from 'lucide-react';
+import { Sparkles, RefreshCw, Mail, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, X, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Briefing, AccountInfo } from '@types';
+import { Briefing, AccountInfo, SentEmail } from '@types';
+import { SentList } from './components/SentList';
 
 const BRAND_NAME = "EXECUTIVE BRAIN";
 const SUBTITLE = "Strategic Intelligence Feed";
@@ -82,6 +83,9 @@ export const App = () => {
   const [sendSuccess, setSendSuccess] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
   const [diagnosticClickCount, setDiagnosticClickCount] = useState(0);
+  const [activeTab, setActiveTab] = useState<'inbox' | 'sent'>('inbox');
+  const [sentEmails, setSentEmails] = useState<SentEmail[]>([]);
+  const [loadingSent, setLoadingSent] = useState(false);
 
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) return;
@@ -234,6 +238,18 @@ export const App = () => {
     }
   }, [scrollToActions, selectedEmailDetail]);
 
+  // Fetch sent emails when the Sent tab is active, or when the active account changes while Sent is open.
+  useEffect(() => {
+    if (activeTab !== 'sent' || !activeEmail) return;
+    let cancelled = false;
+    setLoadingSent(true);
+    apiService.getSentEmails(activeEmail)
+      .then(data => { if (!cancelled) setSentEmails(data); })
+      .catch(() => { if (!cancelled) setSentEmails([]); })
+      .finally(() => { if (!cancelled) setLoadingSent(false); });
+    return () => { cancelled = true; };
+  }, [activeTab, activeEmail]);
+
   // fetchEmails options:
   //   reason          — readable log tag for this trigger (e.g. 'runSync', 'ws:emails_updated')
   //   refetchAccounts — when true, also refetches /api/accounts and updates account state;
@@ -266,7 +282,9 @@ export const App = () => {
 
       if (refetchAccounts) {
         const [emails, accountsData] = await Promise.all([
-          apiService.listEmailsWithSummaries(accountIdToUse ?? undefined),
+          accountIdToUse
+            ? apiService.getInboxThreads(accountIdToUse)
+            : Promise.resolve([]),
           apiService.listAccounts()
         ]);
         emailData = emails;
@@ -279,7 +297,9 @@ export const App = () => {
           setActiveEmail(firstConnected.account_id);
         }
       } else {
-        emailData = await apiService.listEmailsWithSummaries(accountIdToUse ?? undefined);
+        emailData = accountIdToUse
+          ? await apiService.getInboxThreads(accountIdToUse)
+          : [];
       }
 
       // ── Stale-account guard ─────────────────────────────────────────────────
@@ -296,15 +316,12 @@ export const App = () => {
       }
       // ────────────────────────────────────────────────────────────────────────
 
-      // Sort emails by date descending (newest first)
-      const sorted = (emailData || []).sort((a: any, b: any) => {
-        const dateA = Date.parse(a.date ?? a.created_at ?? '0');
-        const dateB = Date.parse(b.date ?? b.created_at ?? '0');
-        return dateB - dateA;
-      });
+      // Trust backend order — /api/inbox returns threads sorted by latest activity DESC.
+      // Client-side re-sort by individual message date would overwrite that ordering.
+      const ordered = emailData || [];
 
       // Map DB schema to UI Briefing model
-      const mapped: Briefing[] = sorted.map((e: any) => {
+      const mapped: Briefing[] = ordered.map((e: any) => {
         const isoDate = e.date ?? e.created_at;
         let formattedDate = 'Unknown time';
         try {
@@ -350,6 +367,7 @@ export const App = () => {
           ai_summary_model: e.ai_summary_model,
           gmail_message_id: e.gmail_message_id,
           thread_id: e.thread_id,
+          is_read: e.is_read !== undefined ? Boolean(e.is_read) : undefined,
         };
 
         // CRITICAL: Trigger Sentinel Alert for high-urgency emails
@@ -984,13 +1002,64 @@ export const App = () => {
     return appIdentifiers.some(id => textToCheck.includes(id));
   };
 
+  // ── Gmail-style thread-collapsed inbox projection ───────────────────────
+  // Groups raw briefings by thread_id (fallback: gmail_message_id → subject).
+  // briefings is already sorted date DESC from fetchEmails, so the first
+  // occurrence of each key IS the latest message — no secondary sort needed.
+  // The original `briefings` state is not mutated.
+  const collapsedInbox: Briefing[] = (() => {
+    const seen = new Map<string, Briefing>();
+    const hasUnread = new Map<string, boolean>();
+    for (const b of briefings) {
+      const key = b.thread_id || b.gmail_message_id || b.subject;
+      if (!seen.has(key)) {
+        seen.set(key, b);
+        hasUnread.set(key, b.is_read === false);
+      } else if (b.is_read === false) {
+        // Propagate unread status even if a later (older) message is unread
+        hasUnread.set(key, true);
+      }
+    }
+    // Build representative rows with thread-level unread flag
+    return Array.from(seen.entries()).map(([key, rep]) => ({
+      ...rep,
+      is_read: hasUnread.get(key) ? false : rep.is_read,
+    }));
+  })();
+  // ─────────────────────────────────────────────────────────────────────────
+
   const filteredBriefings = (filterCategory === 'All'
-    ? briefings
-    : briefings.filter(b => b.category === filterCategory))
+    ? collapsedInbox
+    : collapsedInbox.filter(b => b.category === filterCategory))
     .filter(b => !isSelfGeneratedAlert(b)); // Remove self-generated alerts
 
   const currentItems = filteredBriefings.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
   const totalPages = Math.ceil(filteredBriefings.length / ITEMS_PER_PAGE);
+
+  // Unread count: thread-level collapsed rows (not raw per-message count)
+  const unreadCount = collapsedInbox.filter(b => b.is_read === false).length;
+
+  // Convert a SentEmail to a minimal Briefing for the shared detail panel
+  const sentToBriefing = (se: SentEmail): Briefing => ({
+    account: se.account_id,
+    subject: se.subject || '(No Subject)',
+    sender: `You → ${se.to_address}${se.cc_addresses ? ` · cc: ${se.cc_addresses}` : ''}`,
+    date: (() => { try { return new Date(se.sent_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }); } catch { return se.sent_at; } })(),
+    priority: 'Medium',
+    category: 'General',
+    should_alert: false,
+    summary: se.body_preview || 'No preview available.',
+    action: '',
+    body: se.body_preview || '',
+    thread_id: se.thread_id || undefined,
+    gmail_message_id: se.gmail_message_id || undefined,
+    is_read: true,
+  });
+
+  // Show feed toolbar only when an account is active AND the feed has either
+  // already loaded data or finished its initial load — prevents toolbar flashing
+  // during the "Analyzing..." skeleton state on first account selection.
+  const showFeedNavigation = Boolean(activeEmail) && (!loading || briefings.length > 0);
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-300 font-sans selection:bg-indigo-500/30 overflow-x-hidden">
@@ -1281,17 +1350,6 @@ export const App = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-white/[0.02] border border-white/5 backdrop-blur-sm flex-wrap">
-            {['All', 'Security', 'Financial', 'Work', 'Personal', 'Marketing', 'General'].map((cat) => (
-              <button
-                key={cat}
-                onClick={() => { setFilterCategory(cat as any); setCurrentPage(1); }}
-                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterCategory === cat ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
         </div>
 
         <AnimatePresence>
@@ -1320,6 +1378,62 @@ export const App = () => {
           )}
         </AnimatePresence>
 
+        {/* Feed toolbar — tabs + category chips, only when an account is active */}
+        {showFeedNavigation && (
+          <div className="flex items-center justify-between gap-3 mb-6 max-w-[720px] mx-auto flex-wrap">
+            {/* Left: Inbox / Sent tabs */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActiveTab('inbox')}
+                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'inbox' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
+              >
+                <Mail size={13} />
+                Inbox
+                {unreadCount > 0 && (
+                  <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black leading-none">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab('sent')}
+                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'sent' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
+              >
+                <Send size={13} />
+                Sent
+              </button>
+            </div>
+
+            {/* Right: category chips — inbox only */}
+            {activeTab === 'inbox' && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {['All', 'Security', 'Financial', 'Work', 'Personal', 'Marketing', 'General'].map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => { setFilterCategory(cat as any); setCurrentPage(1); }}
+                    className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterCategory === cat ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Sent view */}
+        {activeTab === 'sent' && (
+          <div className="flex flex-col gap-4 mb-12 max-w-[720px] mx-auto">
+            <SentList
+              emails={sentEmails}
+              loading={loadingSent}
+              onSelect={(se: SentEmail) => openEmailDetail(sentToBriefing(se))}
+            />
+          </div>
+        )}
+
+        {/* Inbox view */}
+        {activeTab === 'inbox' && (
         <div className="flex flex-col gap-4 mb-12 max-w-[720px] mx-auto">
           <AnimatePresence mode="popLayout">
             {loading ? (
@@ -1390,11 +1504,16 @@ export const App = () => {
 
                   {/* Subject and sender */}
                   <div className="mb-3">
-                    <h3 className="text-lg font-black text-white mb-1 tracking-tight leading-tight group-hover:text-indigo-400 transition-colors duration-300">
-                      {item.subject}
-                    </h3>
+                    <div className="flex items-start gap-2 mb-1">
+                      {item.is_read === false && (
+                        <span className="mt-1.5 w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0" title="Unread" />
+                      )}
+                      <h3 className={`text-lg tracking-tight leading-tight group-hover:text-indigo-400 transition-colors duration-300 ${item.is_read === false ? 'font-black text-white' : 'font-bold text-slate-200'}`}>
+                        {item.subject}
+                      </h3>
+                    </div>
                     <div className="flex items-center justify-between text-xs text-slate-500">
-                      <span className="font-semibold truncate mr-2">{item.sender.split('<')[0].trim()}</span>
+                      <span className={`truncate mr-2 ${item.is_read === false ? 'font-bold text-slate-300' : 'font-semibold'}`}>{item.sender.split('<')[0].trim()}</span>
                       <div className="flex items-center gap-1 shrink-0">
                         <Clock size={11} className="text-indigo-400/60" />
                         <span className="text-[10px] font-medium">{item.date}</span>
@@ -1623,8 +1742,9 @@ export const App = () => {
             )}
           </AnimatePresence>
         </div>
+        )}
 
-        {totalPages > 1 && !loading && (
+        {activeTab === 'inbox' && totalPages > 1 && !loading && (
           <div className="flex items-center justify-center gap-8 mt-4">
             <button
               onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}

@@ -700,6 +700,19 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30, backfill_limit: 
                     gmail_thread_id = email.get('thread_id', '')
                     if gmail_thread_id:
                         new_thread_ids.append((gmail_thread_id, email))
+
+                    # Best-effort is_read update — never fails the sync
+                    is_read_val = email.get('is_read', True)
+                    try:
+                        await asyncio.to_thread(
+                            lambda: store.client.table("emails")
+                                .update({"is_read": is_read_val})
+                                .eq("account_id", effective_account_id)
+                                .eq("gmail_message_id", m_id)
+                                .execute()
+                        )
+                    except Exception as is_read_err:
+                        logger.warning(f"[SYNC] is_read update failed for {m_id[:8]}... (non-fatal): {is_read_err}")
                 else:
                     # D3 FIX: Track failed saves deterministically
                     failed_saves.append({
@@ -1278,6 +1291,28 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
             result['subject'] = subject
             if 'thread_id' not in result or not result['thread_id']:
                 result['thread_id'] = thread_id
+
+            # Best-effort sent log — never fails the send response
+            try:
+                sent_store = safe_get_store()
+                if sent_store:
+                    sent_payload = {
+                        "account_id": account_id,
+                        "gmail_message_id": result.get('message_id') or '',
+                        "thread_id": result.get('thread_id') or thread_id,
+                        "to_address": recipient,
+                        "cc_addresses": normalized_cc or None,
+                        "subject": subject,
+                        "body_preview": request.body[:200],
+                        "sent_at": datetime.now(timezone.utc).isoformat(),
+                        "source": "app_send",
+                    }
+                    await asyncio.to_thread(
+                        lambda: sent_store.client.table("sent_emails").insert(sent_payload).execute()
+                    )
+                    logger.info(f"[SEND] Sent log inserted for thread {thread_id}")
+            except Exception as log_err:
+                logger.warning(f"[SEND] Sent log insert failed (non-fatal): {log_err}")
         else:
             logger.error(f"[SEND] Email send failed - Error: {result['error']}")
 
@@ -1289,6 +1324,193 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
             "success": False,
             "error": f"Unexpected error: {str(e)}"
         }
+
+@api_router.get("/sent")
+async def get_sent_emails(account_id: str, limit: int = 50, offset: int = 0):
+    """
+    Returns sent emails for an account, ordered by sent_at DESC.
+    Returns [] on empty — never errors for empty result.
+    """
+    try:
+        store = safe_get_store()
+        if not store:
+            logger.warning("[SENT] Store unavailable")
+            return []
+        result = await asyncio.to_thread(
+            lambda: store.client.table("sent_emails")
+                .select("*")
+                .eq("account_id", account_id)
+                .eq("source", "app_send")
+                .order("sent_at", desc=True)
+                .limit(limit)
+                .offset(offset)
+                .execute()
+        )
+        return result.data or []
+    except Exception as e:
+        logger.error(f"[SENT] Query failed: {type(e).__name__}: {e}")
+        return []
+
+
+@api_router.get("/inbox")
+async def get_inbox_threads(account_id: str = Query(...), limit: int = Query(50)):
+    """
+    Thread-aware inbox: one representative row per thread, sorted by latest activity DESC.
+    Considers both inbox message dates and sent message timestamps so that a thread where
+    the user replied last still surfaces at the correct position.
+    """
+    store = safe_get_store()
+    if not store:
+        logger.warning("[INBOX] Store unavailable")
+        return []
+    try:
+        # Fetch raw inbox messages with a larger cap to avoid cutting mid-thread duplicates
+        raw_emails = await asyncio.to_thread(
+            store.get_emails_with_summaries, limit=200, account_id=account_id
+        )
+        # Fetch sent timestamps per thread to capture user-reply activity ordering
+        sent_result = await asyncio.to_thread(
+            lambda: store.client.table("sent_emails")
+                .select("thread_id, sent_at")
+                .eq("account_id", account_id)
+                .order("sent_at", desc=True)
+                .limit(200)
+                .execute()
+        )
+        # Map: thread_id -> latest sent_at (first-seen = latest since ordered DESC)
+        sent_latest: dict = {}
+        for row in (sent_result.data or []):
+            tid = row.get("thread_id")
+            sat = row.get("sent_at")
+            if tid and sat and tid not in sent_latest:
+                sent_latest[tid] = sat
+
+        def _parse_ts(ts: str) -> datetime:
+            try:
+                return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except Exception:
+                return datetime.min.replace(tzinfo=timezone.utc)
+
+        # Thread-collapse: one row per thread_id (first-seen = latest, emails are date DESC)
+        seen: dict = {}
+        has_unread: dict = {}
+        for email in raw_emails:
+            key = email.get("thread_id") or email.get("gmail_message_id") or email.get("subject", "")
+            if key not in seen:
+                seen[key] = email
+                has_unread[key] = not email.get("is_read", True)
+            elif not email.get("is_read", True):
+                has_unread[key] = True
+
+        # Build representative rows with thread-level unread + latest-activity key
+        rows = []
+        for key, rep in seen.items():
+            row = dict(rep)
+            row["is_read"] = not has_unread[key]
+            thread_id = rep.get("thread_id")
+            inbox_ts = rep.get("date") or rep.get("created_at") or ""
+            sent_ts = sent_latest.get(thread_id, "") if thread_id else ""
+            latest_dt = max(_parse_ts(inbox_ts), _parse_ts(sent_ts))
+            row["_latest_activity"] = latest_dt.isoformat()
+            rows.append(row)
+
+        # Sort by latest activity DESC, strip internal sort key
+        rows.sort(key=lambda r: r.get("_latest_activity", ""), reverse=True)
+        for row in rows:
+            row.pop("_latest_activity", None)
+
+        logger.info(f"[INBOX] Returning {min(len(rows), limit)} threads for account={account_id}")
+        return rows[:limit]
+    except Exception as e:
+        logger.error(f"[INBOX] Failed: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return []
+
+
+@api_router.post("/backfill-sent")
+async def backfill_sent_emails(account_id: str = Query(...)):
+    """
+    Backfills historical sent messages from Gmail into sent_emails table.
+
+    Idempotent: skips messages already present by gmail_message_id.
+    Bounded: fetches at most 100 sent messages per call.
+    Safe: insert errors per batch are logged but do not abort the whole backfill.
+    """
+    from backend.services.gmail_engine import fetch_sent_messages
+
+    credential_store = CredentialStore(persistence)
+    token_data = credential_store.load_credentials(account_id)
+    if not token_data or 'token' not in token_data:
+        raise HTTPException(status_code=401, detail=f"No valid credentials for account: {account_id}")
+
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Store unavailable")
+
+    # Fetch recent sent messages from Gmail (bounded at 100)
+    sent_rows = await asyncio.to_thread(fetch_sent_messages, token_data, 100)
+
+    if isinstance(sent_rows, dict) and "__auth_error__" in sent_rows:
+        raise HTTPException(status_code=401, detail="Gmail token expired — please re-authenticate")
+
+    if not sent_rows:
+        return {"status": "ok", "inserted": 0, "skipped": 0, "message": "No sent messages found in Gmail"}
+
+    # Idempotency: load existing gmail_message_ids for this account to avoid dupes
+    try:
+        existing_result = await asyncio.to_thread(
+            lambda: store.client.table("sent_emails")
+                .select("gmail_message_id")
+                .eq("account_id", account_id)
+                .execute()
+        )
+        existing_ids = {
+            r['gmail_message_id']
+            for r in (existing_result.data or [])
+            if r.get('gmail_message_id')
+        }
+    except Exception as e:
+        logger.warning(f"[BACKFILL-SENT] Could not fetch existing IDs (will insert all): {e}")
+        existing_ids = set()
+
+    new_rows = [r for r in sent_rows if r['gmail_message_id'] not in existing_ids]
+    skipped = len(sent_rows) - len(new_rows)
+
+    if not new_rows:
+        logger.info(f"[BACKFILL-SENT] All {skipped} rows already exist for {account_id}")
+        return {"status": "ok", "inserted": 0, "skipped": skipped}
+
+    # Insert in batches of 50 — log failures per batch without aborting
+    inserted = 0
+    for i in range(0, len(new_rows), 50):
+        batch = new_rows[i:i + 50]
+        payloads = [
+            {
+                "account_id": account_id,
+                "gmail_message_id": r["gmail_message_id"],
+                "thread_id": r["thread_id"],
+                "to_address": r["to_address"],
+                "cc_addresses": r.get("cc_addresses"),
+                "subject": r.get("subject"),
+                "body_preview": r.get("body_preview"),
+                "sent_at": r["sent_at"],
+                "source": "gmail_backfill",
+            }
+            for r in batch
+        ]
+        try:
+            await asyncio.to_thread(
+                lambda p=payloads: store.client.table("sent_emails").insert(p).execute()
+            )
+            inserted += len(batch)
+            logger.info(f"[BACKFILL-SENT] Inserted batch of {len(batch)} rows for {account_id}")
+        except Exception as batch_err:
+            logger.error(f"[BACKFILL-SENT] Batch insert failed (rows {i}–{i + len(batch)}): {batch_err}")
+
+    logger.info(f"[BACKFILL-SENT] Completed: {inserted} inserted, {skipped} skipped for {account_id}")
+    return {"status": "ok", "inserted": inserted, "skipped": skipped}
+
 
 @api_router.get("/export")
 async def export_data(tenant_id: str = "primary"):

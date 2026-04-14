@@ -188,13 +188,17 @@ def run_engine(token_data: dict, max_emails: int = 30):
                 # CRITICAL: Extract Gmail threadId for send functionality
                 thread_id = msg.get('threadId', '')
 
+                # Derive read/unread from Gmail labels
+                is_read = "UNREAD" not in label_ids
+
                 emails_data.append({
                     "message_id": msg['id'],  # Gmail message ID
                     "thread_id": thread_id,    # Gmail thread ID (required for send)
                     "subject": subject,
                     "sender": sender_raw,
                     "date": date_iso,  # ISO timestamp
-                    "body": cleaned_body
+                    "body": cleaned_body,
+                    "is_read": is_read,
                 })
 
                 total_fetched += 1
@@ -219,6 +223,132 @@ def run_engine(token_data: dict, max_emails: int = 30):
         import traceback
         logger.error(f"[ERROR] [GMAIL] Traceback: {traceback.format_exc()}")
         return []
+
+def fetch_sent_messages(token_data: dict, max_messages: int = 100):
+    """
+    Fetches recent sent messages from Gmail SENT label.
+
+    Args:
+        token_data: OAuth credentials dict
+        max_messages: Maximum number of sent messages to fetch (default: 100)
+
+    Returns:
+        List of dicts with gmail_message_id, thread_id, to_address, cc_addresses,
+        subject, body_preview, sent_at — ready for sent_emails insertion.
+        Returns {"__auth_error__": ...} dict on token expiry.
+    """
+    from datetime import datetime, timezone
+    from email.utils import parsedate_to_datetime
+
+    if not token_data or 'token' not in token_data:
+        logger.warning("[SENT-BACKFILL] No valid token data provided")
+        return []
+
+    try:
+        creds = Credentials(
+            token=token_data['token'],
+            refresh_token=token_data.get('refresh_token'),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=token_data['client_id'],
+            client_secret=token_data['client_secret']
+        )
+    except Exception as e:
+        logger.error(f"[SENT-BACKFILL] Credential build failed: {e}")
+        return []
+
+    service = build('gmail', 'v1', credentials=creds)
+    sent_data = []
+
+    try:
+        page_token = None
+        total_fetched = 0
+
+        while total_fetched < max_messages:
+            list_params = {
+                'userId': 'me',
+                'labelIds': ['SENT'],
+                'maxResults': min(50, max_messages - total_fetched),
+            }
+            if page_token:
+                list_params['pageToken'] = page_token
+
+            results = service.users().messages().list(**list_params).execute()
+            messages = results.get('messages', [])
+            if not messages:
+                break
+
+            for msg_info in messages:
+                try:
+                    msg = service.users().messages().get(
+                        userId='me', id=msg_info['id'], format='full'
+                    ).execute()
+                    payload = msg.get('payload', {})
+                    headers = payload.get('headers', [])
+
+                    def _hdr(name):
+                        return next((h['value'] for h in headers if h['name'].lower() == name.lower()), None)
+
+                    subject = _hdr('Subject') or '(No Subject)'
+                    to_address = _hdr('To') or ''
+                    cc_addresses = _hdr('Cc') or None
+                    date_header = _hdr('Date')
+                    internal_date_ms = msg.get('internalDate')
+
+                    # Resolve sent_at — same priority as run_engine (Date header first)
+                    if date_header:
+                        try:
+                            parsed_dt = parsedate_to_datetime(date_header)
+                            if parsed_dt.tzinfo is None:
+                                parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
+                            sent_at = parsed_dt.astimezone(timezone.utc).isoformat()
+                        except Exception:
+                            if internal_date_ms:
+                                sent_at = datetime.fromtimestamp(
+                                    int(internal_date_ms) / 1000, tz=timezone.utc
+                                ).isoformat()
+                            else:
+                                sent_at = datetime.now(timezone.utc).isoformat()
+                    elif internal_date_ms:
+                        sent_at = datetime.fromtimestamp(
+                            int(internal_date_ms) / 1000, tz=timezone.utc
+                        ).isoformat()
+                    else:
+                        sent_at = datetime.now(timezone.utc).isoformat()
+
+                    raw_body = get_message_body(payload).strip()
+                    body_preview = raw_body[:200] if raw_body else None
+
+                    sent_data.append({
+                        "gmail_message_id": msg['id'],
+                        "thread_id": msg.get('threadId', ''),
+                        "to_address": to_address,
+                        "cc_addresses": cc_addresses,
+                        "subject": subject,
+                        "body_preview": body_preview,
+                        "sent_at": sent_at,
+                    })
+                except Exception as msg_err:
+                    logger.warning(f"[SENT-BACKFILL] Skipping message {msg_info.get('id')}: {msg_err}")
+                finally:
+                    total_fetched += 1
+
+            page_token = results.get('nextPageToken')
+            if not page_token:
+                break
+
+        logger.info(f"[SENT-BACKFILL] Fetched {len(sent_data)} sent messages")
+        return sent_data
+
+    except Exception as e:
+        error_str = str(e).lower()
+        if "invalid_grant" in error_str or "invalid_client" in error_str:
+            logger.warning("[SENT-BACKFILL] Re-auth required: token expired/revoked")
+            return {"__auth_error__": "invalid_grant"}
+        logger.error(f"[SENT-BACKFILL] Failed: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return []
+
 
 if __name__ == "__main__":
     emails = run_engine()

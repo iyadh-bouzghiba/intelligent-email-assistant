@@ -9,6 +9,7 @@ import {
     AccountsResponse,
     SendEmailRequest,
     SendEmailResponse,
+    SentEmail,
 } from "@types";
 
 // Fail-fast environment contract
@@ -194,6 +195,32 @@ export const apiService = {
                 `📡 API: Summarization failed for ${thread_id}, degrading gracefully.`
             );
             return { status: "error" };
+        }
+    },
+
+    // Thread-aware inbox — /api/inbox (one row per thread, sorted by latest activity)
+    getInboxThreads: async (account_id: string, limit = 50): Promise<any[]> => {
+        try {
+            const response = await api.get(`${API_ROOT}/inbox`, {
+                params: { account_id, limit },
+            });
+            return response.data ?? [];
+        } catch (error) {
+            console.warn('📡 API: getInboxThreads failed, falling back to listEmailsWithSummaries', error);
+            return apiService.listEmailsWithSummaries(account_id);
+        }
+    },
+
+    // Sent emails — /api/sent
+    getSentEmails: async (account_id: string, limit = 50, offset = 0): Promise<SentEmail[]> => {
+        try {
+            const response = await api.get(`${API_ROOT}/sent`, {
+                params: { account_id, limit, offset },
+            });
+            return response.data ?? [];
+        } catch (error) {
+            console.warn('📡 API: getSentEmails failed, returning empty list', error);
+            return [];
         }
     },
 
