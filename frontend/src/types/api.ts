@@ -74,6 +74,19 @@ export interface Briefing {
     ai_summary_model?: string;
     gmail_message_id?: string;
     thread_id?: string; // Gmail thread ID (required for send functionality)
+    is_read?: boolean;  // false = unread (UNREAD label present in Gmail)
+}
+
+export interface SentEmail {
+    id: string;
+    account_id: string;
+    gmail_message_id: string | null;
+    thread_id: string | null;
+    to_address: string;
+    cc_addresses: string | null;
+    subject: string | null;
+    body_preview: string | null;
+    sent_at: string;
 }
 
 export interface BriefingResponse {
