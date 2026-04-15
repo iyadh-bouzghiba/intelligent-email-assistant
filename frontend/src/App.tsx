@@ -201,6 +201,18 @@ export const App = () => {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [selectedEmailDetail]);
 
+  // D2: Lock background scroll while detail panel is open; restore on close or unmount
+  useEffect(() => {
+    if (selectedEmailDetail) {
+      document.body.classList.add('panel-open');
+    } else {
+      document.body.classList.remove('panel-open');
+    }
+    return () => {
+      document.body.classList.remove('panel-open');
+    };
+  }, [selectedEmailDetail]);
+
   // Autofocus reply textarea when compose opens; place caret at top deterministically
   useEffect(() => {
     if (showReplyCompose && replyTextareaRef.current) {
@@ -1114,11 +1126,11 @@ export const App = () => {
                   >
                     {activeEmail ? (
                       <>
-                        <span className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(activeEmail)} text-[10px] font-black text-white flex-shrink-0 shadow-lg`}>
+                        <span className={`relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(activeEmail)} text-[10px] font-black text-white flex-shrink-0 shadow-lg ring-2 ring-indigo-500/40`}>
                           {getEmailInitials(activeEmail)}
                           <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0f172a] ${activeEmail && offlineAccounts.has(activeEmail) ? 'bg-[#EF4444]' : 'bg-[#22C55E]'}`} />
                         </span>
-                        <span className="hidden sm:inline text-[11px] font-bold text-slate-300 truncate max-w-[140px]">
+                        <span className="inline text-[11px] font-bold text-slate-300 truncate max-w-[120px]">
                           {activeEmail.split('@')[0]}
                         </span>
                       </>
@@ -1151,7 +1163,7 @@ export const App = () => {
                         initial={{ opacity: 0, y: -6 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -6 }}
-                        className="fixed left-4 right-4 top-24 w-auto rounded-2xl bg-[#0f172a] border border-white/10 shadow-2xl z-[100] overflow-hidden sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-56"
+                        className="fixed left-4 right-4 top-24 w-auto rounded-2xl bg-[#0f172a] border border-white/10 shadow-2xl z-[100] overflow-hidden max-h-[70vh] overflow-y-auto sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-64"
                       >
                         {/* CRITICAL: Show active account FIRST, then others */}
                         {connectedAccounts
@@ -1163,7 +1175,7 @@ export const App = () => {
                           .map((info) => {
                             const isActive = activeEmail === info.account_id;
                             return (
-                              <div key={info.account_id} className={`flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] transition-colors ${isActive ? 'bg-indigo-500/10' : ''}`}>
+                              <div key={info.account_id} className={`flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] transition-colors ${isActive ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'border-l-2 border-transparent'}`}>
                                 <div className="relative">
                                   <div className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(info.account_id)} text-[10px] font-black text-white flex-shrink-0 shadow-md`}>
                                     {getEmailInitials(info.account_id)}
@@ -1178,7 +1190,7 @@ export const App = () => {
                                   <a
                                     href={apiService.getGoogleAuthUrl()}
                                     onClick={() => setShowAccountMenu(false)}
-                                    className="text-[11px] font-bold truncate flex-1 text-left"
+                                    className="text-xs font-bold truncate flex-1 text-left"
                                     title="Authentication expired — click to reconnect"
                                   >
                                     <div className="truncate text-amber-400">{info.account_id}</div>
@@ -1196,7 +1208,7 @@ export const App = () => {
                                       await runSync(info.account_id);
                                       // setLoading(false) handled by fetchEmails' finally (or pending switch path)
                                     }}
-                                    className={`text-[11px] font-bold truncate flex-1 text-left ${isActive ? 'text-indigo-400' : 'text-slate-300'}`}
+                                    className={`text-xs font-bold truncate flex-1 text-left ${isActive ? 'text-indigo-400' : 'text-slate-300'}`}
                                   >
                                     <div className="truncate">{info.account_id}</div>
                                     {offlineAccounts.has(info.account_id) ? (
@@ -1211,7 +1223,7 @@ export const App = () => {
                                 <button
                                   onClick={() => { setShowAccountMenu(false); setConfirmDisconnect(info.account_id); }}
                                   title={`Disconnect ${info.account_id}`}
-                                  className="p-1.5 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors flex-shrink-0"
+                                  className="p-2 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors flex-shrink-0"
                                 >
                                   <LogOut size={12} />
                                 </button>
@@ -1476,7 +1488,7 @@ export const App = () => {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: index * 0.03 }}
-                  className="group relative flex flex-col p-6 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-300 shadow-xl hover:shadow-indigo-500/5"
+                  className={`group relative flex flex-col p-6 rounded-2xl border hover:bg-white/[0.04] hover:border-white/10 transition-all duration-300 shadow-xl hover:shadow-indigo-500/5 ${item.is_read === false ? 'bg-white/[0.035] border-indigo-500/[0.15]' : 'bg-white/[0.02] border-white/5'}`}
                 >
                   {/* Header row: badges + AI indicator */}
                   <div className="flex items-center justify-between mb-3">
@@ -1506,7 +1518,7 @@ export const App = () => {
                   <div className="mb-3">
                     <div className="flex items-start gap-2 mb-1">
                       {item.is_read === false && (
-                        <span className="mt-1.5 w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0" title="Unread" />
+                        <span className="mt-1.5 w-2.5 h-2.5 rounded-full bg-indigo-400 flex-shrink-0" title="Unread" />
                       )}
                       <h3 className={`text-lg tracking-tight leading-tight group-hover:text-indigo-400 transition-colors duration-300 ${item.is_read === false ? 'font-black text-white' : 'font-bold text-slate-200'}`}>
                         {item.subject}
@@ -1615,67 +1627,61 @@ export const App = () => {
 
             {connectedAccounts.length === 0 && !error ? (
               /* ONBOARDING GUIDE: Professional zero-account state with step-by-step instructions */
-              <div className="w-full py-16 flex flex-col items-center gap-8 text-center max-w-4xl mx-auto">
-                <div className="w-28 h-28 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-2xl">
-                  <Mail size={48} className="text-indigo-400" />
+              <div className="w-full py-10 flex flex-col items-center gap-6 text-center max-w-lg mx-auto">
+                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-2xl">
+                  <Mail size={36} className="text-indigo-400" />
                   <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-pulse" />
                 </div>
 
-                <div className="space-y-3">
-                  <h3 className="text-4xl font-black text-white">Welcome to {BRAND_NAME}</h3>
-                  <p className="text-slate-400 text-lg font-medium max-w-2xl">
-                    Executive-grade email intelligence at your fingertips. Connect your Gmail account to begin.
+                <div className="space-y-2">
+                  <h3 className="text-2xl font-black text-white">Welcome to {BRAND_NAME}</h3>
+                  <p className="text-slate-400 text-sm font-medium">
+                    Connect your Gmail account to start your intelligence feed.
                   </p>
                 </div>
 
-                <div className="w-full max-w-2xl bg-white/[0.02] border border-white/5 rounded-3xl p-8 mt-4">
-                  <h4 className="text-lg font-black text-white mb-6 text-left flex items-center gap-2">
-                    <Shield size={20} className="text-indigo-400" />
-                    Quick Start Guide
-                  </h4>
-                  <div className="space-y-5 text-left">
-                    <div className="flex gap-4">
-                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-sm">1</div>
-                      <div className="flex-1">
-                        <p className="text-slate-200 font-bold mb-1">Connect Your Gmail Account</p>
-                        <p className="text-slate-500 text-sm">Click the button below to securely authorize access to your Gmail inbox. Your credentials are encrypted and stored safely.</p>
-                      </div>
+                <div className="w-full bg-white/[0.02] border border-white/5 rounded-2xl p-5 text-left space-y-4">
+                  <div className="flex gap-3 items-start">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-xs">1</div>
+                    <div>
+                      <p className="text-slate-200 text-sm font-semibold">Connect your Gmail account</p>
+                      <p className="text-slate-500 text-xs mt-0.5">Click the button below to securely authorize access.</p>
                     </div>
-                    <div className="flex gap-4">
-                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-sm">2</div>
-                      <div className="flex-1">
-                        <p className="text-slate-200 font-bold mb-1">Select Your Account</p>
-                        <p className="text-slate-500 text-sm">After connecting, click the account switcher in the top-right corner to activate and view your emails. You can connect up to {MAX_CONNECTED_ACCOUNTS} accounts.</p>
-                      </div>
+                  </div>
+                  <div className="flex gap-3 items-start">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-xs">2</div>
+                    <div>
+                      <p className="text-slate-200 text-sm font-semibold">Select your account</p>
+                      <p className="text-slate-500 text-xs mt-0.5">Use the account switcher (top-right) to activate it. Up to {MAX_CONNECTED_ACCOUNTS} accounts.</p>
                     </div>
-                    <div className="flex gap-4">
-                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-sm">3</div>
-                      <div className="flex-1">
-                        <p className="text-slate-200 font-bold mb-1">Your Intelligence Feed Loads</p>
-                        <p className="text-slate-500 text-sm">Emails from your INBOX will sync automatically. Switch between accounts anytime using the dropdown menu.</p>
-                      </div>
+                  </div>
+                  <div className="flex gap-3 items-start">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-xs">3</div>
+                    <div>
+                      <p className="text-slate-200 text-sm font-semibold">Your feed syncs automatically</p>
+                      <p className="text-slate-500 text-xs mt-0.5">Inbox emails appear and AI summaries generate in seconds.</p>
                     </div>
                   </div>
                 </div>
 
                 <a
                   href={apiService.getGoogleAuthUrl()}
-                  className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-base font-black transition-all shadow-2xl shadow-indigo-600/30 active:scale-95 border border-indigo-400/20"
+                  className="inline-flex items-center gap-3 px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold transition-all shadow-2xl shadow-indigo-600/30 active:scale-95 border border-indigo-400/20"
                 >
-                  <Mail size={20} />
+                  <Mail size={16} />
                   <span>Connect Your First Account</span>
-                  <ChevronRight size={18} />
+                  <ChevronRight size={14} />
                 </a>
 
-                <p className="text-slate-600 text-xs font-medium max-w-md">
-                  🔒 Your data is encrypted end-to-end. We only read your INBOX with permissions you grant. You can disconnect anytime.
+                <p className="text-slate-600 text-xs max-w-xs">
+                  Read-only INBOX access. Encrypted credentials. Disconnect anytime.
                 </p>
               </div>
             ) : !activeEmail && connectedAccounts.length > 0 ? (
               /* CRITICAL: Show "Select Account" when accounts exist but none is active */
-              <div className="w-full py-32 flex flex-col items-center gap-6 text-center">
-                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-xl">
-                  <Mail size={40} className="text-indigo-400" />
+              <div className="w-full py-16 flex flex-col items-center gap-6 text-center">
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-xl">
+                  <Mail size={28} className="text-indigo-400" />
                   <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-pulse" />
                 </div>
                 <div>
@@ -1839,7 +1845,7 @@ export const App = () => {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ duration: 0.25, ease: 'easeOut' }}
-              className="fixed top-0 right-0 z-[200] h-screen w-full md:w-[60vw] bg-[#0f172a] border-l border-white/10 shadow-2xl flex flex-col"
+              className="fixed top-0 right-0 z-[200] h-screen w-full md:w-[65vw] bg-[#0f172a] border-l border-white/10 shadow-2xl flex flex-col"
             >
               {/* Panel Header - Sticky */}
               <div className="sticky top-0 z-10 bg-[#0f172a]/95 backdrop-blur-sm border-b border-white/5 px-6 py-5">
@@ -1874,13 +1880,13 @@ export const App = () => {
               </div>
 
               {/* Panel Body - always scrollable, always full height above compose footer */}
-              <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-6 space-y-6 min-h-0">
+              <div className="flex-1 overflow-y-auto custom-scrollbar px-5 py-6 space-y-8 min-h-0 sm:px-8 sm:py-8">
                 {/* Section 1: AI Analysis */}
                 {selectedEmailDetail.ai_summary_text && (
                   <div className="space-y-4">
                     <div className="flex items-center gap-2">
                       <Sparkles size={16} className="text-indigo-400" />
-                      <h3 className="text-sm font-black text-indigo-400 uppercase tracking-wider">AI Analysis</h3>
+                      <h3 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider">AI Analysis</h3>
                       {selectedEmailDetail.ai_summary_model && (
                         <span className="text-[9px] text-slate-600 font-bold">{selectedEmailDetail.ai_summary_model}</span>
                       )}
@@ -1894,7 +1900,7 @@ export const App = () => {
                     {/* Action Items */}
                     {selectedEmailDetail.ai_summary_json?.action_items && selectedEmailDetail.ai_summary_json.action_items.length > 0 && (
                       <div ref={actionItemsRef} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-                        <p className="text-xs font-black text-indigo-400 uppercase tracking-wider mb-3">Action Items</p>
+                        <p className="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-3">Action Items</p>
                         <ol className="space-y-2 list-decimal list-inside">
                           {selectedEmailDetail.ai_summary_json.action_items.map((action: string, idx: number) => (
                             <li key={idx} className="text-sm leading-relaxed text-slate-300">{action}</li>
@@ -1912,9 +1918,9 @@ export const App = () => {
 
                 {/* Section 2: Full Message */}
                 <div className="space-y-3">
-                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider">Full Message</h3>
+                  <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Full Message</h3>
                   <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-                    <pre className="text-[13px] leading-[1.7] text-slate-300 whitespace-pre-wrap font-sans break-words">
+                    <pre className="text-sm leading-relaxed text-slate-300 whitespace-pre-wrap font-sans break-words">
                       {selectedEmailDetail.body || selectedEmailDetail.summary || 'No message body available.'}
                     </pre>
                   </div>
@@ -1922,22 +1928,25 @@ export const App = () => {
               </div>
 
               {/* Compose footer — sticky at bottom, expands when compose is open */}
-              <div className="flex-shrink-0 border-t border-white/10 bg-[#0f172a]">
+              <div className="flex-shrink-0 border-t border-white/[0.12] bg-[#0f172a]">
 
                 {/* Compose area — only rendered when open */}
                 {showReplyCompose && (
-                  <div className="px-6 pt-4 pb-2 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-black text-indigo-400 uppercase tracking-wider">Reply</h3>
+                  <>
+                    {/* D4/M3: Compose header — pinned above scroll region, always visible */}
+                    <div className="px-6 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.08]">
+                      <h3 className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Reply</h3>
                       <button
                         onClick={() => { setShowReplyCompose(false); setReplyBody(''); setReplySubject(''); setReplyCC(''); setPanelError(null); }}
-                        className="p-1.5 rounded-lg hover:bg-white/10 text-slate-500 hover:text-slate-300 transition-colors"
+                        className="p-2 rounded-lg hover:bg-white/10 text-slate-500 hover:text-slate-300 transition-colors"
                         disabled={sending}
                         title="Discard draft"
                       >
                         <X size={14} />
                       </button>
                     </div>
+                    {/* M3: Inputs region — bounded height with internal scroll; action bar stays outside */}
+                    <div className="px-6 pt-3 pb-2 space-y-3 max-h-[40vh] overflow-y-auto overscroll-contain">
                     {panelError && (
                       <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
                         <AlertCircle size={13} className="flex-shrink-0" />
@@ -1963,23 +1972,27 @@ export const App = () => {
                       value={replyBody}
                       onChange={(e) => setReplyBody(e.target.value)}
                       placeholder="Write your reply here…"
-                      rows={5}
+                      rows={4}
                       className="w-full p-3 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
                     />
+                    {/* D3: Quoted original — visually separated from compose textarea */}
                     {selectedEmailDetail?.body && (() => {
                       const excerpt = sanitizeOriginalExcerpt(selectedEmailDetail.body);
                       return excerpt ? (
-                        <div className="px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
-                          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider select-none">
-                            {buildAttribution(selectedEmailDetail.date || '', selectedEmailDetail.sender || '')}
-                          </p>
-                          <p className="text-xs text-slate-500 leading-relaxed line-clamp-5 whitespace-pre-wrap select-none">
-                            {excerpt}
-                          </p>
+                        <div className="border-t border-white/[0.08] pt-3">
+                          <div className="pl-3 border-l-2 border-indigo-500/40 bg-white/[0.03] py-2 pr-3 rounded-r-lg space-y-1">
+                            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider select-none">
+                              {buildAttribution(selectedEmailDetail.date || '', selectedEmailDetail.sender || '')}
+                            </p>
+                            <p className="text-xs text-slate-500 leading-relaxed line-clamp-5 whitespace-pre-wrap select-none">
+                              {excerpt}
+                            </p>
+                          </div>
                         </div>
                       ) : null;
                     })()}
-                  </div>
+                    </div>
+                  </>
                 )}
 
                 {/* Error banner when compose is closed */}
@@ -1993,7 +2006,7 @@ export const App = () => {
                 )}
 
                 {/* Action bar — always visible at the very bottom */}
-                <div className="px-6 py-3 flex items-center justify-between gap-3">
+                <div className="px-6 py-4 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => closeDetailPanel()}
@@ -2023,7 +2036,7 @@ export const App = () => {
                       <button
                         onClick={handleSendReply}
                         disabled={sending || !replyBody.trim() || !selectedEmailDetail.thread_id}
-                        className="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-1.5"
+                        className="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-1.5 min-w-[120px]"
                       >
                         {sending ? (
                           <>
