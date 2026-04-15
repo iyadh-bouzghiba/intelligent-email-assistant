@@ -41,7 +41,7 @@ export function SentList({ emails, loading, onSelect }: Props) {
           <Mail size={40} className="text-indigo-500/20" />
         </div>
         <div>
-          <h3 className="text-2xl font-black text-white mb-2">No Sent Emails</h3>
+          <h3 className="text-xl font-semibold text-white mb-2">No Sent Emails</h3>
           <p className="text-slate-500 max-w-xs font-medium">
             No emails sent from this account yet.
           </p>
@@ -54,20 +54,20 @@ export function SentList({ emails, loading, onSelect }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {emails.map((email) => (
         <button
           key={email.id}
           onClick={() => onSelect(email)}
-          className="group text-left w-full flex flex-col p-5 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-200 shadow-xl"
+          className="group text-left w-full flex flex-col p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-200 shadow-xl"
         >
           {/* To / CC row */}
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider">To</span>
+            <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">To</span>
             <span className="text-xs font-semibold text-slate-300 truncate">{email.to_address}</span>
             {email.cc_addresses && (
               <>
-                <span className="text-[9px] font-black text-slate-600 uppercase tracking-wider">cc</span>
+                <span className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">cc</span>
                 <span className="text-xs text-slate-500 truncate">{email.cc_addresses}</span>
               </>
             )}
@@ -89,7 +89,7 @@ export function SentList({ emails, loading, onSelect }: Props) {
 
           {/* Timestamp */}
           <div className="flex items-center gap-1 text-[10px] text-slate-600 mt-auto">
-            <Clock size={10} className="text-indigo-400/50" />
+            <Clock size={11} className="text-indigo-400/50" />
             <span>{formatSentAt(email.sent_at)}</span>
           </div>
         </button>

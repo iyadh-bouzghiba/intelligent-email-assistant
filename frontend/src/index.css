@@ -38,6 +38,11 @@
   }
 }
 
+/* D2: Prevent background scroll when detail panel is open */
+body.panel-open {
+  overflow: hidden;
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
