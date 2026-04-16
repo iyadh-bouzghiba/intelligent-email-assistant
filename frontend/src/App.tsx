@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiService } from '@services';
 import { websocketService } from '@services/websocket';
-import { Sparkles, RefreshCw, Mail, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, X, Send } from 'lucide-react';
+import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Briefing, AccountInfo, SentEmail } from '@types';
 import { SentList } from './components/SentList';
+import { EmailDetailModal } from './components/EmailDetailModal';
+import { ReplyComposeModal } from './components/ReplyComposeModal';
 
 const BRAND_NAME = "EXECUTIVE BRAIN";
 const SUBTITLE = "Strategic Intelligence Feed";
@@ -73,7 +75,8 @@ export const App = () => {
   const [scrollToActions, setScrollToActions] = useState(false);
   const actionItemsRef = useRef<HTMLDivElement | null>(null);
   const replyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [showReplyCompose, setShowReplyCompose] = useState(false);
+  const [activeModal, setActiveModal] = useState<'none' | 'detail' | 'compose'>('none');
+  const [isDetailRead, setIsDetailRead] = useState(false);
   const [replyBody, setReplyBody] = useState('');
   const [replySubject, setReplySubject] = useState('');
   const [replyCC, setReplyCC] = useState('');
@@ -83,6 +86,8 @@ export const App = () => {
   const [sendSuccess, setSendSuccess] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
   const [diagnosticClickCount, setDiagnosticClickCount] = useState(0);
+  const [panelView, setPanelView] = useState<'quick' | 'full'>('quick');
+  const [detailIsSent, setDetailIsSent] = useState(false);
   const [activeTab, setActiveTab] = useState<'inbox' | 'sent'>('inbox');
   const [sentEmails, setSentEmails] = useState<SentEmail[]>([]);
   const [loadingSent, setLoadingSent] = useState(false);
@@ -185,21 +190,27 @@ export const App = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Escape key closes details panel (also resets compose)
+  // Escape key: if compose is open → discard compose, stay on detail; else → close detail
   useEffect(() => {
     if (!selectedEmailDetail) return;
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setSelectedEmailDetail(null);
-        setShowReplyCompose(false);
-        setReplyBody('');
-        setSendSuccess(false);
-        setPanelError(null);
+        if (activeModal === 'compose') {
+          setActiveModal('detail');
+          setReplyBody('');
+          setReplySubject('');
+          setReplyCC('');
+          setPanelError(null);
+        } else {
+          setSelectedEmailDetail(null);
+          setSendSuccess(false);
+          setPanelError(null);
+        }
       }
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [selectedEmailDetail]);
+  }, [selectedEmailDetail, activeModal]);
 
   // D2: Lock background scroll while detail panel is open; restore on close or unmount
   useEffect(() => {
@@ -213,9 +224,9 @@ export const App = () => {
     };
   }, [selectedEmailDetail]);
 
-  // Autofocus reply textarea when compose opens; place caret at top deterministically
+  // Autofocus reply textarea when compose modal opens; place caret at top deterministically
   useEffect(() => {
-    if (showReplyCompose && replyTextareaRef.current) {
+    if (activeModal === 'compose' && replyTextareaRef.current) {
       const timer = setTimeout(() => {
         const el = replyTextareaRef.current;
         if (!el) return;
@@ -225,13 +236,15 @@ export const App = () => {
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [showReplyCompose]);
+  }, [activeModal]);
 
   // INVARIANT: Whenever selected email changes or panel closes, force compose back to neutral.
   // This is a defensive guard — even if a future call path bypasses closeDetailPanel/openEmailDetail,
   // compose state cannot leak across email identity changes.
   useEffect(() => {
-    setShowReplyCompose(false);
+    if (!selectedEmailDetail) {
+      setActiveModal('none');
+    }
     setReplyBody('');
     setReplyCC('');
     setSending(false);
@@ -898,7 +911,7 @@ export const App = () => {
         setReplyBody('');
         setReplySubject('');
         setReplyCC('');
-        setShowReplyCompose(false);
+        setActiveModal('detail');
         setPanelError(null);
 
         await fetchEmails(activeEmail, { reason: 'post-send' });
@@ -929,7 +942,7 @@ export const App = () => {
     }
     // Detail panel + compose state
     setSelectedEmailDetail(null);
-    setShowReplyCompose(false);
+    setActiveModal('none');
     setReplyBody('');
     setReplySubject('');
     setReplyCC('');
@@ -949,8 +962,8 @@ export const App = () => {
   };
 
   // Open a specific email in the details panel, resetting any previous compose state
-  const openEmailDetail = (item: Briefing, scrollToAct = false) => {
-    setShowReplyCompose(false);
+  const openEmailDetail = (item: Briefing, scrollToAct = false, isSent = false) => {
+    setActiveModal('detail');
     setReplyBody('');
     setReplySubject('');
     setReplyCC('');
@@ -958,7 +971,96 @@ export const App = () => {
     setSendSuccess(false);
     setPanelError(null);
     setScrollToActions(scrollToAct);
+    setPanelView('quick');
+    setDetailIsSent(isSent);
+    setIsDetailRead(!!item.is_read);
     setSelectedEmailDetail(item);
+    // Auto-mark read for unread inbox items when modify scope is available
+    if (!isSent && !item.is_read && item.thread_id) {
+      const acct = accounts.find(a => a.account_id === activeEmail);
+      if (acct?.modify_scope) {
+        apiService.setThreadReadState(item.thread_id, true).then(res => {
+          if (res.success === true && res.gmail_updated === true) {
+            // Gmail succeeded — apply optimistic UI immediately
+            setIsDetailRead(true);
+            setBriefings(prev => prev.map(b =>
+              b.thread_id === item.thread_id ? { ...b, is_read: true } : b
+            ));
+            if (res.db_updated === false) {
+              // DB mirror did not confirm — re-fetch to reconcile list state from server
+              console.warn('[READ-STATE] DB mirror unconfirmed on auto-mark-read:', res.db_error);
+              fetchEmails(activeEmail, { reason: 'read-state-db-reconcile' });
+            }
+          }
+        });
+      }
+    }
+  };
+
+  // Extracted: open compose in standalone modal; called by EmailDetailModal
+  const handleOpenReply = () => {
+    setPanelError(null);
+    if (!selectedEmailDetail?.thread_id) {
+      setPanelError('Cannot reply: thread ID missing. Please refresh your emails and try again.');
+      return;
+    }
+    const subject = normalizeReplySubject(selectedEmailDetail.subject || '');
+    setReplySubject(subject);
+    setReplyBody('');
+    setReplyCC('');
+    setActiveModal('compose');
+    setSendSuccess(false);
+  };
+
+  // Extracted: discard compose → return to detail view
+  const handleDiscardCompose = () => {
+    setActiveModal('detail');
+    setReplyBody('');
+    setReplySubject('');
+    setReplyCC('');
+    setPanelError(null);
+  };
+
+  // Extracted: mark thread read via Gmail API
+  const handleMarkRead = async () => {
+    if (!selectedEmailDetail?.thread_id) return;
+    const res = await apiService.setThreadReadState(selectedEmailDetail.thread_id, true);
+    if (res.success === true && res.gmail_updated === true) {
+      setIsDetailRead(true);
+      setBriefings(prev => prev.map(b =>
+        b.thread_id === selectedEmailDetail.thread_id ? { ...b, is_read: true } : b
+      ));
+      if (res.db_updated === false) {
+        console.warn('[READ-STATE] DB mirror unconfirmed on mark-read:', res.db_error);
+        fetchEmails(activeEmail, { reason: 'read-state-db-reconcile' });
+      }
+    }
+  };
+
+  // Extracted: mark thread unread via Gmail API
+  const handleMarkUnread = async () => {
+    if (!selectedEmailDetail?.thread_id) return;
+    const res = await apiService.setThreadReadState(selectedEmailDetail.thread_id, false);
+    if (res.success === true && res.gmail_updated === true) {
+      setIsDetailRead(false);
+      setBriefings(prev => prev.map(b =>
+        b.thread_id === selectedEmailDetail.thread_id ? { ...b, is_read: false } : b
+      ));
+      if (res.db_updated === false) {
+        console.warn('[READ-STATE] DB mirror unconfirmed on mark-unread:', res.db_error);
+        fetchEmails(activeEmail, { reason: 'read-state-db-reconcile' });
+      }
+    }
+  };
+
+  // Extracted: queue AI summarization from modal; called by EmailDetailModal
+  const handleSummarizeFromModal = async () => {
+    if (!activeEmail || !selectedEmailDetail?.gmail_message_id) return;
+    const id = selectedEmailDetail.gmail_message_id;
+    setSummarizingIds(prev => new Set(prev).add(id));
+    await apiService.summarizeEmail(id, activeEmail);
+    console.log('[MODAL] Summarization queued for', id);
+    scheduleSummaryRefresh(activeEmail);
   };
 
   const handleDisconnectAll = async () => {
@@ -1439,7 +1541,7 @@ export const App = () => {
             <SentList
               emails={sentEmails}
               loading={loadingSent}
-              onSelect={(se: SentEmail) => openEmailDetail(sentToBriefing(se))}
+              onSelect={(se: SentEmail) => openEmailDetail(sentToBriefing(se), false, true)}
             />
           </div>
         )}
@@ -1517,9 +1619,10 @@ export const App = () => {
                   {/* Subject and sender */}
                   <div className="mb-3">
                     <div className="flex items-start gap-2 mb-1">
-                      {item.is_read === false && (
-                        <span className="mt-1.5 w-2.5 h-2.5 rounded-full bg-indigo-400 flex-shrink-0" title="Unread" />
-                      )}
+                      {item.is_read === false
+                        ? <Mail size={14} className="mt-1 text-indigo-400 flex-shrink-0" aria-label="Unread" />
+                        : <MailOpen size={14} className="mt-1 text-slate-600 flex-shrink-0" aria-label="Read" />
+                      }
                       <h3 className={`text-lg tracking-tight leading-tight group-hover:text-indigo-400 transition-colors duration-300 ${item.is_read === false ? 'font-black text-white' : 'font-bold text-slate-200'}`}>
                         {item.subject}
                       </h3>
@@ -1829,253 +1932,46 @@ export const App = () => {
         )}
       </AnimatePresence>
 
-      {/* Email Details Panel - Slides from right */}
+      {/* Email Detail Modal — centered blocking dialog (read-only view) */}
       <AnimatePresence>
-        {selectedEmailDetail && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm"
-              onClick={() => closeDetailPanel()}
-            />
-            <motion.div
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-              className="fixed top-0 right-0 z-[200] h-screen w-full md:w-[65vw] bg-[#0f172a] border-l border-white/10 shadow-2xl flex flex-col"
-            >
-              {/* Panel Header - Sticky */}
-              <div className="sticky top-0 z-10 bg-[#0f172a]/95 backdrop-blur-sm border-b border-white/5 px-6 py-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <h2 className="text-xl font-black text-white mb-2 leading-tight">{selectedEmailDetail.subject}</h2>
-                    <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
-                      <span className="font-semibold text-slate-300">{selectedEmailDetail.sender}</span>
-                      <span className="text-slate-600">|</span>
-                      <span>{selectedEmailDetail.date}</span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-3">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
-                        selectedEmailDetail.priority === 'High' ? 'bg-[#FF3B5C] text-white border-[#FF3B5C]' :
-                        selectedEmailDetail.priority === 'Medium' ? 'bg-[#FFB800] text-[#1a1a1a] border-[#FFB800]' :
-                        'bg-[#3D4A5C] text-[#94A3B8] border-[#3D4A5C]'
-                      }`}>
-                        {selectedEmailDetail.priority}
-                      </span>
-                      <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getCategoryStyles(selectedEmailDetail.category)}`}>
-                        {selectedEmailDetail.category}
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => closeDetailPanel()}
-                    className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors flex-shrink-0"
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-              </div>
+        {selectedEmailDetail && activeModal === 'detail' && (
+          <EmailDetailModal
+            email={selectedEmailDetail}
+            panelView={panelView}
+            detailIsSent={detailIsSent}
+            modifyScope={!!accounts.find(a => a.account_id === activeEmail)?.modify_scope}
+            isRead={isDetailRead}
+            actionItemsRef={actionItemsRef}
+            onClose={closeDetailPanel}
+            onSwitchView={setPanelView}
+            onOpenReply={handleOpenReply}
+            onSummarize={handleSummarizeFromModal}
+            onMarkRead={handleMarkRead}
+            onMarkUnread={handleMarkUnread}
+            getCategoryStyles={getCategoryStyles}
+          />
+        )}
+      </AnimatePresence>
 
-              {/* Panel Body - always scrollable, always full height above compose footer */}
-              <div className="flex-1 overflow-y-auto custom-scrollbar px-5 py-6 space-y-8 min-h-0 sm:px-8 sm:py-8">
-                {/* Section 1: AI Analysis */}
-                {selectedEmailDetail.ai_summary_text && (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Sparkles size={16} className="text-indigo-400" />
-                      <h3 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider">AI Analysis</h3>
-                      {selectedEmailDetail.ai_summary_model && (
-                        <span className="text-[9px] text-slate-600 font-bold">{selectedEmailDetail.ai_summary_model}</span>
-                      )}
-                    </div>
-
-                    {/* Overview */}
-                    <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-                      <p className="text-sm leading-relaxed text-slate-200">{selectedEmailDetail.ai_summary_text}</p>
-                    </div>
-
-                    {/* Action Items */}
-                    {selectedEmailDetail.ai_summary_json?.action_items && selectedEmailDetail.ai_summary_json.action_items.length > 0 && (
-                      <div ref={actionItemsRef} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-                        <p className="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-3">Action Items</p>
-                        <ol className="space-y-2 list-decimal list-inside">
-                          {selectedEmailDetail.ai_summary_json.action_items.map((action: string, idx: number) => (
-                            <li key={idx} className="text-sm leading-relaxed text-slate-300">{action}</li>
-                          ))}
-                        </ol>
-                      </div>
-                    )}
-
-                    {/* Urgency */}
-                    {selectedEmailDetail.ai_summary_json?.urgency && (
-                      <p className="text-xs text-slate-500">Urgency: <span className="font-bold text-slate-400 capitalize">{selectedEmailDetail.ai_summary_json.urgency}</span></p>
-                    )}
-                  </div>
-                )}
-
-                {/* Section 2: Full Message */}
-                <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Full Message</h3>
-                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-                    <pre className="text-sm leading-relaxed text-slate-300 whitespace-pre-wrap font-sans break-words">
-                      {selectedEmailDetail.body || selectedEmailDetail.summary || 'No message body available.'}
-                    </pre>
-                  </div>
-                </div>
-              </div>
-
-              {/* Compose footer — sticky at bottom, expands when compose is open */}
-              <div className="flex-shrink-0 border-t border-white/[0.12] bg-[#0f172a]">
-
-                {/* Compose area — only rendered when open */}
-                {showReplyCompose && (
-                  <>
-                    {/* D4/M3: Compose header — pinned above scroll region, always visible */}
-                    <div className="px-6 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.08]">
-                      <h3 className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Reply</h3>
-                      <button
-                        onClick={() => { setShowReplyCompose(false); setReplyBody(''); setReplySubject(''); setReplyCC(''); setPanelError(null); }}
-                        className="p-2 rounded-lg hover:bg-white/10 text-slate-500 hover:text-slate-300 transition-colors"
-                        disabled={sending}
-                        title="Discard draft"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                    {/* M3: Inputs region — bounded height with internal scroll; action bar stays outside */}
-                    <div className="px-6 pt-3 pb-2 space-y-3 max-h-[40vh] overflow-y-auto overscroll-contain">
-                    {panelError && (
-                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
-                        <AlertCircle size={13} className="flex-shrink-0" />
-                        <span className="font-bold">{panelError}</span>
-                      </div>
-                    )}
-                    <input
-                      type="text"
-                      value={replySubject}
-                      onChange={(e) => setReplySubject(e.target.value)}
-                      placeholder="Subject"
-                      className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
-                    />
-                    <input
-                      type="text"
-                      value={replyCC}
-                      onChange={(e) => setReplyCC(e.target.value)}
-                      placeholder="Cc (optional — comma or semicolon separated)"
-                      className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
-                    />
-                    <textarea
-                      ref={replyTextareaRef}
-                      value={replyBody}
-                      onChange={(e) => setReplyBody(e.target.value)}
-                      placeholder="Write your reply here…"
-                      rows={4}
-                      className="w-full p-3 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
-                    />
-                    {/* D3: Quoted original — visually separated from compose textarea */}
-                    {selectedEmailDetail?.body && (() => {
-                      const excerpt = sanitizeOriginalExcerpt(selectedEmailDetail.body);
-                      return excerpt ? (
-                        <div className="border-t border-white/[0.08] pt-3">
-                          <div className="pl-3 border-l-2 border-indigo-500/40 bg-white/[0.03] py-2 pr-3 rounded-r-lg space-y-1">
-                            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider select-none">
-                              {buildAttribution(selectedEmailDetail.date || '', selectedEmailDetail.sender || '')}
-                            </p>
-                            <p className="text-xs text-slate-500 leading-relaxed line-clamp-5 whitespace-pre-wrap select-none">
-                              {excerpt}
-                            </p>
-                          </div>
-                        </div>
-                      ) : null;
-                    })()}
-                    </div>
-                  </>
-                )}
-
-                {/* Error banner when compose is closed */}
-                {!showReplyCompose && panelError && (
-                  <div className="mx-6 mt-3">
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
-                      <AlertCircle size={13} className="flex-shrink-0" />
-                      <span className="font-bold">{panelError}</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Action bar — always visible at the very bottom */}
-                <div className="px-6 py-4 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => closeDetailPanel()}
-                      className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
-                    >
-                      Close
-                    </button>
-                    {!selectedEmailDetail.ai_summary_text && selectedEmailDetail.gmail_message_id && (
-                      <button
-                        onClick={async () => {
-                          if (!activeEmail) return;
-                          const id = selectedEmailDetail.gmail_message_id!;
-                          setSummarizingIds(prev => new Set(prev).add(id));
-                          await apiService.summarizeEmail(id, activeEmail);
-                          console.log('[PANEL] Summarization queued for', id);
-                          scheduleSummaryRefresh(activeEmail);
-                        }}
-                        className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5"
-                      >
-                        <Sparkles size={12} />
-                        Summarize
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {showReplyCompose ? (
-                      <button
-                        onClick={handleSendReply}
-                        disabled={sending || !replyBody.trim() || !selectedEmailDetail.thread_id}
-                        className="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-1.5 min-w-[120px]"
-                      >
-                        {sending ? (
-                          <>
-                            <RefreshCw size={12} className="animate-spin" />
-                            Sending...
-                          </>
-                        ) : (
-                          <>
-                            <Mail size={12} />
-                            Send Reply
-                          </>
-                        )}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setPanelError(null);
-                          if (!selectedEmailDetail.thread_id) {
-                            setPanelError('Cannot reply: thread ID missing. Please refresh your emails and try again.');
-                            return;
-                          }
-                          const subject = normalizeReplySubject(selectedEmailDetail.subject || '');
-                          setReplySubject(subject);
-                          setReplyBody('');
-                          setReplyCC('');
-                          setShowReplyCompose(true);
-                          setSendSuccess(false);
-                        }}
-                        className="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-1.5"
-                      >
-                        <Mail size={12} />
-                        Draft Reply
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </>
+      {/* Reply Compose Modal — standalone compose dialog */}
+      <AnimatePresence>
+        {selectedEmailDetail && activeModal === 'compose' && (
+          <ReplyComposeModal
+            email={selectedEmailDetail}
+            replyBody={replyBody}
+            replySubject={replySubject}
+            replyCC={replyCC}
+            sending={sending}
+            panelError={panelError}
+            replyTextareaRef={replyTextareaRef}
+            onDiscard={handleDiscardCompose}
+            onSend={handleSendReply}
+            onReplyBodyChange={setReplyBody}
+            onReplySubjectChange={setReplySubject}
+            onReplyCCChange={setReplyCC}
+            sanitizeOriginalExcerpt={sanitizeOriginalExcerpt}
+            buildAttribution={buildAttribution}
+          />
         )}
       </AnimatePresence>
 
