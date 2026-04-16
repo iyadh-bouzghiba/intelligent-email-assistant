@@ -18,6 +18,7 @@ class OAuthManager:
             'openid',  # CRITICAL: Explicitly request to prevent scope mismatch
             'https://www.googleapis.com/auth/gmail.readonly',
             'https://www.googleapis.com/auth/gmail.send',  # Allow sending emails
+            'https://www.googleapis.com/auth/gmail.modify',  # Allow read/unread writeback
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile'
         ]

@@ -1325,6 +1325,111 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
             "error": f"Unexpected error: {str(e)}"
         }
 
+@api_router.post("/threads/{thread_id}/read-state")
+async def set_thread_read_state(thread_id: str, request: Request):
+    """
+    Mark a Gmail thread as read or unread.
+
+    account_id is derived server-side from the emails table by thread_id.
+    The client does NOT supply account_id.
+
+    Ambiguity guard: if the thread_id is associated with more than one distinct
+    account_id in the emails table, the route fails explicitly rather than
+    silently picking one — a write against the wrong account is worse than
+    a clear error.
+
+    Request body:  { "is_read": true | false }
+    Response:      { "success": true, "gmail_updated": true, "db_updated": true }
+                or { "success": true, "gmail_updated": true, "db_updated": false,
+                     "db_error": "<reason>" }
+                or { "success": false, "error": "<reason>" }
+
+    Side-effects:
+      1. GmailClient.set_thread_read_state() → threads().modify() (single API call)
+      2. UPDATE emails SET is_read=<value>
+             WHERE thread_id=:thread_id AND account_id=:resolved_account_id
+         db_updated reflects whether this succeeded.
+    """
+    try:
+        body = await request.json()
+        is_read: bool = bool(body.get("is_read", True))
+
+        store = safe_get_store()
+        if not store:
+            return {"success": False, "error": "Database unavailable"}
+
+        # Fetch ALL rows for this thread_id — do not LIMIT 1
+        email_records = await asyncio.to_thread(
+            lambda: store.client.table("emails")
+                .select("account_id")
+                .eq("thread_id", thread_id)
+                .execute()
+        )
+        if not email_records.data:
+            return {"success": False, "error": f"Thread {thread_id} not found in emails table"}
+
+        # Ambiguity guard: reject if thread spans multiple distinct accounts
+        distinct_accounts = list({row["account_id"] for row in email_records.data if row.get("account_id")})
+        if len(distinct_accounts) == 0:
+            return {"success": False, "error": f"Thread {thread_id} has no resolvable account_id"}
+        if len(distinct_accounts) > 1:
+            logger.error(
+                f"[READ-STATE] Ambiguous account for thread {thread_id}: "
+                f"{distinct_accounts} — refusing write"
+            )
+            return {
+                "success": False,
+                "error": (
+                    f"Thread {thread_id} is associated with {len(distinct_accounts)} distinct accounts. "
+                    "Supply account_id explicitly or resolve the ambiguity first."
+                ),
+            }
+
+        account_id: str = distinct_accounts[0]
+
+        credential_store = CredentialStore(persistence)
+        token_data = await asyncio.to_thread(credential_store.load_credentials, account_id)
+        if not token_data:
+            return {
+                "success": False,
+                "error": f"No credentials for account {account_id} — re-authentication required",
+            }
+
+        gmail_client = GmailClient(token_data)
+        await asyncio.to_thread(gmail_client.refresh_if_needed)
+        await asyncio.to_thread(gmail_client.set_thread_read_state, thread_id, is_read)
+        # gmail_updated is True from this point — any exception above would have raised
+
+        # Mirror to Supabase emails table; report outcome truthfully
+        db_updated: bool = False
+        db_error_msg: str = ""
+        try:
+            await asyncio.to_thread(
+                lambda: store.client.table("emails")
+                    .update({"is_read": is_read})
+                    .eq("thread_id", thread_id)
+                    .eq("account_id", account_id)
+                    .execute()
+            )
+            db_updated = True
+        except Exception as db_err:
+            db_error_msg = str(db_err)
+            logger.warning(f"[READ-STATE] Supabase update failed: {db_err}")
+
+        logger.info(
+            f"[READ-STATE] thread={thread_id} account={account_id} "
+            f"is_read={is_read} gmail_updated=True db_updated={db_updated}"
+        )
+        result: dict = {"success": True, "gmail_updated": True, "db_updated": db_updated}
+        if not db_updated:
+            result["db_error"] = db_error_msg
+        return result
+
+    except Exception as e:
+        logger.error(f"[READ-STATE] Unexpected error: {type(e).__name__}: {e}")
+        return {"success": False, "error": str(e)}
+
+
 @api_router.get("/sent")
 async def get_sent_emails(account_id: str, limit: int = 50, offset: int = 0):
     """
@@ -1571,11 +1676,13 @@ async def list_accounts():
             except Exception:
                 auth_required = True
             send_scope = any("gmail.send" in (s or "") for s in scopes)
+            modify_scope = any("gmail.modify" in (s or "") for s in scopes)
             accounts.append({
                 "account_id": account_id,
                 "connected": True,
                 "auth_required": auth_required,
                 "send_scope": send_scope,
+                "modify_scope": modify_scope,
                 "updated_at": c.get("updated_at"),
                 "scopes": scopes,
             })

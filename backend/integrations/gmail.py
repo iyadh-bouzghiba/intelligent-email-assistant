@@ -245,6 +245,33 @@ class GmailClient:
         except HttpError as e:
             raise RuntimeError(f"Failed to fetch reply headers for {parent_message_id}: {e}")
 
+    def set_thread_read_state(self, thread_id: str, is_read: bool) -> None:
+        """
+        Mark a Gmail thread as read or unread using the canonical thread-level API.
+
+        Uses threads().modify() which operates on the full thread in a single call,
+        matching Gmail's own thread-level read/unread UX behavior.
+
+        Requires gmail.modify scope.
+
+        Args:
+            thread_id: Gmail thread ID
+            is_read: True → remove UNREAD label; False → add UNREAD label
+
+        Raises:
+            RuntimeError: If Gmail API call fails
+        """
+        try:
+            if is_read:
+                body = {'removeLabelIds': ['UNREAD'], 'addLabelIds': []}
+            else:
+                body = {'addLabelIds': ['UNREAD'], 'removeLabelIds': []}
+            self.service.users().threads().modify(
+                userId='me', id=thread_id, body=body
+            ).execute()
+        except HttpError as e:
+            raise RuntimeError(f"Failed to set read state for thread {thread_id}: {e}")
+
     def send_message(
         self,
         to: str,

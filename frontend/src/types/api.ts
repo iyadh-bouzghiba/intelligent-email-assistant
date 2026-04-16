@@ -101,6 +101,7 @@ export interface AccountInfo {
     connected: boolean;
     auth_required?: boolean;   // true = credentials row exists but cannot decrypt (re-auth needed)
     send_scope?: boolean;      // true = gmail.send scope is present
+    modify_scope?: boolean;    // true = gmail.modify scope is present (read/unread writeback)
     updated_at?: string | null;
     scopes?: string[];
 }
