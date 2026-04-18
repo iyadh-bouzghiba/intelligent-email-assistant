@@ -1,6 +1,7 @@
 import { RefObject } from 'react';
 import { Sparkles } from 'lucide-react';
 import { Briefing } from '@types';
+import { normalizeBodyText } from '@utils/normalizeBodyText';
 
 interface Props {
   email: Briefing;
@@ -9,11 +10,12 @@ interface Props {
 }
 
 /**
- * Quick View — shows AI summary + a short body preview.
+ * Quick View — shows AI summary + a short normalized body preview.
  * All action buttons live in EmailDetailModal's footer.
  */
 export function EmailQuickView({ email, actionItemsRef, onReadFull }: Props) {
-  const bodyText = email.body || email.summary || '';
+  const rawText = email.body || email.summary || '';
+  const bodyText = normalizeBodyText(rawText);
   const preview = bodyText.length > 320 ? bodyText.slice(0, 320) + '…' : bodyText;
 
   return (

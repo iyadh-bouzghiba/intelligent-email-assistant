@@ -7,38 +7,14 @@ import { Briefing, AccountInfo, SentEmail } from '@types';
 import { SentList } from './components/SentList';
 import { EmailDetailModal } from './components/EmailDetailModal';
 import { ReplyComposeModal } from './components/ReplyComposeModal';
+import { AccountSwitcherMobile } from './components/AccountSwitcherMobile';
+import { AccountSwitcherDesktop } from './components/AccountSwitcherDesktop';
+import { getAccountColor, getEmailInitials } from './components/AccountSwitcherList';
 
 const BRAND_NAME = "EXECUTIVE BRAIN";
 const SUBTITLE = "Strategic Intelligence Feed";
 const ITEMS_PER_PAGE = 5;
 const MAX_CONNECTED_ACCOUNTS = 3;
-
-// Helper function: Generate color based on email
-const getAccountColor = (email: string): string => {
-  const colors = [
-    'from-blue-500 to-indigo-600',
-    'from-purple-500 to-pink-600',
-    'from-emerald-500 to-teal-600',
-    'from-amber-500 to-orange-600',
-    'from-rose-500 to-red-600',
-    'from-cyan-500 to-blue-600',
-  ];
-  const hash = email.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return colors[hash % colors.length];
-};
-
-// Helper function: Get initials from email
-const getEmailInitials = (email: string): string => {
-  if (!email || email === 'default') return '?';
-  const username = email.split('@')[0];
-  if (username.length === 1) return username.toUpperCase();
-  // Take first letter + first letter after dot/underscore
-  const parts = username.split(/[._-]/);
-  if (parts.length > 1) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-  return username.substring(0, 2).toUpperCase();
-};
 
 export const App = () => {
   const [briefings, setBriefings] = useState<Briefing[]>([]);
@@ -51,10 +27,7 @@ export const App = () => {
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [activeEmail, setActiveEmail] = useState<string | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
-  const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const accountMenuRef = useRef<HTMLDivElement | null>(null);
-  const accountButtonRef = useRef<HTMLButtonElement | null>(null);
   const activeEmailRef = useRef<string | null>(null); // Track current activeEmail for closures
   const lastSyncTimeRef = useRef<number>(0); // Track last sync timestamp for cooldown
   const syncingRef = useRef<boolean>(false); // Ref-based lock for synchronous check (prevents race conditions)
@@ -71,7 +44,6 @@ export const App = () => {
   const [summarizingIds, setSummarizingIds] = useState<Set<string>>(new Set());
   const [selectedEmailDetail, setSelectedEmailDetail] = useState<Briefing | null>(null);
   const [offlineAccounts, setOfflineAccounts] = useState<Set<string>>(new Set());
-  const [showMaxAccountsMsg, setShowMaxAccountsMsg] = useState(false);
   const [scrollToActions, setScrollToActions] = useState(false);
   const actionItemsRef = useRef<HTMLDivElement | null>(null);
   const replyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -675,19 +647,6 @@ export const App = () => {
     };
   }, []);
 
-  useEffect(() => {
-    if (!showAccountMenu) { setShowMaxAccountsMsg(false); return; }
-    const onMouseDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      const menuEl = accountMenuRef.current;
-      const btnEl = accountButtonRef.current;
-      if (menuEl && menuEl.contains(target)) return;
-      if (btnEl && btnEl.contains(target)) return;
-      setShowAccountMenu(false);
-    };
-    document.addEventListener("mousedown", onMouseDown, true);
-    return () => document.removeEventListener("mousedown", onMouseDown, true);
-  }, [showAccountMenu]);
 
   // Keep activeEmailRef in sync with activeEmail state + persist to localStorage
   useEffect(() => {
@@ -997,6 +956,17 @@ export const App = () => {
     }
   };
 
+  // Extracted: account-switch handler — called by AccountSwitcherMobile / AccountSwitcherDesktop
+  const handleSwitchAccount = async (accountId: string) => {
+    console.log(`[SWITCH] Requested account: ${accountId}`);
+    resetAccountScopedState(); // immediately clears feed + summarize state
+    setActiveEmail(accountId);
+    setLoading(true);
+    console.log(`[SWITCH] Target account handoff started: ${accountId}`);
+    await runSync(accountId);
+    // setLoading(false) handled by fetchEmails' finally (or pending switch path)
+  };
+
   // Extracted: open compose in standalone modal; called by EmailDetailModal
   const handleOpenReply = () => {
     setPanelError(null);
@@ -1183,198 +1153,104 @@ export const App = () => {
       </div>
 
       <header className="sticky top-0 z-50 border-b border-white/5 bg-[#0f172a]/80 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <Brain className="text-white" size={20} />
-            </div>
-            <div>
-              <h1 className="text-white font-bold tracking-tight text-lg">{BRAND_NAME}</h1>
-              <div className="flex items-center gap-2">
-                <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${error ? 'bg-rose-500' : 'bg-emerald-500'}`} />
-                <p className={`text-[10px] uppercase tracking-[0.2em] font-bold ${error ? 'text-rose-500' : 'text-slate-500'}`}>
-                  {error ? 'Sentinel Offline' : 'Sentinel Active'}
-                </p>
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          {/* Primary row — brand + desktop controls */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                <Brain className="text-white" size={20} />
+              </div>
+              <div>
+                <h1 className="text-white font-bold tracking-tight text-lg">{BRAND_NAME}</h1>
+                <div className="flex items-center gap-2">
+                  <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${error ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                  <p className={`text-[10px] uppercase tracking-[0.2em] font-bold ${error ? 'text-rose-500' : 'text-slate-500'}`}>
+                    {error ? 'Sentinel Offline' : 'Sentinel Active'}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-3 flex-wrap justify-end min-w-0">
-            <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/5">
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Sentinel Alerts</span>
+            {/* Desktop-only controls */}
+            <div className="hidden sm:flex items-center gap-3 flex-wrap justify-end min-w-0">
+              <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/5">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Sentinel Alerts</span>
+                <button
+                  onClick={() => notificationsEnabled ? setNotificationsEnabled(false) : requestNotificationPermission()}
+                  className={`w-10 h-5 rounded-full relative transition-colors duration-300 ${notificationsEnabled ? 'bg-indigo-600' : 'bg-slate-700'}`}
+                >
+                  <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 ${notificationsEnabled ? 'left-6' : 'left-1'}`} />
+                </button>
+              </div>
+
+              <div className="relative">
+                {connectedAccounts.length === 0 ? (
+                  <a
+                    href={apiService.getGoogleAuthUrl()}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 border border-indigo-500/50 text-white text-sm font-bold transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+                  >
+                    <Mail size={16} />
+                    <span>Connect Account</span>
+                  </a>
+                ) : (
+                  <AccountSwitcherDesktop
+                    connectedAccounts={connectedAccounts}
+                    activeEmail={activeEmail}
+                    offlineAccounts={offlineAccounts}
+                    maxAccounts={MAX_CONNECTED_ACCOUNTS}
+                    authUrl={apiService.getGoogleAuthUrl()}
+                    onSwitchAccount={handleSwitchAccount}
+                    onRequestDisconnect={(id) => setConfirmDisconnect(id)}
+                  />
+                )}
+              </div>
+
               <button
-                onClick={() => notificationsEnabled ? setNotificationsEnabled(false) : requestNotificationPermission()}
-                className={`w-10 h-5 rounded-full relative transition-colors duration-300 ${notificationsEnabled ? 'bg-indigo-600' : 'bg-slate-700'}`}
+                onClick={async () => {
+                  if (!activeEmail || syncingRef.current) return;
+                  console.log('[REFRESH] Manual refresh for account:', activeEmail);
+                  setLoading(true);
+                  await runSync(activeEmail);
+                  // setLoading(false) handled by fetchEmails' finally
+                }}
+                disabled={loading}
+                className="group flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
               >
-                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 ${notificationsEnabled ? 'left-6' : 'left-1'}`} />
+                <RefreshCw size={18} className={`${loading ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-700`} />
+                {loading ? 'Syncing…' : 'Refresh Intel'}
               </button>
             </div>
+          </div>
 
-            <div className="relative">
-              {connectedAccounts.length === 0 ? (
-                <a
-                  href={apiService.getGoogleAuthUrl()}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 border border-indigo-500/50 text-white text-sm font-bold transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+          {/* Mobile-only action row — only when at least one account is connected */}
+          {connectedAccounts.length > 0 && (
+            <div className="sm:hidden flex items-center gap-2 mt-3 pt-2.5 border-t border-white/[0.05]">
+              <AccountSwitcherMobile
+                connectedAccounts={connectedAccounts}
+                activeEmail={activeEmail}
+                offlineAccounts={offlineAccounts}
+                maxAccounts={MAX_CONNECTED_ACCOUNTS}
+                authUrl={apiService.getGoogleAuthUrl()}
+                onSwitchAccount={handleSwitchAccount}
+                onRequestDisconnect={(id) => setConfirmDisconnect(id)}
+              />
+              {activeEmail && (
+                <button
+                  onClick={async () => {
+                    if (!activeEmail || syncingRef.current) return;
+                    setLoading(true);
+                    await runSync(activeEmail);
+                  }}
+                  disabled={loading}
+                  aria-label="Refresh"
+                  title="Refresh intel"
+                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
                 >
-                  <Mail size={16} />
-                  <span>Connect Account</span>
-                </a>
-              ) : (
-                <>
-                  <button
-                    ref={accountButtonRef}
-                    onClick={(e) => { e.stopPropagation(); setShowAccountMenu(v => !v); }}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/10 text-slate-200 hover:bg-white/[0.05] transition-all min-w-0"
-                  >
-                    {activeEmail ? (
-                      <>
-                        <span className={`relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(activeEmail)} text-[10px] font-black text-white flex-shrink-0 shadow-lg ring-2 ring-indigo-500/40`}>
-                          {getEmailInitials(activeEmail)}
-                          <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0f172a] ${activeEmail && offlineAccounts.has(activeEmail) ? 'bg-[#EF4444]' : 'bg-[#22C55E]'}`} />
-                        </span>
-                        <span className="inline text-[11px] font-bold text-slate-300 truncate max-w-[120px]">
-                          {activeEmail.split('@')[0]}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="relative inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 to-slate-800 text-[10px] font-black text-slate-400 flex-shrink-0 shadow-lg">
-                          ?
-                        </span>
-                        <span className="hidden sm:inline text-[11px] font-bold text-slate-500 truncate">
-                          Select Account
-                        </span>
-                      </>
-                    )}
-                    <ChevronRight size={11} className={`transition-transform duration-200 ${showAccountMenu ? 'rotate-90' : ''}`} />
-                  </button>
-                  <AnimatePresence>
-                    {showAccountMenu && (
-                      <>
-                      <div
-                        className="fixed inset-0 z-[90] bg-black/40 sm:hidden"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setShowAccountMenu(false);
-                        }}
-                      />
-                      <motion.div
-                        ref={accountMenuRef}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        initial={{ opacity: 0, y: -6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -6 }}
-                        className="fixed left-4 right-4 top-24 w-auto rounded-2xl bg-[#0f172a] border border-white/10 shadow-2xl z-[100] overflow-hidden max-h-[70vh] overflow-y-auto sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-64"
-                      >
-                        {/* CRITICAL: Show active account FIRST, then others */}
-                        {connectedAccounts
-                          .sort((a, b) => {
-                            if (a.account_id === activeEmail) return -1;
-                            if (b.account_id === activeEmail) return 1;
-                            return 0;
-                          })
-                          .map((info) => {
-                            const isActive = activeEmail === info.account_id;
-                            return (
-                              <div key={info.account_id} className={`flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] transition-colors ${isActive ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'border-l-2 border-transparent'}`}>
-                                <div className="relative">
-                                  <div className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(info.account_id)} text-[10px] font-black text-white flex-shrink-0 shadow-md`}>
-                                    {getEmailInitials(info.account_id)}
-                                  </div>
-                                  {/* 4-state indicator: RECONNECT(amber) / ACTIVE(green) / ONLINE(blue) / OFFLINE(red) */}
-                                  <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0f172a] ${
-                                    info.auth_required ? 'bg-[#F59E0B]' : offlineAccounts.has(info.account_id) ? 'bg-[#EF4444]' : isActive ? 'bg-[#22C55E]' : 'bg-[#3B82F6]'
-                                  }`} title={info.auth_required ? 'Reconnect required' : offlineAccounts.has(info.account_id) ? 'Offline' : isActive ? 'Active' : 'Online'} />
-                                </div>
-                                {info.auth_required ? (
-                                  /* auth_required: clicking this account launches reconnect — NO setActiveEmail / syncNow / fetchEmails */
-                                  <a
-                                    href={apiService.getGoogleAuthUrl()}
-                                    onClick={() => setShowAccountMenu(false)}
-                                    className="text-xs font-bold truncate flex-1 text-left"
-                                    title="Authentication expired — click to reconnect"
-                                  >
-                                    <div className="truncate text-amber-400">{info.account_id}</div>
-                                    <div className="text-[9px] font-black text-[#F59E0B] uppercase tracking-wider mt-0.5">● Reconnect required</div>
-                                  </a>
-                                ) : (
-                                  <button
-                                    onClick={async () => {
-                                      console.log(`[SWITCH] Requested account: ${info.account_id}`);
-                                      resetAccountScopedState(); // immediately clears feed + summarize state
-                                      setActiveEmail(info.account_id);
-                                      setShowAccountMenu(false);
-                                      setLoading(true);
-                                      console.log(`[SWITCH] Target account handoff started: ${info.account_id}`);
-                                      await runSync(info.account_id);
-                                      // setLoading(false) handled by fetchEmails' finally (or pending switch path)
-                                    }}
-                                    className={`text-xs font-bold truncate flex-1 text-left ${isActive ? 'text-indigo-400' : 'text-slate-300'}`}
-                                  >
-                                    <div className="truncate">{info.account_id}</div>
-                                    {offlineAccounts.has(info.account_id) ? (
-                                      <div className="text-[9px] font-black text-[#EF4444] uppercase tracking-wider mt-0.5">● Offline</div>
-                                    ) : isActive ? (
-                                      <div className="text-[9px] font-black text-[#22C55E] uppercase tracking-wider mt-0.5">● Active</div>
-                                    ) : (
-                                      <div className="text-[9px] font-bold text-[#3B82F6] uppercase tracking-wider mt-0.5">● Online</div>
-                                    )}
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => { setShowAccountMenu(false); setConfirmDisconnect(info.account_id); }}
-                                  title={`Disconnect ${info.account_id}`}
-                                  className="p-2 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors flex-shrink-0"
-                                >
-                                  <LogOut size={12} />
-                                </button>
-                              </div>
-                            );
-                          })}
-                        <div className="border-t border-white/5 px-4 py-3">
-                          {showMaxAccountsMsg && (
-                            <p className="text-[10px] text-[#EF4444] mb-2">Maximum {MAX_CONNECTED_ACCOUNTS} accounts. Disconnect one first.</p>
-                          )}
-                          {connectedAccounts.length >= MAX_CONNECTED_ACCOUNTS ? (
-                            <button
-                              onClick={() => setShowMaxAccountsMsg(true)}
-                              className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
-                            >
-                              + Add account
-                            </button>
-                          ) : (
-                            <a
-                              href={apiService.getGoogleAuthUrl()}
-                              className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
-                            >
-                              + Add account
-                            </a>
-                          )}
-                        </div>
-                      </motion.div>
-                      </>
-                    )}
-                  </AnimatePresence>
-                </>
+                  <RefreshCw size={16} className={`${loading ? 'animate-spin' : ''} transition-transform duration-700`} />
+                </button>
               )}
             </div>
-
-            <button
-              onClick={async () => {
-                if (!activeEmail || syncingRef.current) return;
-                console.log('[REFRESH] Manual refresh for account:', activeEmail);
-                setLoading(true);
-                await runSync(activeEmail);
-                // setLoading(false) handled by fetchEmails' finally
-              }}
-              disabled={loading}
-              className="group flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
-            >
-              <RefreshCw size={18} className={`${loading ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-700`} />
-              {loading ? 'Analyzing...' : 'Refresh Intel'}
-            </button>
-          </div>
+          )}
         </div>
       </header>
 
@@ -1814,15 +1690,7 @@ export const App = () => {
                       ) : (
                         <button
                           key={acc.account_id}
-                          onClick={async () => {
-                            console.log(`[SWITCH] Requested account: ${acc.account_id}`);
-                            resetAccountScopedState(); // immediately clears feed + summarize state
-                            setActiveEmail(acc.account_id);
-                            setLoading(true);
-                            console.log(`[SWITCH] Target account handoff started: ${acc.account_id}`);
-                            await runSync(acc.account_id);
-                            // setLoading(false) handled by fetchEmails' finally (or pending switch path)
-                          }}
+                          onClick={() => handleSwitchAccount(acc.account_id)}
                           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/10 hover:bg-indigo-600/10 hover:border-indigo-500/30 transition-all group"
                         >
                           <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(acc.account_id)} text-[10px] font-black text-white shadow-md`}>
@@ -1969,44 +1837,31 @@ export const App = () => {
             onReplyBodyChange={setReplyBody}
             onReplySubjectChange={setReplySubject}
             onReplyCCChange={setReplyCC}
-            sanitizeOriginalExcerpt={sanitizeOriginalExcerpt}
             buildAttribution={buildAttribution}
           />
         )}
       </AnimatePresence>
 
-      {/* Scroll to Top Button - Bottom Right */}
+      {/* Scroll to Top FAB - Bottom Right — hidden while any modal is open */}
       <AnimatePresence>
-        {showScrollTop && (
+        {showScrollTop && activeModal === 'none' && !selectedEmailDetail && (
           <motion.button
             initial={{ opacity: 0, y: 20, scale: 0.8 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.8 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="fixed bottom-8 right-8 z-50 group"
-            title="Scroll to top (Ctrl+Home)"
+            aria-label="Scroll to top"
+            className="fixed bottom-6 right-6 z-50 w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center rounded-full bg-[#1e293b] border border-white/10 text-slate-400 hover:text-white hover:border-indigo-500/40 hover:bg-indigo-600/20 shadow-xl transition-all duration-200 hover:scale-105"
           >
-            <div className="relative">
-              {/* Glow effect */}
-              <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity" />
-
-              {/* Button */}
-              <div className="relative flex items-center gap-2 px-4 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 border border-indigo-400/30 shadow-2xl group-hover:shadow-indigo-500/50 transition-all duration-300 group-hover:scale-105">
-                <svg
-                  className="w-5 h-5 text-white group-hover:animate-bounce"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                </svg>
-                <span className="text-white font-bold text-sm tracking-wide">TOP</span>
-              </div>
-
-              {/* Pulse ring */}
-              <div className="absolute inset-0 rounded-2xl border-2 border-indigo-400/30 animate-ping opacity-20" />
-            </div>
+            <svg
+              className="w-4 h-4 sm:w-[18px] sm:h-[18px]"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+            </svg>
           </motion.button>
         )}
       </AnimatePresence>
