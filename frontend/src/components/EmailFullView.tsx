@@ -1,6 +1,7 @@
 import { RefObject } from 'react';
 import { Sparkles } from 'lucide-react';
 import { Briefing } from '@types';
+import { normalizeBodyText } from '@utils/normalizeBodyText';
 
 interface Props {
   email: Briefing;
@@ -10,9 +11,25 @@ interface Props {
 
 /**
  * Full View — shows AI summary (if present) and the complete message body.
+ *
+ * Body rendering strategy:
+ *   - normalizeBodyText() is applied first (line-ending normalization,
+ *     BOM strip, 3+ blank-line collapse)
+ *   - The normalized text is split on \n\n to produce paragraph blocks
+ *   - Each block renders as a <p> with whitespace-pre-wrap so single
+ *     line-breaks within a paragraph are preserved (important for
+ *     manually-formatted plaintext emails)
+ *   - This avoids <pre>'s horizontal-overflow issues on narrow screens
+ *     while keeping all meaningful whitespace structure intact
+ *
  * All action buttons live in EmailDetailModal's footer.
  */
 export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props) {
+  const rawText = email.body || email.summary || '';
+  const bodyText = normalizeBodyText(rawText);
+  // Split into paragraph blocks; filter empty strings that can arise at edges
+  const paragraphs = bodyText ? bodyText.split('\n\n').filter(p => p.trim().length > 0) : [];
+
   return (
     <div className="space-y-6">
       {/* AI Analysis — mirrored from Quick View so context is preserved */}
@@ -62,9 +79,20 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
           </button>
         </div>
         <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-          <pre className="text-sm leading-relaxed text-slate-300 whitespace-pre-wrap font-sans break-words">
-            {email.body || email.summary || 'No message body available.'}
-          </pre>
+          {paragraphs.length > 0 ? (
+            <div className="space-y-3">
+              {paragraphs.map((para, i) => (
+                <p
+                  key={i}
+                  className="text-sm leading-relaxed text-slate-300 whitespace-pre-wrap break-words"
+                >
+                  {para}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm leading-relaxed text-slate-500 italic">No message body available.</p>
+          )}
         </div>
       </div>
     </div>

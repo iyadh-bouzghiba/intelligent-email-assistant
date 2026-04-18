@@ -1,8 +1,9 @@
-import { RefObject } from 'react';
+import { RefObject, useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, AlertCircle, RefreshCw, Mail } from 'lucide-react';
+import { X, AlertCircle, RefreshCw, Mail, Sparkles, ChevronDown } from 'lucide-react';
 import { Briefing } from '@types';
 import { FocusTrap } from './FocusTrap';
+import { normalizeBodyText } from '@utils/normalizeBodyText';
 
 interface Props {
   email: Briefing;
@@ -17,7 +18,11 @@ interface Props {
   onReplyBodyChange: (v: string) => void;
   onReplySubjectChange: (v: string) => void;
   onReplyCCChange: (v: string) => void;
-  sanitizeOriginalExcerpt: (body: string) => string;
+  /**
+   * sanitizeOriginalExcerpt is intentionally NOT a prop here.
+   * It belongs only in the send path (buildOutboundBody in App.tsx).
+   * This component uses email.body directly for display, normalized via normalizeBodyText.
+   */
   buildAttribution: (date: string, sender: string) => string;
 }
 
@@ -31,6 +36,13 @@ const TITLE_ID = 'reply-compose-title';
  *   - aria-labelledby={TITLE_ID} points to "Reply" heading
  *   - FocusTrap traps Tab cycle; initial focus on textarea
  *   - Backdrop does NOT close on click — only X button / Escape (via App.tsx)
+ *
+ * Reference context (read-only — never included in outbound body):
+ *   - If AI summary exists: show summary + action items always visible;
+ *     original quoted context hidden behind a disclosure toggle by default
+ *   - If no AI summary: show quoted original directly (no toggle needed)
+ *   - normalizeBodyText() applied to excerpt for display only;
+ *     sanitizeOriginalExcerpt contract for outbound send is untouched
  *
  * Layout mirrors EmailDetailModal: full-screen mobile, centered sm+.
  */
@@ -47,9 +59,22 @@ export function ReplyComposeModal({
   onReplyBodyChange,
   onReplySubjectChange,
   onReplyCCChange,
-  sanitizeOriginalExcerpt,
   buildAttribution,
 }: Props) {
+  const [showQuoted, setShowQuoted] = useState(false);
+
+  // Display-only: full original message, normalized for rendering.
+  // sanitizeOriginalExcerpt is NOT used here — that function belongs exclusively in
+  // the send path (buildOutboundBody in App.tsx) where it caps and strips thread history.
+  // Here we show the full body so the user has complete context when composing.
+  const displayBody = normalizeBodyText(email.body || '');
+
+  const hasAiSummary = !!email.ai_summary_text;
+  const hasExcerpt = !!displayBody;
+  const hasReference = hasAiSummary || hasExcerpt;
+  // When AI summary exists, original message is shown behind a disclosure toggle
+  const quotedNeedsToggle = hasAiSummary && hasExcerpt;
+
   return (
     <>
       {/* Backdrop */}
@@ -75,14 +100,14 @@ export function ReplyComposeModal({
             className="pointer-events-auto w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-2xl bg-[#0f172a] border-0 sm:border sm:border-white/10 rounded-none sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="flex-shrink-0 bg-[#0f172a] border-b border-white/5 px-6 py-4">
+            <div className="flex-shrink-0 bg-[#0f172a] border-b border-white/5 px-4 py-4 sm:px-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <h2 id={TITLE_ID} className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">
                     Reply
                   </h2>
                   <p className="text-sm font-semibold text-slate-300 mt-0.5 truncate">{email.subject}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">to {email.sender}</p>
+                  <p className="text-xs text-slate-500 mt-0.5 truncate">to {email.sender}</p>
                 </div>
                 <button
                   onClick={onDiscard}
@@ -96,7 +121,7 @@ export function ReplyComposeModal({
             </div>
 
             {/* Scrollable compose area */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-4 space-y-3 min-h-0">
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4 sm:px-6 space-y-3 min-h-0">
               {panelError && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
                   <AlertCircle size={13} className="flex-shrink-0" />
@@ -126,26 +151,89 @@ export function ReplyComposeModal({
                 className="w-full p-3 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
               />
 
-              {/* Quoted original */}
-              {email.body && (() => {
-                const excerpt = sanitizeOriginalExcerpt(email.body);
-                return excerpt ? (
-                  <div className="border-t border-white/[0.08] pt-3">
-                    <div className="pl-3 border-l-2 border-indigo-500/40 bg-white/[0.03] py-2 pr-3 rounded-r-lg space-y-1">
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider select-none">
-                        {buildAttribution(email.date || '', email.sender || '')}
-                      </p>
-                      <p className="text-xs text-slate-500 leading-relaxed line-clamp-5 whitespace-pre-wrap select-none">
-                        {excerpt}
-                      </p>
+              {/* ── Reference context ── read-only, never included in outbound body ── */}
+              {hasReference && (
+                <div className="border-t border-white/[0.08] pt-3 space-y-2">
+                  <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest select-none">
+                    Reference — not sent
+                  </p>
+
+                  {/* AI summary + action items — always visible when present */}
+                  {hasAiSummary && (
+                    <div className="space-y-2">
+                      <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-indigo-500/[0.06] border border-indigo-500/[0.12]">
+                        <Sparkles size={10} className="text-indigo-400 mt-0.5 flex-shrink-0" />
+                        <p className="text-xs text-indigo-300/80 leading-relaxed">
+                          {email.ai_summary_text}
+                        </p>
+                      </div>
+                      {email.ai_summary_json?.action_items && email.ai_summary_json.action_items.length > 0 && (
+                        <div className="px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06] space-y-1">
+                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider">Action items</p>
+                          <ol className="space-y-0.5 list-decimal list-inside">
+                            {email.ai_summary_json.action_items.map((action: string, idx: number) => (
+                              <li key={idx} className="text-xs text-slate-400 leading-relaxed">{action}</li>
+                            ))}
+                          </ol>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ) : null;
-              })()}
+                  )}
+
+                  {/* Original message — full body, display-only, never sent.
+                      Direct when no AI summary; behind disclosure toggle when AI summary present. */}
+                  {hasExcerpt && (
+                    quotedNeedsToggle ? (
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => setShowQuoted(v => !v)}
+                          className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-400 transition-colors"
+                          aria-expanded={showQuoted}
+                        >
+                          <ChevronDown
+                            size={11}
+                            className={`transition-transform duration-150 ${showQuoted ? 'rotate-180' : ''}`}
+                          />
+                          {showQuoted ? 'Hide original' : 'Show original'}
+                        </button>
+                        {showQuoted && (
+                          <div className="mt-2 pl-3 border-l-2 border-indigo-500/30 bg-white/[0.03] rounded-r-lg">
+                            <div className="py-2 pr-3 space-y-1.5">
+                              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider select-none">
+                                {buildAttribution(email.date || '', email.sender || '')}
+                              </p>
+                              <div className="max-h-56 overflow-y-auto custom-scrollbar">
+                                <p className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap break-words">
+                                  {displayBody}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* No AI summary — show full original message directly */
+                      <div className="pl-3 border-l-2 border-indigo-500/30 bg-white/[0.03] rounded-r-lg">
+                        <div className="py-2 pr-3 space-y-1.5">
+                          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider select-none">
+                            {buildAttribution(email.date || '', email.sender || '')}
+                          </p>
+                          <div className="max-h-56 overflow-y-auto custom-scrollbar">
+                            <p className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap break-words">
+                              {displayBody}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Footer — action bar */}
-            <div className="flex-shrink-0 border-t border-white/[0.12] bg-[#0f172a] px-6 py-4 flex items-center justify-between gap-3">
+            <div className="flex-shrink-0 border-t border-white/[0.12] bg-[#0f172a] px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between gap-3">
               <button
                 onClick={onDiscard}
                 disabled={sending}

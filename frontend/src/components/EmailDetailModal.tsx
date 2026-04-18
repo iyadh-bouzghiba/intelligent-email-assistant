@@ -77,7 +77,7 @@ export function EmailDetailModal({
             className="pointer-events-auto w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-2xl bg-[#0f172a] border-0 sm:border sm:border-white/10 rounded-none sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
           >
             {/* ── Header ───────────────────────────────────────────────────── */}
-            <div className="flex-shrink-0 bg-[#0f172a] border-b border-white/5 px-6 py-5">
+            <div className="flex-shrink-0 bg-[#0f172a] border-b border-white/5 px-4 py-4 sm:px-6 sm:py-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <h2 id={TITLE_ID} className="text-xl font-black text-white mb-2 leading-tight">
@@ -88,7 +88,7 @@ export function EmailDetailModal({
                     <span className="text-slate-600">|</span>
                     <span>{email.date}</span>
                   </div>
-                  <div className="flex items-center gap-2 mt-3">
+                  <div className="flex flex-wrap items-center gap-2 mt-3">
                     <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
                       email.priority === 'High'   ? 'bg-[#FF3B5C] text-white border-[#FF3B5C]' :
                       email.priority === 'Medium' ? 'bg-[#FFB800] text-[#1a1a1a] border-[#FFB800]' :
@@ -144,9 +144,9 @@ export function EmailDetailModal({
             </div>
 
             {/* ── Footer: action bar ────────────────────────────────────────── */}
-            <div className="flex-shrink-0 border-t border-white/[0.12] bg-[#0f172a] px-6 py-4 flex items-center justify-between gap-3">
+            <div className="flex-shrink-0 border-t border-white/[0.12] bg-[#0f172a] px-4 py-3 sm:px-6 sm:py-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
               {/* Left: Close + Summarize + read/unread toggle */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={onClose}
                   className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
@@ -186,7 +186,7 @@ export function EmailDetailModal({
               </div>
 
               {/* Right: view switch / Draft Reply */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-shrink-0">
                 {panelView === 'quick' ? (
                   <button
                     onClick={() => onSwitchView('full')}
