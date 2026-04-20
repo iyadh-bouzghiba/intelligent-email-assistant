@@ -63,6 +63,7 @@ export const App = () => {
   const [activeTab, setActiveTab] = useState<'inbox' | 'sent'>('inbox');
   const [sentEmails, setSentEmails] = useState<SentEmail[]>([]);
   const [loadingSent, setLoadingSent] = useState(false);
+  const [readStatePending, setReadStatePending] = useState(false);
 
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) return;
@@ -526,7 +527,19 @@ export const App = () => {
       } else {
         setOfflineAccounts(prev => { const next = new Set(prev); next.delete(accountId); return next; });
       }
-      await fetchEmails(accountId, { reason: 'runSync:success' });
+      if (syncResult.status === 'timeout') {
+        // Backend timed out but DB writes may still be in-flight.
+        // Perform 3 bounded reconciliation fetches with ~3s gaps to catch late-arriving rows.
+        console.warn('[SYNC] Backend timeout — starting reconciliation fetches');
+        await fetchEmails(accountId, { reason: 'runSync:timeout-r1' });
+        for (let pass = 2; pass <= 3; pass++) {
+          await new Promise<void>(resolve => setTimeout(resolve, 3000));
+          if (activeEmailRef.current !== accountId) break; // Account switched — abort
+          await fetchEmails(accountId, { reason: `runSync:timeout-r${pass}` });
+        }
+      } else {
+        await fetchEmails(accountId, { reason: 'runSync:success' });
+      }
     } catch (err) {
       console.error('[SYNC] Failed:', err);
       await fetchEmails(accountId, { reason: 'runSync:error-fallback' }); // Still render stale DB data
@@ -935,21 +948,22 @@ export const App = () => {
     setIsDetailRead(!!item.is_read);
     setSelectedEmailDetail(item);
     // Auto-mark read for unread inbox items when modify scope is available
-    if (!isSent && !item.is_read && item.thread_id) {
+    if (!isSent && !item.is_read && item.thread_id && activeEmail) {
       const acct = accounts.find(a => a.account_id === activeEmail);
       if (acct?.modify_scope) {
-        apiService.setThreadReadState(item.thread_id, true).then(res => {
+        const capturedAccountId = activeEmail;
+        apiService.setThreadReadState(item.thread_id, true, capturedAccountId).then(res => {
           if (res.success === true && res.gmail_updated === true) {
-            // Gmail succeeded — apply optimistic UI immediately
             setIsDetailRead(true);
             setBriefings(prev => prev.map(b =>
               b.thread_id === item.thread_id ? { ...b, is_read: true } : b
             ));
             if (res.db_updated === false) {
-              // DB mirror did not confirm — re-fetch to reconcile list state from server
               console.warn('[READ-STATE] DB mirror unconfirmed on auto-mark-read:', res.db_error);
-              fetchEmails(activeEmail, { reason: 'read-state-db-reconcile' });
+              fetchEmails(capturedAccountId, { reason: 'read-state-db-reconcile' });
             }
+          } else if (!res.success) {
+            console.warn('[READ-STATE] Auto-mark-read failed:', res.error);
           }
         });
       }
@@ -993,33 +1007,49 @@ export const App = () => {
 
   // Extracted: mark thread read via Gmail API
   const handleMarkRead = async () => {
-    if (!selectedEmailDetail?.thread_id) return;
-    const res = await apiService.setThreadReadState(selectedEmailDetail.thread_id, true);
-    if (res.success === true && res.gmail_updated === true) {
-      setIsDetailRead(true);
-      setBriefings(prev => prev.map(b =>
-        b.thread_id === selectedEmailDetail.thread_id ? { ...b, is_read: true } : b
-      ));
-      if (res.db_updated === false) {
-        console.warn('[READ-STATE] DB mirror unconfirmed on mark-read:', res.db_error);
-        fetchEmails(activeEmail, { reason: 'read-state-db-reconcile' });
+    if (!selectedEmailDetail?.thread_id || !activeEmail || readStatePending) return;
+    setReadStatePending(true);
+    setPanelError(null);
+    try {
+      const res = await apiService.setThreadReadState(selectedEmailDetail.thread_id, true, activeEmail);
+      if (res.success === true && res.gmail_updated === true) {
+        setIsDetailRead(true);
+        setBriefings(prev => prev.map(b =>
+          b.thread_id === selectedEmailDetail.thread_id ? { ...b, is_read: true } : b
+        ));
+        if (res.db_updated === false) {
+          console.warn('[READ-STATE] DB mirror unconfirmed on mark-read:', res.db_error);
+          fetchEmails(activeEmail, { reason: 'read-state-db-reconcile' });
+        }
+      } else if (!res.success) {
+        setPanelError(`Could not mark as read: ${res.error || 'unknown error'}`);
       }
+    } finally {
+      setReadStatePending(false);
     }
   };
 
   // Extracted: mark thread unread via Gmail API
   const handleMarkUnread = async () => {
-    if (!selectedEmailDetail?.thread_id) return;
-    const res = await apiService.setThreadReadState(selectedEmailDetail.thread_id, false);
-    if (res.success === true && res.gmail_updated === true) {
-      setIsDetailRead(false);
-      setBriefings(prev => prev.map(b =>
-        b.thread_id === selectedEmailDetail.thread_id ? { ...b, is_read: false } : b
-      ));
-      if (res.db_updated === false) {
-        console.warn('[READ-STATE] DB mirror unconfirmed on mark-unread:', res.db_error);
-        fetchEmails(activeEmail, { reason: 'read-state-db-reconcile' });
+    if (!selectedEmailDetail?.thread_id || !activeEmail || readStatePending) return;
+    setReadStatePending(true);
+    setPanelError(null);
+    try {
+      const res = await apiService.setThreadReadState(selectedEmailDetail.thread_id, false, activeEmail);
+      if (res.success === true && res.gmail_updated === true) {
+        setIsDetailRead(false);
+        setBriefings(prev => prev.map(b =>
+          b.thread_id === selectedEmailDetail.thread_id ? { ...b, is_read: false } : b
+        ));
+        if (res.db_updated === false) {
+          console.warn('[READ-STATE] DB mirror unconfirmed on mark-unread:', res.db_error);
+          fetchEmails(activeEmail, { reason: 'read-state-db-reconcile' });
+        }
+      } else if (!res.success) {
+        setPanelError(`Could not mark as unread: ${res.error || 'unknown error'}`);
       }
+    } finally {
+      setReadStatePending(false);
     }
   };
 
@@ -1213,11 +1243,11 @@ export const App = () => {
                   await runSync(activeEmail);
                   // setLoading(false) handled by fetchEmails' finally
                 }}
-                disabled={loading}
+                disabled={loading || syncing}
                 className="group flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
               >
-                <RefreshCw size={18} className={`${loading ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-700`} />
-                {loading ? 'Syncing…' : 'Refresh Intel'}
+                <RefreshCw size={18} className={`${syncing ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-700`} />
+                {syncing ? 'Syncing...' : 'Sync'}
               </button>
             </div>
           </div>
@@ -1241,12 +1271,12 @@ export const App = () => {
                     setLoading(true);
                     await runSync(activeEmail);
                   }}
-                  disabled={loading}
-                  aria-label="Refresh"
-                  title="Refresh intel"
-                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+                  disabled={loading || syncing}
+                  aria-label={syncing ? 'Syncing...' : 'Sync'}
+                  title={syncing ? 'Syncing...' : 'Sync'}
+                  className="flex-shrink-0 w-11 h-11 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
                 >
-                  <RefreshCw size={16} className={`${loading ? 'animate-spin' : ''} transition-transform duration-700`} />
+                  <RefreshCw size={16} className={`${syncing ? 'animate-spin' : ''} transition-transform duration-700`} />
                 </button>
               )}
             </div>
@@ -1427,23 +1457,18 @@ export const App = () => {
         <div className="flex flex-col gap-4 mb-12 max-w-[720px] mx-auto">
           <AnimatePresence mode="popLayout">
             {loading ? (
-              [...Array(currentItems.length || ITEMS_PER_PAGE)].map((_, i) => (
+              [...Array(6)].map((_, i) => (
                 <motion.div
                   key={`skeleton-${i}`}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.3, delay: i * 0.05 }}
-                  className="rounded-2xl bg-white/[0.02] border border-white/5 relative overflow-hidden p-6 flex flex-col gap-3"
+                  className="skeleton-row rounded-2xl bg-white/[0.02] border border-white/5"
                 >
-                  <div className="flex gap-2">
-                    <div className="w-16 h-5 rounded-full bg-white/5 animate-pulse" />
-                    <div className="w-16 h-5 rounded-full bg-white/5 animate-pulse" />
-                  </div>
-                  <div className="w-3/4 h-6 rounded-lg bg-white/5 animate-pulse" />
-                  <div className="w-full h-16 rounded-xl bg-white/5 animate-pulse" />
-                  <div className="w-1/2 h-4 rounded-lg bg-white/5 animate-pulse" />
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.015] to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
+                  <div className="skeleton-bar h-4" style={{ width: '60%' }} />
+                  <div className="skeleton-bar h-4" style={{ width: '85%' }} />
+                  <div className="skeleton-bar h-3" style={{ width: '30%' }} />
                 </motion.div>
               ))
             ) : currentItems.length > 0 ? (
@@ -1810,6 +1835,8 @@ export const App = () => {
             modifyScope={!!accounts.find(a => a.account_id === activeEmail)?.modify_scope}
             isRead={isDetailRead}
             actionItemsRef={actionItemsRef}
+            isSummarizing={!!selectedEmailDetail?.gmail_message_id && summarizingIds.has(selectedEmailDetail.gmail_message_id)}
+            readStatePending={readStatePending}
             onClose={closeDetailPanel}
             onSwitchView={setPanelView}
             onOpenReply={handleOpenReply}
@@ -1852,7 +1879,7 @@ export const App = () => {
             transition={{ duration: 0.2, ease: 'easeOut' }}
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             aria-label="Scroll to top"
-            className="fixed bottom-6 right-6 z-50 w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center rounded-full bg-[#1e293b] border border-white/10 text-slate-400 hover:text-white hover:border-indigo-500/40 hover:bg-indigo-600/20 shadow-xl transition-all duration-200 hover:scale-105"
+            className="fixed bottom-6 right-6 z-50 w-11 h-11 flex items-center justify-center rounded-full bg-[#1e293b] border border-white/10 text-slate-400 hover:text-white hover:border-indigo-500/40 hover:bg-indigo-600/20 shadow-xl transition-all duration-200 hover:scale-105"
           >
             <svg
               className="w-4 h-4 sm:w-[18px] sm:h-[18px]"

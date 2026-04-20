@@ -4,9 +4,28 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.discovery_cache.base import Cache
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
 from email.mime.text import MIMEText
+
+
+class _MemoryCache(Cache):
+    """Process-lifetime in-memory Discovery document cache.
+    Eliminates repeated HTTPS fetches to googleapis.com discovery on every GmailClient instantiation.
+    Safe for multi-threaded use because CPython's GIL serialises dict access.
+    """
+    _store: Dict[str, Any] = {}
+
+    def get(self, url: str):
+        return _MemoryCache._store.get(url)
+
+    def set(self, url: str, content: Any) -> None:
+        _MemoryCache._store[url] = content
+
+
+_DISCOVERY_CACHE = _MemoryCache()
+
 
 class GmailClient:
     """
@@ -26,15 +45,14 @@ class GmailClient:
             scopes=token_data.get("scopes"),
         )
 
-        # cache_discovery=False is mandatory for Render
-        self.service = build('gmail', 'v1', credentials=self.credentials, cache_discovery=False)
+        self.service = build('gmail', 'v1', credentials=self.credentials, cache_discovery=_DISCOVERY_CACHE)
 
     def refresh_if_needed(self):
         """Checks and refreshes credentials if expired."""
         if self.credentials and self.credentials.expired and self.credentials.refresh_token:
             try:
                 self.credentials.refresh(Request())
-                self.service = build('gmail', 'v1', credentials=self.credentials, cache_discovery=False)
+                self.service = build('gmail', 'v1', credentials=self.credentials, cache_discovery=_DISCOVERY_CACHE)
             except Exception as e:
                 print(f"[WARN] Failed to refresh token: {e}")
 

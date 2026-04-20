@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { X, Sparkles, MailOpen, Mail } from 'lucide-react';
+import { X, Sparkles, MailOpen, Mail, RefreshCw } from 'lucide-react';
 import { Briefing } from '@types';
 import { FocusTrap } from './FocusTrap';
 import { EmailQuickView } from './EmailQuickView';
@@ -13,6 +13,8 @@ interface Props {
   modifyScope: boolean;
   isRead: boolean;
   actionItemsRef: RefObject<HTMLDivElement>;
+  isSummarizing?: boolean;
+  readStatePending?: boolean;
   onClose: () => void;
   onSwitchView: (v: 'quick' | 'full') => void;
   onOpenReply: () => void;
@@ -43,6 +45,8 @@ export function EmailDetailModal({
   modifyScope,
   isRead,
   actionItemsRef,
+  isSummarizing,
+  readStatePending = false,
   onClose,
   onSwitchView,
   onOpenReply,
@@ -119,7 +123,7 @@ export function EmailDetailModal({
                   data-modal-close
                   onClick={onClose}
                   aria-label="Close email details"
-                  className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors flex-shrink-0"
+                  className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors flex-shrink-0"
                 >
                   <X size={20} />
                 </button>
@@ -133,6 +137,7 @@ export function EmailDetailModal({
                   email={email}
                   actionItemsRef={actionItemsRef}
                   onReadFull={() => onSwitchView('full')}
+                  isSummarizing={isSummarizing}
                 />
               ) : (
                 <EmailFullView
@@ -149,36 +154,38 @@ export function EmailDetailModal({
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={onClose}
-                  className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
+                  className="inline-flex items-center justify-center min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
                 >
                   Close
                 </button>
-                {!email.ai_summary_text && email.gmail_message_id && (
+                {email.ai_summary_text && email.gmail_message_id && (
                   <button
                     onClick={onSummarize}
-                    className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5"
+                    className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
                   >
                     <Sparkles size={12} />
-                    Summarize
+                    Re-summarize
                   </button>
                 )}
                 {modifyScope && !detailIsSent && (
                   isRead ? (
                     <button
                       onClick={onMarkUnread}
-                      className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5"
+                      disabled={readStatePending}
+                      className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Mark as unread"
                     >
-                      <Mail size={12} />
+                      {readStatePending ? <RefreshCw size={12} className="animate-spin" /> : <Mail size={12} />}
                       Mark Unread
                     </button>
                   ) : (
                     <button
                       onClick={onMarkRead}
-                      className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5"
+                      disabled={readStatePending}
+                      className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Mark as read"
                     >
-                      <MailOpen size={12} />
+                      {readStatePending ? <RefreshCw size={12} className="animate-spin" /> : <MailOpen size={12} />}
                       Mark Read
                     </button>
                   )
@@ -190,14 +197,14 @@ export function EmailDetailModal({
                 {panelView === 'quick' ? (
                   <button
                     onClick={() => onSwitchView('full')}
-                    className="px-5 py-2 rounded-xl bg-white/[0.06] border border-white/10 text-slate-300 hover:text-white hover:bg-white/10 text-xs font-bold transition-all"
+                    className="inline-flex items-center justify-center min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-white/[0.06] border border-white/10 text-slate-300 hover:text-white hover:bg-white/10 text-xs font-bold transition-all"
                   >
                     Read full email
                   </button>
                 ) : !detailIsSent ? (
                   <button
                     onClick={onOpenReply}
-                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-1.5"
+                    className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20"
                   >
                     <Mail size={12} />
                     Draft Reply

@@ -113,7 +113,7 @@ export function ReplyComposeModal({
                   onClick={onDiscard}
                   disabled={sending}
                   aria-label="Discard draft"
-                  className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors flex-shrink-0"
+                  className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors flex-shrink-0"
                 >
                   <X size={20} />
                 </button>
@@ -232,19 +232,21 @@ export function ReplyComposeModal({
               )}
             </div>
 
-            {/* Footer — action bar */}
-            <div className="flex-shrink-0 border-t border-white/[0.12] bg-[#0f172a] px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between gap-3">
+            {/* Footer — action bar
+                Mobile: flex-col-reverse stacks Send on top (full-width) and Discard below.
+                sm+: flex-row with Discard left, Send right — standard desktop pattern. */}
+            <div className="flex-shrink-0 border-t border-white/[0.12] bg-[#0f172a] px-4 py-3 sm:px-6 sm:py-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3">
               <button
                 onClick={onDiscard}
                 disabled={sending}
-                className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
+                className="w-full sm:w-auto inline-flex items-center justify-center min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
               >
                 Discard
               </button>
               <button
                 onClick={onSend}
                 disabled={sending || !replyBody.trim() || !email.thread_id}
-                className="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-1.5 min-w-[120px]"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20"
               >
                 {sending ? (
                   <>
