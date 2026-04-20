@@ -17,6 +17,23 @@ from backend.engine.nlp_engine import MistralEngine
 
 logger = logging.getLogger(__name__)
 
+# Shared operational heartbeat for the AI summarizer worker.
+# Readable by the API healthz endpoint when both run in the same process.
+AI_WORKER_HEARTBEAT: dict = {
+    "enabled": None,
+    "status": "initializing",
+    "worker_id": None,
+    "started_at": None,
+    "last_loop_at": None,
+    "last_claimed_at": None,
+    "last_processed_at": None,
+    "last_idle_at": None,
+    "last_batch_size": None,
+    "last_error_at": None,
+    "last_error_type": None,
+    "last_error_message": None,
+}
+
 # Environment configuration
 AI_SUMM_ENABLED = os.getenv("AI_SUMM_ENABLED", "false").lower() == "true"
 AI_JOBS_BATCH = int(os.getenv("AI_JOBS_BATCH", "5"))
@@ -61,15 +78,28 @@ def main():
 
     if not AI_SUMM_ENABLED:
         logger.info("[AI-WORKER] AI_SUMM_ENABLED=false. Worker disabled. Exiting.")
+        AI_WORKER_HEARTBEAT.update({"enabled": False, "status": "disabled"})
         return
 
     worker_id = get_stable_worker_id()
     logger.info(f"[AI-WORKER] Starting worker: {worker_id}")
     logger.info(f"[AI-WORKER] Config: BATCH={AI_JOBS_BATCH}, IDLE_SLEEP={AI_IDLE_SLEEP}s")
+    AI_WORKER_HEARTBEAT.update({
+        "enabled": True,
+        "status": "starting",
+        "worker_id": worker_id,
+        "started_at": time.time(),
+    })
 
     # Check required environment variables
     if not require_env(["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "MISTRAL_API_KEY"]):
         logger.error("[AI-WORKER] Cannot start worker without required env vars. Exiting.")
+        AI_WORKER_HEARTBEAT.update({
+            "status": "init_failed",
+            "last_error_at": time.time(),
+            "last_error_type": "MissingEnvVars",
+            "last_error_message": "Missing one or more required env vars",
+        })
         return
 
     # Initialize dependencies
@@ -80,24 +110,45 @@ def main():
     except Exception as e:
         err_type = type(e).__name__
         logger.error(f"[AI-WORKER] Initialization failed (type={err_type})")
+        AI_WORKER_HEARTBEAT.update({
+            "status": "init_failed",
+            "last_error_at": time.time(),
+            "last_error_type": err_type,
+            "last_error_message": str(e)[:200],
+        })
         return
 
     # Main processing loop
     logger.info("[AI-WORKER] Entering main loop")
+    AI_WORKER_HEARTBEAT["status"] = "running"
 
     try:
         while True:
             try:
+                AI_WORKER_HEARTBEAT["last_loop_at"] = time.time()
+
                 # Claim and process batch
                 processed = worker.process_batch(AI_JOBS_BATCH, worker_id)
+
+                AI_WORKER_HEARTBEAT["last_batch_size"] = processed
 
                 if processed == 0:
                     # No jobs available - idle sleep
                     logger.info(f"[AI-WORKER] No jobs claimed. Sleeping {AI_IDLE_SLEEP}s")
+                    AI_WORKER_HEARTBEAT.update({
+                        "status": "idle",
+                        "last_idle_at": time.time(),
+                    })
                     time.sleep(AI_IDLE_SLEEP)
                 else:
                     # Jobs processed - continue immediately
                     logger.info(f"[AI-WORKER] Processed {processed} jobs. Checking for more...")
+                    _now = time.time()
+                    AI_WORKER_HEARTBEAT.update({
+                        "status": "running",
+                        "last_claimed_at": _now,
+                        "last_processed_at": _now,
+                    })
 
             except KeyboardInterrupt:
                 logger.info("[AI-WORKER] Received shutdown signal. Exiting gracefully.")
@@ -105,6 +156,12 @@ def main():
             except Exception as e:
                 err_type = type(e).__name__
                 logger.error(f"[AI-WORKER] Batch processing error (type={err_type})")
+                AI_WORKER_HEARTBEAT.update({
+                    "status": "error",
+                    "last_error_at": time.time(),
+                    "last_error_type": err_type,
+                    "last_error_message": str(e)[:200],
+                })
                 # Sleep on error to prevent tight error loops
                 time.sleep(AI_IDLE_SLEEP)
 

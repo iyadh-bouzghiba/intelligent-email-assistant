@@ -112,7 +112,8 @@ class MistralEngine:
         prompt: str,
         model: str = "mistral-large-latest",
         max_tokens: int = 1024,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        system_prompt: Optional[str] = None
     ) -> Dict[str, Any]:
         """Synchronous wrapper for generate_json_async. DEPRECATED: Use generate_json_async() instead."""
         warnings.warn(
@@ -121,7 +122,7 @@ class MistralEngine:
             stacklevel=2
         )
         return asyncio.run(self.generate_json_async(
-            prompt, model, max_tokens, temperature
+            prompt, model, max_tokens, temperature, system_prompt=system_prompt
         ))
     
     async def generate_text_async(

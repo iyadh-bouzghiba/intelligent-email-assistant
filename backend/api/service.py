@@ -45,6 +45,32 @@ sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)
 
 from backend.config import Config
 from backend.core import EmailAssistant
+
+def _get_worker_heartbeat() -> dict:
+    """
+    Lazy request-time resolution of the sync worker heartbeat.
+    Imports at call time so the live dict is always returned instead of a
+    module-load-time snapshot that may have been frozen before the worker
+    thread populated it (circular-import timing issue).
+    Returns {} when the module is unavailable (separate-dyno deployments).
+    """
+    try:
+        from backend.infrastructure.worker import WORKER_HEARTBEAT
+        return WORKER_HEARTBEAT
+    except Exception:
+        return {}
+
+
+def _get_ai_worker_heartbeat() -> dict:
+    """
+    Lazy request-time resolution of the AI summarizer worker heartbeat.
+    Same lazy-import pattern as _get_worker_heartbeat().
+    """
+    try:
+        from backend.infrastructure.ai_summarizer_entry import AI_WORKER_HEARTBEAT
+        return AI_WORKER_HEARTBEAT
+    except Exception:
+        return {}
 from backend.api.models import (
     SummaryResponse, AnalyzeRequest, DraftReplyRequest, DraftReplyResponse,
 )
@@ -192,17 +218,62 @@ async def health():
 @app.get("/healthz")
 @app.head("/healthz")
 async def healthz():
-    """Render liveness probe - API-only.
-
-    Deliberately stateless: returns 200 as long as the process is alive and
-    uvicorn is serving.  Worker heartbeat is NOT reflected here; worker
-    survivability is handled by the daemon thread + restart wrapper in
-    worker_entry.py (start_worker).  The WORKER_HEARTBEAT /healthz defined
-    in worker_entry.py is dead code - only sio_app (this file) is served.
-
-    Accepts both GET and HEAD methods (UptimeRobot free tier uses HEAD).
     """
-    return {"status": "ok", "schema": ControlPlane.schema_state}
+    Liveness probe with truthful worker heartbeat signals.
+
+    Accepts GET and HEAD (UptimeRobot free tier uses HEAD).
+    Always returns HTTP 200 — callers must inspect payload fields for
+    stalled/idle heuristics.
+
+    worker_sync and ai_summarizer sections are populated from shared in-memory
+    dicts when worker threads run in the same process.  In separate-dyno
+    deployments (Render) those dicts stay at their initializing defaults,
+    which is still a truthful response.
+    """
+    now = time.time()
+
+    # ── worker_sync section ───────────────────────────────────────────────
+    ws = _get_worker_heartbeat()
+    lcs = ws.get("last_cycle_started_at")
+    lsucc = ws.get("last_success_ts")
+    worker_sync = {
+        "enabled": ws.get("enabled"),
+        "status": ws.get("status", "unknown"),
+        "started_at": ws.get("started_at"),
+        "last_cycle_started_at": lcs,
+        "last_cycle_completed_at": ws.get("last_cycle_completed_at"),
+        "last_cycle_seconds_ago": round(now - lcs, 1) if lcs else None,
+        "last_success_seconds_ago": round(now - lsucc, 1) if lsucc else None,
+        "last_account_count": ws.get("last_account_count"),
+        "last_error_at": ws.get("last_error_at"),
+        "last_error_type": ws.get("last_error_type"),
+        "schema_error_count": ws.get("schema_error_count", 0),
+    }
+
+    # ── ai_summarizer section ─────────────────────────────────────────────
+    ai = _get_ai_worker_heartbeat()
+    ai_summarizer = {
+        "enabled": ai.get("enabled"),
+        "status": ai.get("status", "unknown"),
+        "worker_id": ai.get("worker_id"),
+        "started_at": ai.get("started_at"),
+        "last_loop_at": ai.get("last_loop_at"),
+        "last_claimed_at": ai.get("last_claimed_at"),
+        "last_processed_at": ai.get("last_processed_at"),
+        "last_idle_at": ai.get("last_idle_at"),
+        "last_batch_size": ai.get("last_batch_size"),
+        "last_error_at": ai.get("last_error_at"),
+        "last_error_type": ai.get("last_error_type"),
+        "last_error_message": ai.get("last_error_message"),
+    }
+
+    return {
+        "status": "ok",
+        "schema": ControlPlane.schema_state,
+        "api_timestamp": datetime.now(timezone.utc).isoformat(),
+        "worker_sync": worker_sync,
+        "ai_summarizer": ai_summarizer,
+    }
 
 @app.get("/api/diagnostic")
 async def diagnostic_check():
