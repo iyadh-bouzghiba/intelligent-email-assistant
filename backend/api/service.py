@@ -540,7 +540,7 @@ async def list_emails_with_summaries(account_id: Optional[str] = Query(None)):
 @api_router.post("/sync-now")
 async def sync_now(
     account_id: str = Query("default"),
-    max_emails: int = Query(30, description="Maximum emails to fetch (default: 30, validation: 10)"),
+    max_emails: int = Query(10, description="Maximum emails to fetch (default: 10, validation: 10)"),
     backfill_limit: int = Query(0, description="Maximum legacy emails to backfill (default: 0=skip, validation: 10)")
 ):
     """
@@ -556,17 +556,17 @@ async def sync_now(
     - {"status": "auth_required"} if no valid credentials
     - {"status": "no_new"} if no new emails found
     - {"status": "done", "count": N} if stored N emails
-    - {"status": "timeout"} if sync takes longer than 25 seconds
+    - {"status": "timeout"} if sync takes longer than 28 seconds
     - {"status": "error"} on failure (no secrets leaked)
     """
     try:
-        # Wrap with 25s timeout (Render has 30s timeout - leave 5s buffer)
+        # Wrap with 28s timeout (Render has 30s HTTP timeout — 2s buffer)
         return await asyncio.wait_for(
             _sync_now_impl(account_id, max_emails, backfill_limit),
-            timeout=25.0
+            timeout=28.0
         )
     except asyncio.TimeoutError:
-        logger.error("[SYNC] Request timed out after 25s")
+        logger.error("[SYNC] Request timed out after 28s")
         return {"status": "timeout", "message": "Sync took too long, try reducing email count"}
     except Exception as e:
         logger.error(f"[SYNC] Top-level error: {type(e).__name__}: {e}")
@@ -1353,39 +1353,41 @@ async def set_thread_read_state(thread_id: str, request: Request):
     try:
         body = await request.json()
         is_read: bool = bool(body.get("is_read", True))
+        # Client may supply account_id to skip the DB lookup entirely (preferred path).
+        client_account_id: Optional[str] = body.get("account_id") or None
 
         store = safe_get_store()
         if not store:
             return {"success": False, "error": "Database unavailable"}
 
-        # Fetch ALL rows for this thread_id — do not LIMIT 1
-        email_records = await asyncio.to_thread(
-            lambda: store.client.table("emails")
-                .select("account_id")
-                .eq("thread_id", thread_id)
-                .execute()
-        )
-        if not email_records.data:
-            return {"success": False, "error": f"Thread {thread_id} not found in emails table"}
-
-        # Ambiguity guard: reject if thread spans multiple distinct accounts
-        distinct_accounts = list({row["account_id"] for row in email_records.data if row.get("account_id")})
-        if len(distinct_accounts) == 0:
-            return {"success": False, "error": f"Thread {thread_id} has no resolvable account_id"}
-        if len(distinct_accounts) > 1:
-            logger.error(
-                f"[READ-STATE] Ambiguous account for thread {thread_id}: "
-                f"{distinct_accounts} — refusing write"
+        if client_account_id:
+            # Fast path: account_id supplied by client — no DB round-trip needed.
+            account_id: str = client_account_id
+            logger.info(f"[READ-STATE] account_id from client: {account_id}")
+        else:
+            # Slow path: derive account_id from the emails table.
+            email_records = await asyncio.to_thread(
+                lambda: store.client.table("emails")
+                    .select("account_id")
+                    .eq("thread_id", thread_id)
+                    .execute()
             )
-            return {
-                "success": False,
-                "error": (
-                    f"Thread {thread_id} is associated with {len(distinct_accounts)} distinct accounts. "
-                    "Supply account_id explicitly or resolve the ambiguity first."
-                ),
-            }
+            if not email_records.data:
+                return {"success": False, "error": f"Thread {thread_id} not found in emails table"}
 
-        account_id: str = distinct_accounts[0]
+            distinct_accounts = list({row["account_id"] for row in email_records.data if row.get("account_id")})
+            if len(distinct_accounts) == 0:
+                return {"success": False, "error": f"Thread {thread_id} has no resolvable account_id"}
+            if len(distinct_accounts) > 1:
+                logger.error(f"[READ-STATE] Ambiguous account for thread {thread_id}: {distinct_accounts}")
+                return {
+                    "success": False,
+                    "error": (
+                        f"Thread {thread_id} is associated with {len(distinct_accounts)} distinct accounts. "
+                        "Supply account_id explicitly."
+                    ),
+                }
+            account_id = distinct_accounts[0]
 
         credential_store = CredentialStore(persistence)
         token_data = await asyncio.to_thread(credential_store.load_credentials, account_id)
@@ -1395,9 +1397,15 @@ async def set_thread_read_state(thread_id: str, request: Request):
                 "error": f"No credentials for account {account_id} — re-authentication required",
             }
 
-        gmail_client = GmailClient(token_data)
-        await asyncio.to_thread(gmail_client.refresh_if_needed)
-        await asyncio.to_thread(gmail_client.set_thread_read_state, thread_id, is_read)
+        # Build GmailClient and call Gmail API fully inside a thread — build() fetches the
+        # Discovery document which is a blocking HTTPS call; keeping it off the event loop
+        # prevents stalling other requests during the network round-trip.
+        def _gmail_set_read_state() -> None:
+            client = GmailClient(token_data)
+            client.refresh_if_needed()
+            client.set_thread_read_state(thread_id, is_read)
+
+        await asyncio.to_thread(_gmail_set_read_state)
         # gmail_updated is True from this point — any exception above would have raised
 
         # Mirror to Supabase emails table; report outcome truthfully

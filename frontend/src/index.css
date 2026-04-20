@@ -55,3 +55,23 @@ body.panel-open {
 ::-webkit-scrollbar-thumb {
   @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
 }
+
+/* Skeleton loading utilities (P2 inbox list skeleton + P4 summary skeleton) */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 1.0; }
+}
+
+.skeleton-bar {
+  background-color: rgba(148, 163, 184, 0.18);
+  border-radius: 4px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+.skeleton-row {
+  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px 24px;
+}

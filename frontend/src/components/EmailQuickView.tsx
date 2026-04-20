@@ -7,19 +7,50 @@ interface Props {
   email: Briefing;
   actionItemsRef: RefObject<HTMLDivElement>;
   onReadFull: () => void;
+  isSummarizing?: boolean;
 }
 
 /**
  * Quick View — shows AI summary + a short normalized body preview.
  * All action buttons live in EmailDetailModal's footer.
  */
-export function EmailQuickView({ email, actionItemsRef, onReadFull }: Props) {
+export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizing }: Props) {
   const rawText = email.body || email.summary || '';
   const bodyText = normalizeBodyText(rawText);
   const preview = bodyText.length > 320 ? bodyText.slice(0, 320) + '…' : bodyText;
 
   return (
     <div className="space-y-6">
+      {/* AI Analysis — three mutually exclusive states when no summary is present */}
+      {!email.ai_summary_text && isSummarizing && (
+        /* Skeleton — summarization actively in progress */
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Sparkles size={16} className="text-indigo-400 animate-pulse" />
+            <h3 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider">AI Analysis</h3>
+          </div>
+          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 space-y-2.5">
+            <div className="skeleton-bar h-3.5" style={{ width: '90%' }} />
+            <div className="skeleton-bar h-3.5" style={{ width: '60%' }} />
+          </div>
+        </div>
+      )}
+
+      {!email.ai_summary_text && !isSummarizing && (
+        /* Placeholder — auto-summarization queued, result arriving shortly */
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Sparkles size={16} className="text-slate-600" />
+            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">AI Analysis</h3>
+          </div>
+          <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Summary is being generated automatically and will appear shortly.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* AI Analysis */}
       {email.ai_summary_text && (
         <div className="space-y-4">

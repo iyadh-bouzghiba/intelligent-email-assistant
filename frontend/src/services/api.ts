@@ -182,15 +182,17 @@ export const apiService = {
     },
 
     // Thread read/unread writeback — requires gmail.modify scope.
-    // account_id is resolved server-side from the emails table; not sent by client.
+    // account_id is passed explicitly to skip the server-side DB lookup.
     setThreadReadState: async (
         thread_id: string,
-        is_read: boolean
+        is_read: boolean,
+        account_id: string
     ): Promise<{ success: boolean; gmail_updated?: boolean; db_updated?: boolean; db_error?: string; error?: string }> => {
         try {
             const response = await api.post(
                 `${API_ROOT}/threads/${encodeURIComponent(thread_id)}/read-state`,
-                { is_read }
+                { is_read, account_id },
+                { timeout: 35000 }
             );
             return response.data;
         } catch (error: any) {
