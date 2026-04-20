@@ -275,8 +275,15 @@ class SupabaseStore:
 
                     summaries_result = summaries_query.execute()
 
-                    # Build map (use most recent summary if multiple exist)
-                    for summary in (summaries_result.data or []):
+                    # Build map: newest row per gmail_message_id wins.
+                    # Sort by updated_at descending first so the first-seen entry
+                    # for each id is always the most recent one.
+                    sorted_summaries = sorted(
+                        (summaries_result.data or []),
+                        key=lambda s: s.get("updated_at") or "",
+                        reverse=True,
+                    )
+                    for summary in sorted_summaries:
                         msg_id = summary.get("gmail_message_id")
                         if msg_id and msg_id not in summaries_map:
                             summaries_map[msg_id] = summary

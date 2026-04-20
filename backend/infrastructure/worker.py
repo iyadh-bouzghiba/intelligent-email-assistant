@@ -4,7 +4,7 @@ import time
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from backend.infrastructure.control_plane import ControlPlane
 from backend.providers.registry import get_provider
@@ -33,8 +33,23 @@ except ImportError:
     SOCKETIO_AVAILABLE = False
     logger.warning("[WORKER] Socket.IO not available - realtime updates disabled")
 
-# Shared operational heartbeat - accessible by health check server
-WORKER_HEARTBEAT = {"last_cycle": None}
+# Shared operational heartbeat - accessible by health check server.
+# In single-process deployments the API and worker share this dict in-memory.
+# In separate-dyno deployments (Render), the API sees only the initializing defaults;
+# that is still a truthful response ("worker state unknown from API's perspective").
+WORKER_HEARTBEAT: Dict[str, Any] = {
+    "enabled": None,
+    "status": "initializing",
+    "started_at": None,
+    "last_cycle_started_at": None,
+    "last_cycle_completed_at": None,
+    "last_success_ts": None,       # raw float for computing last_success_seconds_ago
+    "last_account_count": None,
+    "last_error_at": None,
+    "last_error_type": None,
+    "schema_error_count": 0,
+    "last_cycle": None,            # legacy key preserved for existing consumers
+}
 
 
 
@@ -348,6 +363,12 @@ def run_worker_loop():
     logger.info("[WORKER] Background worker loop initialized")
     control = ControlPlane()
 
+    WORKER_HEARTBEAT.update({
+        "enabled": True,
+        "status": "starting",
+        "started_at": time.time(),
+    })
+
     schema_retry_count = 0
     while schema_retry_count < MAX_SCHEMA_RETRIES:
         control.verify_schema()
@@ -362,8 +383,11 @@ def run_worker_loop():
             f"Retrying in {SCHEMA_RETRY_DELAY}s..."
         )
 
-        WORKER_HEARTBEAT["last_cycle"] = time.time()
-        WORKER_HEARTBEAT["schema_error_count"] = schema_retry_count
+        WORKER_HEARTBEAT.update({
+            "last_cycle": time.time(),
+            "schema_error_count": schema_retry_count,
+            "status": "schema_retry",
+        })
 
         time.sleep(SCHEMA_RETRY_DELAY)
 
@@ -376,19 +400,24 @@ def run_worker_loop():
         sys.exit(1)
 
     logger.info("[WORKER] Schema verification passed. Starting worker loop.")
+    WORKER_HEARTBEAT["status"] = "running"
 
     tenant_id = "primary"
 
     while True:
         try:
-            WORKER_HEARTBEAT["last_cycle"] = time.time()
+            _now = time.time()
+            WORKER_HEARTBEAT["last_cycle"] = _now
+            WORKER_HEARTBEAT["last_cycle_started_at"] = _now
 
             if not control.is_worker_enabled():
                 logger.info("[WORKER] Ingestion suspended by ControlPlane policy.")
+                WORKER_HEARTBEAT["status"] = "disabled"
                 time.sleep(60)
                 continue
 
             logger.info(f"[WORKER] Cycle started: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            WORKER_HEARTBEAT["status"] = "running"
             control.log_audit("cycle_start", "provider_ingest")
 
             try:
@@ -400,9 +429,14 @@ def run_worker_loop():
 
             if not account_records:
                 logger.info("[WORKER] No connected accounts found. Sleeping 60s.")
+                WORKER_HEARTBEAT.update({
+                    "status": "idle_no_accounts",
+                    "last_account_count": 0,
+                })
                 time.sleep(60)
                 continue
 
+            WORKER_HEARTBEAT["last_account_count"] = len(account_records)
             logger.info(f"[WORKER] Processing {len(account_records)} account(s) this cycle")
 
             for record in account_records:
@@ -422,11 +456,22 @@ def run_worker_loop():
                     )
 
             logger.info("[WORKER] Cycle complete - sleeping 60s")
+            _now = time.time()
+            WORKER_HEARTBEAT.update({
+                "status": "idle",
+                "last_cycle_completed_at": _now,
+                "last_success_ts": _now,
+            })
             time.sleep(60)
 
         except Exception as e:
             logger.error(f"[WORKER] ERROR: {e}")
             logger.info("[WORKER] Backing off 120s")
+            WORKER_HEARTBEAT.update({
+                "status": "error",
+                "last_error_at": time.time(),
+                "last_error_type": type(e).__name__,
+            })
             time.sleep(120)
 
 
