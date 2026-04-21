@@ -14,6 +14,7 @@ Bootstrap:
 import os
 import sys
 import logging
+from pathlib import Path
 
 import asyncio
 import json
@@ -24,8 +25,9 @@ from typing import Dict, Any, List, Optional
 from email.utils import parseaddr
 
 from fastapi import FastAPI, HTTPException, Request, Response, APIRouter, Query, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 import socketio
@@ -87,6 +89,12 @@ from pydantic import BaseModel
 
 load_dotenv()
 
+# Frontend static build paths (same-origin serving)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_DIST = REPO_ROOT / "frontend" / "dist"
+FRONTEND_ASSETS = FRONTEND_DIST / "assets"
+FRONTEND_INDEX = FRONTEND_DIST / "index.html"
+
 # ------------------------------------------------------------------
 # FASTAPI APP (CORS MUST BE FIRST)
 # ------------------------------------------------------------------
@@ -107,6 +115,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount frontend /assets only when the build is present
+if FRONTEND_ASSETS.exists():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_ASSETS)), name="frontend-assets")
 
 # ------------------------------------------------------------------
 # SOCKET.IO (WEBSOCKET + POLLING FALLBACK)
@@ -2211,6 +2223,35 @@ async def startup_event():
         print("[WARN]  [SYSTEM] GMAIL_CREDENTIALS_PATH missing. OAuth flow required.")
 
     print(f"[OK] [SYSTEM] Startup complete. Ready for requests on port {os.getenv('PORT', '8888')}")
+
+# ------------------------------------------------------------------
+# STATIC / SPA ROUTES (must be last before ASGI wrap)
+# ------------------------------------------------------------------
+@app.get("/", include_in_schema=False)
+async def serve_root():
+    if FRONTEND_INDEX.exists():
+        return FileResponse(str(FRONTEND_INDEX))
+    raise HTTPException(status_code=503, detail="Frontend build not found")
+
+
+_SPA_PROTECTED = {
+    "api", "auth", "healthz", "process", "accounts", "emails",
+    "docs", "redoc", "openapi.json", "socket.io",
+}
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_spa(full_path: str):
+    top = full_path.split("/")[0].lower()
+    if top in _SPA_PROTECTED:
+        raise HTTPException(status_code=404, detail="Not found")
+    candidate = FRONTEND_DIST / full_path
+    if candidate.exists() and candidate.is_file():
+        return FileResponse(str(candidate))
+    if FRONTEND_INDEX.exists():
+        return FileResponse(str(FRONTEND_INDEX))
+    raise HTTPException(status_code=503, detail="Frontend build not found")
+
 
 # ------------------------------------------------------------------
 # FINAL ASGI WRAP (Must be last)
