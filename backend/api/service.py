@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from email.utils import parseaddr
 
-from fastapi import FastAPI, HTTPException, Request, Response, APIRouter, Query
+from fastapi import FastAPI, HTTPException, Request, Response, APIRouter, Query, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -45,6 +45,9 @@ sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)
 
 from backend.config import Config
 from backend.core import EmailAssistant
+
+from backend.auth_guard import COOKIE_NAME, build_session_cookie_kwargs, create_access_token, require_jwt_auth
+
 
 def _get_worker_heartbeat() -> dict:
     """
@@ -275,7 +278,7 @@ async def healthz():
         "ai_summarizer": ai_summarizer,
     }
 
-@app.get("/api/diagnostic")
+@app.get("/api/diagnostic", dependencies=[Depends(require_jwt_auth)])
 async def diagnostic_check():
     """
     DIAGNOSTIC: Test database connectivity and write capability.
@@ -440,7 +443,7 @@ def resolve_account_id(state: Optional[str], account_id: Optional[str]) -> str:
     effective = _ACCOUNT_ID_CLEAN_RE.sub("", effective)
     return effective or "default"
 
-@app.get("/debug-config")
+@app.get("/debug-config", dependencies=[Depends(require_jwt_auth)])
 async def debug_config():
     """
     Debug endpoint to verify OAuth configuration at runtime.
@@ -465,7 +468,7 @@ async def debug_config():
     }
 
 
-@app.get("/debug-imports")
+@app.get("/debug-imports", dependencies=[Depends(require_jwt_auth)])
 async def debug_imports():
     """
     Debug endpoint for Python package import resolution.
@@ -514,7 +517,7 @@ async def debug_imports():
         "package_context": __package__ or "None (not executed as package)",
     }
 
-@app.get("/accounts")
+@app.get("/accounts", dependencies=[Depends(require_jwt_auth)])
 async def list_accounts_root():
     """Compatibility bridge: root /accounts delegates to canonical /api/accounts."""
     return await list_accounts()
@@ -522,7 +525,7 @@ async def list_accounts_root():
 # ------------------------------------------------------------------
 # FRONTEND BRIDGE ROUTES
 # ------------------------------------------------------------------
-@app.get("/process")
+@app.get("/process", dependencies=[Depends(require_jwt_auth)])
 async def process_briefing():
     """Bridge: frontend GET /process \u2192 assistant.process_emails()."""
     if not assistant:
@@ -534,7 +537,7 @@ async def process_briefing():
         print(f"[WARN] /process error: {e}")
         return {"briefings": [], "account": "primary", "error": str(e)}
 
-@app.get("/emails")
+@app.get("/emails", dependencies=[Depends(require_jwt_auth)])
 async def list_emails_root(account_id: Optional[str] = Query(None)):
     """Compatibility bridge: root /emails delegates to canonical /api/emails."""
     return await list_emails(account_id)
@@ -542,7 +545,7 @@ async def list_emails_root(account_id: Optional[str] = Query(None)):
 # ------------------------------------------------------------------
 # API ROUTES
 # ------------------------------------------------------------------
-api_router = APIRouter(prefix="/api")
+api_router = APIRouter(prefix="/api", dependencies=[Depends(require_jwt_auth)])
 
 @api_router.get("/emails")
 async def list_emails(account_id: Optional[str] = Query(None)):
@@ -1963,7 +1966,7 @@ async def google_oauth_init(account_id: str = Query("default")):
 
 
 @app.get("/auth/callback/google")
-async def google_oauth_callback(code: str, state: str = None, account_id: str = Query("default")):
+async def google_oauth_callback(request: Request, code: str, state: str = None, account_id: str = Query("default")):
     """
     Handles Google OAuth callback with PKCE support.
     Exchanges authorization code for tokens and stores them encrypted.
@@ -2120,7 +2123,11 @@ async def google_oauth_callback(code: str, state: str = None, account_id: str = 
         # CRITICAL: Pass account_id to frontend for immediate activation
         import urllib.parse
         encoded_account_id = urllib.parse.quote(effective_account_id)
-        return RedirectResponse(url=f"{frontend_url}/?auth=success&account_id={encoded_account_id}")
+        redirect = RedirectResponse(url=f"{frontend_url}/?auth=success&account_id={encoded_account_id}")
+        jwt_token = create_access_token(effective_account_id)
+        cookie_kwargs = build_session_cookie_kwargs(request)
+        redirect.set_cookie(value=jwt_token, **cookie_kwargs)
+        return redirect
 
     except Exception as e:
         print(f"[FAIL] [OAuth] Callback failed: {e}")
