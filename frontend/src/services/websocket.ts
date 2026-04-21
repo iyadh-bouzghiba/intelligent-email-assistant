@@ -22,21 +22,12 @@ class WebSocketService {
     private listeners: Map<string, Function[]> = new Map();
 
     private getSocketUrl(): string {
-        const url = import.meta.env.VITE_SOCKET_URL;
-
-        if (!url) {
-            throw new Error("❌ VITE_SOCKET_URL is missing. Deployment blocked.");
+        // Production: same-origin (frontend served by backend).
+        if (import.meta.env.PROD) {
+            return window.location.origin;
         }
-
-        // Drift guard: validate canonical backend or localhost only
-        const isCanonical = url.includes("intelligent-email-assistant-3e1a.onrender.com");
-        const isLocalDev = url.startsWith("http://localhost");
-
-        if (!isCanonical && !isLocalDev && import.meta.env.PROD) {
-            throw new Error("❌ Invalid VITE_SOCKET_URL. Update Render env var to canonical backend (3e1a).");
-        }
-
-        // Normalize trailing slash to prevent //socket.io bug
+        // Dev: use VITE_SOCKET_URL if set, else fallback to localhost backend.
+        const url = import.meta.env.VITE_SOCKET_URL || "http://localhost:8000";
         return url.replace(/\/$/, "");
     }
 

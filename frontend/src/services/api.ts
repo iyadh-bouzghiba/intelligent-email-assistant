@@ -14,15 +14,11 @@ import {
 
 const AUTH_REQUIRED_EVENT = "iea:auth-required";
 
-// Fail-fast environment contract
-const RAW_BASE = import.meta.env.VITE_API_BASE;
-
-if (!RAW_BASE) {
-    throw new Error("❌ VITE_API_BASE is missing. Deployment blocked.");
-}
-
-// Normalize trailing slash
-const BASE_URL = RAW_BASE.replace(/\/$/, "");
+// Production: same-origin (frontend served by backend, no env var needed).
+// Dev: use VITE_API_BASE if set, else localhost fallback.
+const BASE_URL: string = import.meta.env.PROD
+    ? window.location.origin
+    : (import.meta.env.VITE_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
 
 // Dedicated API root
 const API_ROOT = `${BASE_URL}/api`;

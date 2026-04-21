@@ -12,6 +12,23 @@
 #   PYTHONPATH=/app                -> 'import backend' resolves to /app/backend/
 # ============================================================================
 
+# ===== FRONTEND BUILD STAGE =====
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /frontend-build
+
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci
+
+COPY frontend/ ./
+
+# verify-env.js requires these at build time; they are inlined by Vite but
+# never read at runtime — api.ts/websocket.ts use window.location.origin in PROD.
+ENV VITE_API_BASE=https://intelligent-email-assistant-3e1a.onrender.com \
+    VITE_SOCKET_URL=https://intelligent-email-assistant-3e1a.onrender.com
+
+RUN npm run build
+
 # ===== BUILDER STAGE =====
 FROM python:3.11-slim AS builder
 
@@ -38,6 +55,10 @@ COPY --from=builder /root/.local /home/appuser/.local
 # Copy backend package directory — preserves 'backend' as importable package.
 # Context is project root, so 'backend/' maps directly to /app/backend/.
 COPY --chown=appuser:appuser backend/ ./backend/
+
+# Frontend static build — served same-origin by FastAPI static routes.
+# Path must match FRONTEND_DIST = REPO_ROOT / "frontend" / "dist" in service.py.
+COPY --from=frontend-builder --chown=appuser:appuser /frontend-build/dist ./frontend/dist/
 
 # PersistenceManager resolves its store path to /app/data/ at runtime.
 # /app is owned by root (created by WORKDIR); create and chown data/ here
