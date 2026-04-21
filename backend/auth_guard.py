@@ -39,11 +39,19 @@ def build_session_cookie_kwargs(request: Request) -> dict:
 
     forwarded_proto = (
         request.headers.get("x-forwarded-proto")
-        or request.url.scheme
         or ""
     ).split(",")[0].strip().lower()
 
-    is_https = forwarded_proto == "https"
+    request_scheme = (request.url.scheme or "").strip().lower()
+    base_url = (os.getenv("BASE_URL") or "").strip().lower()
+    frontend_url = (os.getenv("FRONTEND_URL") or "").strip().lower()
+
+    is_https = (
+        forwarded_proto == "https"
+        or request_scheme == "https"
+        or base_url.startswith("https://")
+        or frontend_url.startswith("https://")
+    )
 
     return {
         "key": COOKIE_NAME,
