@@ -11,6 +11,7 @@ import { AccountSwitcherMobile } from './components/AccountSwitcherMobile';
 import { AccountSwitcherDesktop } from './components/AccountSwitcherDesktop';
 import { getAccountColor, getEmailInitials } from './components/AccountSwitcherList';
 
+const AUTH_REQUIRED_EVENT = 'iea:auth-required';
 const BRAND_NAME = "EXECUTIVE BRAIN";
 const SUBTITLE = "Strategic Intelligence Feed";
 const ITEMS_PER_PAGE = 5;
@@ -139,6 +140,27 @@ export const App = () => {
 
     return 'General';
   };
+
+  // Global session-expired handler: reset all UI state when backend returns 401
+  useEffect(() => {
+    const handleAuthRequired = () => {
+      activeEmailRef.current = null;
+      syncingRef.current = false;
+      localStorage.removeItem('last_selected_account');
+      setAccounts([]);
+      setActiveEmail(null);
+      setBriefings([]);
+      setSentEmails([]);
+      resetAccountScopedState();
+      setLoading(false);
+      setLoadingSent(false);
+      setSyncing(false);
+      setError(null);
+    };
+    window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired);
+    return () => window.removeEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Scroll detection for scroll-to-top button
   useEffect(() => {
