@@ -34,22 +34,23 @@ def decode_access_token(token: str) -> dict:
     return jwt.decode(token, _get_secret(), algorithms=["HS256"])
 
 
-def _is_secure(request: Request) -> bool:
-    forwarded_proto = request.headers.get("x-forwarded-proto", "")
-    if forwarded_proto:
-        return forwarded_proto.lower() == "https"
-    return request.url.scheme == "https"
-
-
 def build_session_cookie_kwargs(request: Request) -> dict:
-    ttl = int(os.getenv("JWT_TTL_SECONDS", str(_JWT_TTL)))
-    secure = _is_secure(request)
+    ttl_minutes = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
+
+    forwarded_proto = (
+        request.headers.get("x-forwarded-proto")
+        or request.url.scheme
+        or ""
+    ).split(",")[0].strip().lower()
+
+    is_https = forwarded_proto == "https"
+
     return {
         "key": COOKIE_NAME,
         "httponly": True,
-        "secure": secure,
-        "samesite": "none" if secure else "lax",
-        "max_age": ttl,
+        "secure": is_https,
+        "samesite": "none" if is_https else "lax",
+        "max_age": ttl_minutes * 60,
         "path": "/",
     }
 
