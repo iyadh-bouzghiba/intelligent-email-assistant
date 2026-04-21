@@ -417,11 +417,6 @@ async def diagnostic_check():
     return diagnostic
 
 
-@app.api_route("/", methods=["GET", "HEAD"])
-async def root():
-    """Root - minimal liveness signal for browsers and probes."""
-    return {"status": "ok", "service": "Intelligent Email Assistant"}
-
 def debug_allowed():
     """Returns True only when DEBUG_ENABLED=true is explicitly set."""
     return os.getenv("DEBUG_ENABLED", "false").lower() == "true"
