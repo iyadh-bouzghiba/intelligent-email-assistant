@@ -3,8 +3,8 @@
 # Keeps the context small and keeps secrets / legacy code out of the image.
 # ============================================================================
 
-# --- frontend (separate static-site service) ---
-frontend/
+# --- frontend (built inside Docker image; node_modules excluded) ---
+frontend/node_modules/
 node_modules/
 
 # --- git / IDE ---
