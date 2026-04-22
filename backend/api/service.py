@@ -774,6 +774,20 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30, backfill_limit: 
                     if job_was_created:
                         ai_job_count += 1
 
+                    # Best-effort: enqueue document processing job for new emails.
+                    # Worker fetches MIME structure and skips gracefully if no
+                    # supported attachment is found — no byte download here.
+                    if is_new_email:
+                        try:
+                            await asyncio.to_thread(
+                                store.enqueue_ai_job,
+                                account_id=effective_account_id,
+                                gmail_message_id=m_id,
+                                job_type="document_process_v1",
+                            )
+                        except Exception:
+                            pass  # Never fail sync for optional document job
+
                     new_or_existing = "NEW" if is_new_email else "existing"
                     logger.info(f"[SYNC] ✓ Saved email {stored_count}/{len(emails)} ({new_or_existing}): {email.get('subject', 'No Subject')[:50]} (AI job: {create_ai_job})")
 
