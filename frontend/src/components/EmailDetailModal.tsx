@@ -21,6 +21,7 @@ interface Props {
   onSummarize: () => void;
   onMarkRead: () => void;
   onMarkUnread: () => void;
+  onAskAssistant?: () => void;
   getCategoryStyles: (cat: string) => string;
 }
 
@@ -53,6 +54,7 @@ export function EmailDetailModal({
   onSummarize,
   onMarkRead,
   onMarkUnread,
+  onAskAssistant,
   getCategoryStyles,
 }: Props) {
   return (
@@ -138,6 +140,7 @@ export function EmailDetailModal({
                   actionItemsRef={actionItemsRef}
                   onReadFull={() => onSwitchView('full')}
                   isSummarizing={isSummarizing}
+                  onAskAssistant={onAskAssistant}
                 />
               ) : (
                 <EmailFullView

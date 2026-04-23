@@ -7,6 +7,7 @@ import { Briefing, AccountInfo, SentEmail } from '@types';
 import { SentList } from './components/SentList';
 import { EmailDetailModal } from './components/EmailDetailModal';
 import { ReplyComposeModal } from './components/ReplyComposeModal';
+import { AssistantPanel } from './components/AssistantPanel';
 import { AccountSwitcherMobile } from './components/AccountSwitcherMobile';
 import { AccountSwitcherDesktop } from './components/AccountSwitcherDesktop';
 import { getAccountColor, getEmailInitials } from './components/AccountSwitcherList';
@@ -48,7 +49,7 @@ export const App = () => {
   const [scrollToActions, setScrollToActions] = useState(false);
   const actionItemsRef = useRef<HTMLDivElement | null>(null);
   const replyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [activeModal, setActiveModal] = useState<'none' | 'detail' | 'compose'>('none');
+  const [activeModal, setActiveModal] = useState<'none' | 'detail' | 'compose' | 'assistant'>('none');
   const [isDetailRead, setIsDetailRead] = useState(false);
   const [replyBody, setReplyBody] = useState('');
   const [replySubject, setReplySubject] = useState('');
@@ -196,6 +197,8 @@ export const App = () => {
           setReplySubject('');
           setReplyCC('');
           setPanelError(null);
+        } else if (activeModal === 'assistant') {
+          setActiveModal('detail');
         } else {
           setSelectedEmailDetail(null);
           setSendSuccess(false);
@@ -1016,6 +1019,23 @@ export const App = () => {
     setReplyCC('');
     setActiveModal('compose');
     setSendSuccess(false);
+  };
+
+  // Open AI assistant panel for the current email
+  const handleOpenAssistant = () => {
+    setActiveModal('assistant');
+  };
+
+  // Called by AssistantPanel when user clicks "Use this draft" — populates compose
+  const handleUseDraft = (draft: string) => {
+    if (!selectedEmailDetail?.thread_id) return;
+    const subject = normalizeReplySubject(selectedEmailDetail.subject || '');
+    setReplySubject(subject);
+    setReplyBody(draft);
+    setReplyCC('');
+    setPanelError(null);
+    setSendSuccess(false);
+    setActiveModal('compose');
   };
 
   // Extracted: discard compose → return to detail view
@@ -1865,6 +1885,7 @@ export const App = () => {
             onSummarize={handleSummarizeFromModal}
             onMarkRead={handleMarkRead}
             onMarkUnread={handleMarkUnread}
+            onAskAssistant={handleOpenAssistant}
             getCategoryStyles={getCategoryStyles}
           />
         )}
@@ -1890,6 +1911,24 @@ export const App = () => {
           />
         )}
       </AnimatePresence>
+
+      {/* AI Assistant Panel — right-side drawer, Escape returns to detail */}
+      {selectedEmailDetail && activeModal === 'assistant' && (
+        <>
+          <div
+            className="fixed inset-0 z-[150] bg-black/70 backdrop-blur-sm"
+            aria-hidden="true"
+            onClick={() => setActiveModal('detail')}
+          />
+          <div className="fixed inset-y-0 right-0 z-[200] w-full sm:w-[380px] flex flex-col">
+            <AssistantPanel
+              email={selectedEmailDetail}
+              onUseDraft={handleUseDraft}
+              onClose={() => setActiveModal('detail')}
+            />
+          </div>
+        </>
+      )}
 
       {/* Scroll to Top FAB - Bottom Right — hidden while any modal is open */}
       <AnimatePresence>

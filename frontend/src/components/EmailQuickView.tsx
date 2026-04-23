@@ -1,5 +1,5 @@
 import { RefObject } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Bot } from 'lucide-react';
 import { Briefing } from '@types';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
 
@@ -8,13 +8,15 @@ interface Props {
   actionItemsRef: RefObject<HTMLDivElement>;
   onReadFull: () => void;
   isSummarizing?: boolean;
+  /** Opens the AI Assistant panel for this email. */
+  onAskAssistant?: () => void;
 }
 
 /**
  * Quick View — shows AI summary + a short normalized body preview.
  * All action buttons live in EmailDetailModal's footer.
  */
-export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizing }: Props) {
+export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizing, onAskAssistant }: Props) {
   const rawText = email.body || email.summary || '';
   const bodyText = normalizeBodyText(rawText);
   const preview = bodyText.length > 320 ? bodyText.slice(0, 320) + '…' : bodyText;
@@ -103,6 +105,17 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
           )}
         </div>
       </div>
+
+      {/* AI Assistant trigger */}
+      {onAskAssistant && (
+        <button
+          onClick={onAskAssistant}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] hover:bg-indigo-500/[0.08] hover:border-indigo-500/30 text-slate-400 hover:text-indigo-300 text-xs font-semibold transition-all"
+        >
+          <Bot size={13} />
+          Ask AI Assistant
+        </button>
+      )}
     </div>
   );
 }

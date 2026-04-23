@@ -1147,11 +1147,97 @@ async def analyze_thread(thread_id: str):
     require_schema_ok()
     return {"thread_id": thread_id, "status": "queued", "message": "Analysis scheduled"}
 
+# ─── Agent request/response models (BL-08/BL-09) ────────────────────────────
+
+class AgentDraftRequest(BaseModel):
+    account_id: str
+    user_instruction: str
+    conversation_id: Optional[str] = None
+
+
+class AgentConsentRequest(BaseModel):
+    account_id: str
+
+
+class AgentFeedbackRequest(BaseModel):
+    account_id: str
+    conversation_id: str
+    action_type: str         # e.g. "draft_reply"
+    subject: str             # email subject ONLY — max 500 chars, never email body
+    outcome: str             # "accepted" | "rejected" | "edited"
+    rating: Optional[int] = None
+
+
 @api_router.post("/threads/{thread_id}/draft")
-async def draft_thread_reply(thread_id: str):
-    """Stub: trigger draft-reply generation for a thread."""
-    require_schema_ok()
-    return {"thread_id": thread_id, "status": "queued", "draft": None, "message": "Draft generation scheduled"}
+async def draft_thread_reply(thread_id: str, request: AgentDraftRequest):
+    """
+    Generate a draft reply proposal using the AI agent.
+    Returns draft text for display in ReplyComposeModal.
+
+    SEND SAFETY: This route never sends email. The returned draft is for the
+    user to review and send through ReplyComposeModal — the sole send surface.
+
+    Enforces (in order, fail fast):
+      1. Rate limit — 10 actions per account per hour (rate_limit_counters table)
+      2. Approval gate — audit_log user_approved=TRUE required (fails closed)
+    """
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = resolve_account_id(None, request.account_id)
+
+    # Fetch email from DB — never trust client-provided body content
+    try:
+        email_resp = (
+            store.client.table("emails")
+            .select("subject,sender,body")
+            .eq("account_id", effective_account_id)
+            .eq("thread_id", thread_id)          # thread_id from path param
+            .order("date", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = email_resp.data or []
+        if not rows:
+            raise HTTPException(status_code=404, detail="Email not found")
+        email_row = rows[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("[AGENT-DRAFT] Email fetch failed: %s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="Failed to fetch email")
+
+    subject = email_row.get("subject", "")
+    sender = email_row.get("sender", "")
+    # Body excerpt only — also capped inside agent.propose_draft
+    body_excerpt = (email_row.get("body") or "")[:1000]
+
+    from backend.assistant.agent import EmailAgent, AgentRateLimitError, AgentApprovalError
+    agent = EmailAgent(store)
+    try:
+        result = await agent.propose_draft(
+            account_id=effective_account_id,
+            thread_id=thread_id,                 # proven column: thread_id TEXT NOT NULL
+            subject=subject,
+            sender=sender,
+            body_excerpt=body_excerpt,
+            user_instruction=request.user_instruction,
+            conversation_id=request.conversation_id,
+        )
+    except AgentRateLimitError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    except AgentApprovalError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        logger.error("[AGENT-DRAFT] Draft generation failed: %s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="Draft generation failed")
+
+    return {
+        "thread_id": thread_id,
+        "draft": result["draft"],
+        "conversation_id": result["conversation_id"],
+        "status": "ok",
+    }
 
 
 class SendEmailRequest(BaseModel):
@@ -1881,6 +1967,108 @@ async def summarize_email_by_id(
     except Exception as e:
         print(f"[ERROR] Manual summarization failed: {e}")
         return {"status": "error", "message": str(e)}
+
+# ------------------------------------------------------------------
+# AGENT ROUTES — BL-08/BL-09
+# All routes sit on api_router and inherit Depends(require_jwt_auth).
+# ------------------------------------------------------------------
+
+@api_router.post("/agent/consent")
+async def agent_set_consent(request: AgentConsentRequest):
+    """
+    Enable AI assistant for this account.
+
+    Writes an audit_log entry with user_approved=TRUE so the approval gate
+    passes for subsequent agent actions.  The gate fails closed until this
+    endpoint is called — no agent action is possible without explicit consent.
+
+    Requires the SQL patch:
+      ALTER TABLE public.audit_log ADD COLUMN IF NOT EXISTS user_approved BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE public.audit_log ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL;
+    """
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = resolve_account_id(None, request.account_id)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        store.client.table("audit_log").insert({
+            "tenant_id": "primary",
+            "action": "agent_consent",
+            "resource": effective_account_id,
+            "metadata": {"consent_granted_at": now_iso},
+            "user_approved": True,
+            "approved_at": now_iso,
+            "timestamp": now_iso,
+        }).execute()
+    except Exception as e:
+        logger.error("[AGENT-CONSENT] Write failed: %s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="Failed to record consent")
+    logger.info("[AGENT-CONSENT] Consent granted for %s", effective_account_id)
+    return {"status": "ok", "approved": True, "account_id": effective_account_id}
+
+
+@api_router.get("/agent/status")
+async def agent_get_status(account_id: str = Query(...)):
+    """
+    Return approval state and remaining rate-limit quota for this account.
+    Frontend uses this to decide whether to show consent UI or the instruction input.
+    """
+    store = safe_get_store()
+    if not store:
+        return {"approved": False, "rate_limit_remaining": 0, "rate_limit_max": 10}
+    effective_account_id = resolve_account_id(None, account_id)
+
+    from backend.assistant.approval_gate import check_agent_approved
+    approved = check_agent_approved(store, effective_account_id)
+
+    window = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
+    counter_key = f"agent:{effective_account_id}:{window}"
+    current_count = 0
+    try:
+        resp = (
+            store.client.table("rate_limit_counters")
+            .select("count")
+            .eq("key", counter_key)              # proven column: key TEXT PRIMARY KEY
+            .limit(1)
+            .execute()
+        )
+        rows = resp.data or []
+        current_count = int(rows[0]["count"]) if rows else 0
+    except Exception:
+        pass  # Fail open: unknown count → report full quota remaining
+
+    return {
+        "approved": approved,
+        "rate_limit_remaining": max(0, 10 - current_count),
+        "rate_limit_max": 10,
+    }
+
+
+@api_router.post("/agent/feedback")
+async def agent_record_feedback(request: AgentFeedbackRequest):
+    """
+    Record user feedback on an AI draft proposal.
+
+    Privacy: original_input stores email subject only — max 500 chars, never email body.
+    Feedback is best-effort; failures never block the user.
+    """
+    store = safe_get_store()
+    if not store:
+        return {"status": "ok"}
+    effective_account_id = resolve_account_id(None, request.account_id)
+    from backend.learning.feedback_collector import record_feedback
+    record_feedback(
+        store=store,
+        account_id=effective_account_id,
+        conversation_id=request.conversation_id,
+        action_type=request.action_type,
+        subject=request.subject,  # subject only; truncation enforced inside record_feedback
+        outcome=request.outcome,
+        rating=request.rating,
+    )
+    return {"status": "ok"}
+
 
 # Include API router after all routes are defined
 app.include_router(api_router)
