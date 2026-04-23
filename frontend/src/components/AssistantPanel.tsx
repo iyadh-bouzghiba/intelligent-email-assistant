@@ -142,7 +142,6 @@ export function AssistantPanel({ email, onUseDraft, onClose }: Props) {
   const handleUseDraft = async () => {
     await sendFeedback('accepted');
     onUseDraft(draft);
-    onClose();
   };
 
   const handleRegenerate = () => {
