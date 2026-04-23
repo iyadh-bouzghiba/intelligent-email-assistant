@@ -176,7 +176,18 @@ class GmailProvider(EmailProvider):
 
         normalized: List[NormalizedEmail] = []
         for message_id in message_ids:
-            raw_msg = gmail_client.get_message(message_id)
+            try:
+                raw_msg = gmail_client.get_message(message_id)
+            except RuntimeError as e:
+                err_str = str(e)
+                if "Requested entity was not found" in err_str or "notFound" in err_str:
+                    logger.warning(
+                        "[GmailProvider] Message not found, skipping: account=%s msg=%s...",
+                        account_id,
+                        message_id[:8],
+                    )
+                    continue
+                raise
             item = self._normalize_raw_message(raw_msg)
             if item and item.message_id:
                 normalized.append(item)
