@@ -152,11 +152,53 @@ class EmailAgent:
     #                messages JSONB DEFAULT '[]', created_at, updated_at
     # ------------------------------------------------------------------
 
+    def _lookup_conversation(self, account_id: str, thread_id: str) -> Optional[str]:
+        """
+        Return the existing conversation id for (account_id, thread_id), or None.
+        Non-fatal: returns None on any DB error so callers can proceed to insert.
+        """
+        try:
+            resp = (
+                self.store.client.table("assistant_conversations")
+                .select("id")
+                .eq("account_id", account_id)
+                .eq("thread_id", thread_id)
+                .limit(1)
+                .execute()
+            )
+            rows = resp.data or []
+            return str(rows[0]["id"]) if rows else None
+        except Exception as e:
+            logger.warning(
+                "[AGENT] Conversation lookup failed (will attempt insert): %s",
+                type(e).__name__,
+            )
+            return None
+
     def create_conversation(self, account_id: str, thread_id: str) -> str:
         """
-        Create a new assistant_conversations row keyed to the Gmail thread.
-        Returns conversation_id (UUID string).
+        Get-or-create an assistant_conversations row for (account_id, thread_id).
+
+        Strategy:
+          1. Look up existing row — return its id if found.
+          2. Insert a new row — return its id if successful.
+          3. On any insert failure (incl. 409 unique conflict), look up again.
+          4. Raise RuntimeError only if all three steps fail to produce an id.
+
+        This makes the method safe for repeat calls on the same thread, including
+        after panel remounts where conversation_id arrives as null.
         """
+        # Step 1 — prefer existing row
+        existing = self._lookup_conversation(account_id, thread_id)
+        if existing:
+            logger.debug(
+                "[AGENT] Reusing existing conversation %s for thread %s",
+                existing,
+                thread_id,
+            )
+            return existing
+
+        # Step 2 — attempt insert
         now_iso = datetime.now(timezone.utc).isoformat()
         try:
             result = (
@@ -175,10 +217,27 @@ class EmailAgent:
             rows = result.data or []
             if rows:
                 return str(rows[0]["id"])
-            raise RuntimeError("Insert returned no row")
         except Exception as e:
-            logger.error("[AGENT] Conversation create failed: %s", type(e).__name__)
-            raise RuntimeError("Failed to create conversation") from e
+            # 409 unique conflict lands here — recover via Step 3
+            logger.warning(
+                "[AGENT] Conversation insert failed (%s), retrying lookup",
+                type(e).__name__,
+            )
+
+        # Step 3 — conflict recovery: another request won the race or row already existed
+        recovered = self._lookup_conversation(account_id, thread_id)
+        if recovered:
+            logger.info(
+                "[AGENT] Recovered conversation %s for thread %s after insert conflict",
+                recovered,
+                thread_id,
+            )
+            return recovered
+
+        logger.error(
+            "[AGENT] Conversation get-or-create failed entirely for thread %s", thread_id
+        )
+        raise RuntimeError("Failed to get or create conversation")
 
     # ------------------------------------------------------------------
     # Draft proposal (core action — never sends)
