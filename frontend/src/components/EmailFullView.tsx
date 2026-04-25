@@ -1,7 +1,9 @@
-import { RefObject } from 'react';
+import { RefObject, useEffect, useMemo, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { Briefing } from '@types';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
+import { AttachmentStrip, AttachmentStripItem } from './AttachmentStrip';
+import { ImageLightbox } from './ImageLightbox';
 
 interface Props {
   email: Briefing;
@@ -9,26 +11,155 @@ interface Props {
   onBackToSummary: () => void;
 }
 
+interface RenderedEmailPayload {
+  gmail_message_id: string;
+  body_html: string | null;
+  body_text: string | null;
+  attachments: AttachmentStripItem[];
+}
+
+function sanitizeResolvedHtml(htmlInput: string): string {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(htmlInput, 'text/html');
+
+  doc.querySelectorAll('script, style, iframe, object, embed, link, meta, form').forEach((node) => {
+    node.remove();
+  });
+
+  const allNodes = doc.body.querySelectorAll('*');
+
+  allNodes.forEach((node) => {
+    const element = node as HTMLElement;
+    const tagName = element.tagName.toLowerCase();
+
+    [...element.attributes].forEach((attribute) => {
+      const attrName = attribute.name.toLowerCase();
+      const attrValue = attribute.value.trim();
+
+      if (attrName.startsWith('on') || attrName === 'style') {
+        element.removeAttribute(attribute.name);
+        return;
+      }
+
+      if ((attrName === 'src' || attrName === 'href') && attrValue) {
+        if (attrValue.startsWith('cid:')) {
+          element.removeAttribute(attribute.name);
+          return;
+        }
+
+        if (attrName === 'src') {
+          const isDataImage = /^data:image\//i.test(attrValue);
+          if (!isDataImage && !attrValue.startsWith('/api/attachments/')) {
+            element.removeAttribute(attribute.name);
+          }
+          return;
+        }
+
+        if (attrName === 'href') {
+          const isSafeHref =
+            attrValue.startsWith('http://') ||
+            attrValue.startsWith('https://') ||
+            attrValue.startsWith('mailto:') ||
+            attrValue.startsWith('tel:') ||
+            attrValue.startsWith('/');
+
+          if (!isSafeHref) {
+            element.removeAttribute(attribute.name);
+            return;
+          }
+
+          element.setAttribute('target', '_blank');
+          element.setAttribute('rel', 'noopener noreferrer');
+        }
+      }
+    });
+
+    if (tagName === 'img') {
+      element.removeAttribute('width');
+      element.removeAttribute('height');
+      element.setAttribute('loading', 'lazy');
+      element.className = [element.className, 'max-w-full max-h-[600px] object-contain mx-auto my-3'].filter(Boolean).join(' ');
+    }
+  });
+
+  return doc.body.innerHTML;
+}
+
 /**
  * Full View — shows AI summary (if present) and the complete message body.
  *
  * Body rendering strategy:
- *   - normalizeBodyText() is applied first (line-ending normalization,
- *     BOM strip, 3+ blank-line collapse)
- *   - The normalized text is split on \n\n to produce paragraph blocks
- *   - Each block renders as a <p> with whitespace-pre-wrap so single
- *     line-breaks within a paragraph are preserved (important for
- *     manually-formatted plaintext emails)
- *   - This avoids <pre>'s horizontal-overflow issues on narrow screens
- *     while keeping all meaningful whitespace structure intact
+ *   - If rendered HTML is available from the backend, sanitize it in-browser
+ *     and render it with resolved inline CID images
+ *   - Otherwise fall back to normalized plaintext paragraph rendering
+ *   - AttachmentStrip renders non-inline attachments below the body
+ *   - ImageLightbox renders full-size attachment previews on demand
  *
  * All action buttons live in EmailDetailModal's footer.
  */
 export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props) {
-  const rawText = email.body || email.summary || '';
+  const [renderedEmail, setRenderedEmail] = useState<RenderedEmailPayload | null>(null);
+  const [renderLoading, setRenderLoading] = useState(false);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [lightboxAttachment, setLightboxAttachment] = useState<AttachmentStripItem | null>(null);
+
+  useEffect(() => {
+    setLightboxAttachment(null);
+  }, [email.gmail_message_id]);
+
+  useEffect(() => {
+    if (!email.gmail_message_id) {
+      setRenderedEmail(null);
+      setRenderLoading(false);
+      setRenderError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadRenderedEmail() {
+      setRenderLoading(true);
+      setRenderError(null);
+
+      try {
+        const response = await fetch(`/api/emails/${encodeURIComponent(email.gmail_message_id || '')}/rendered`, {
+          credentials: 'include',
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Rendered email fetch failed with status ${response.status}`);
+        }
+
+        const payload = (await response.json()) as RenderedEmailPayload;
+        setRenderedEmail(payload);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setRenderedEmail(null);
+        setRenderError('Unable to load inline images and attachments for this email.');
+      } finally {
+        if (!controller.signal.aborted) {
+          setRenderLoading(false);
+        }
+      }
+    }
+
+    loadRenderedEmail();
+
+    return () => controller.abort();
+  }, [email.gmail_message_id]);
+
+  const rawText = renderedEmail?.body_text || email.body || email.summary || '';
   const bodyText = normalizeBodyText(rawText);
-  // Split into paragraph blocks; filter empty strings that can arise at edges
-  const paragraphs = bodyText ? bodyText.split('\n\n').filter(p => p.trim().length > 0) : [];
+  const paragraphs = bodyText ? bodyText.split('\n\n').filter((p) => p.trim().length > 0) : [];
+
+  const sanitizedHtml = useMemo(
+    () => (renderedEmail?.body_html ? sanitizeResolvedHtml(renderedEmail.body_html) : null),
+    [renderedEmail?.body_html]
+  );
 
   return (
     <div className="space-y-6">
@@ -60,7 +191,7 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
 
           {email.ai_summary_json?.urgency && (
             <p className="text-xs text-slate-500">
-              Urgency:{' '}
+              Urgency{' '}
               <span className="font-bold text-slate-400 capitalize">{email.ai_summary_json.urgency}</span>
             </p>
           )}
@@ -78,8 +209,16 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
             ← Summary
           </button>
         </div>
+
         <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-          {paragraphs.length > 0 ? (
+          {renderLoading ? (
+            <p className="text-sm leading-relaxed text-slate-400">Loading inline images and attachments…</p>
+          ) : sanitizedHtml ? (
+            <div
+              className="space-y-3 text-sm leading-relaxed text-slate-300 break-words overflow-x-auto"
+              dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+            />
+          ) : paragraphs.length > 0 ? (
             <div className="space-y-3">
               {paragraphs.map((para, i) => (
                 <p
@@ -94,7 +233,25 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
             <p className="text-sm leading-relaxed text-slate-500 italic">No message body available.</p>
           )}
         </div>
+
+        {renderError && (
+          <p className="text-xs leading-relaxed text-amber-400">
+            {renderError}
+          </p>
+        )}
+
+        <AttachmentStrip
+          attachments={renderedEmail?.attachments || []}
+          onOpenImage={setLightboxAttachment}
+        />
       </div>
+
+      {lightboxAttachment && (
+        <ImageLightbox
+          attachment={lightboxAttachment}
+          onClose={() => setLightboxAttachment(null)}
+        />
+      )}
     </div>
   );
 }
