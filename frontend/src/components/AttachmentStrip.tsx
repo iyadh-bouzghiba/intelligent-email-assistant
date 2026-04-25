@@ -1,7 +1,7 @@
 import { Download, Eye, File, FileSpreadsheet, FileText, Image as ImageIcon } from 'lucide-react';
 
 export interface AttachmentStripItem {
-    attachment_id?: string | null;
+    attachment_key?: string | null;
     filename: string;
     mime_type: string;
     size: number;
@@ -197,7 +197,7 @@ export function AttachmentStrip({ attachments, onOpenImage }: Props) {
             <div className="grid grid-cols-2 gap-2 max-h-[360px] overflow-y-auto pr-0.5">
                 {displayAttachments.map((attachment) => (
                     <AttachmentCard
-                        key={`${attachment.attachment_id ?? attachment.filename}-${attachment.size}`}
+                        key={`${attachment.attachment_key ?? attachment.filename}-${attachment.size}`}
                         attachment={attachment}
                         onOpenImage={onOpenImage}
                     />
