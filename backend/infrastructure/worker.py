@@ -255,6 +255,7 @@ def _sync_one_account(
             logger.warning(f"[WORKER] [{account_id}] Could not query existing emails: {e}")
 
         ai_job_count = 0
+        document_job_count = 0
         batch_size = 25
 
         for i in range(0, len(emails), batch_size):
@@ -304,6 +305,34 @@ def _sync_one_account(
                     if job_was_created:
                         ai_job_count += 1
 
+                    # Best-effort: enqueue document processing job for new emails.
+                    # This keeps the canonical auto-sync worker aligned with the
+                    # manual /sync-now path and supports attachment-bearing emails
+                    # entering through the normal runtime ingestion loop.
+                    if is_new_email:
+                        try:
+                            document_job_id = control.store.enqueue_ai_job(
+                                account_id=account_id,
+                                gmail_message_id=m_id,
+                                job_type="document_process_v1",
+                            )
+                            if document_job_id:
+                                document_job_count += 1
+                                logger.info(
+                                    f"[WORKER] [{account_id}] Document job queued for provider={provider_name}: "
+                                    f"{m_id[:8]}... (job_id={document_job_id})"
+                                )
+                            else:
+                                logger.warning(
+                                    f"[WORKER] [{account_id}] Document job enqueue returned no job_id "
+                                    f"for provider={provider_name}: {m_id[:8]}..."
+                                )
+                        except Exception as e:
+                            logger.warning(
+                                f"[WORKER] [{account_id}] Document job enqueue failed for "
+                                f"provider={provider_name}: {type(e).__name__}: {e}"
+                            )
+
             if i + batch_size < len(emails):
                 logger.info(
                     f"[WORKER] [{account_id}] Batch commit complete. Cooling for 500ms..."
@@ -318,11 +347,13 @@ def _sync_one_account(
                 "provider": provider_name,
                 "count": written_count,
                 "ai_jobs": ai_job_count,
+                "document_jobs": document_job_count,
             },
         )
         logger.info(
             f"[WORKER] [{account_id}] Write complete for provider={provider_name}: "
-            f"{written_count} email(s) ingested, {ai_job_count} AI job(s) created"
+            f"{written_count} email(s) ingested, {ai_job_count} AI job(s) created, "
+            f"{document_job_count} document job(s) queued"
         )
 
         if written_count > 0 and SOCKETIO_AVAILABLE:
@@ -350,7 +381,8 @@ def _sync_one_account(
     logger.info(
         f"[WORKER] [{account_id}] Counters: provider={provider_name}, "
         f"changed_ids_count={changed_ids_count}, fetched_emails_count={fetched_emails_count}, "
-        f"written_count={written_count}, emitted={emitted}"
+        f"written_count={written_count}, emitted={emitted}, "
+        f"ai_jobs={ai_job_count}, document_jobs={document_job_count}"
     )
 
 
