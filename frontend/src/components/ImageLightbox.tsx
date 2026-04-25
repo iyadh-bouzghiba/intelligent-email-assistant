@@ -12,12 +12,17 @@ export function ImageLightbox({ attachment, onClose }: Props) {
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                if (typeof event.stopImmediatePropagation === 'function') {
+                    event.stopImmediatePropagation();
+                }
                 onClose();
             }
         };
 
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
+        window.addEventListener('keydown', onKeyDown, true);
+        return () => window.removeEventListener('keydown', onKeyDown, true);
     }, [onClose]);
 
     if (!attachment.preview_url) {

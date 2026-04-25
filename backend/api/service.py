@@ -22,6 +22,7 @@ import asyncio
 import json
 import re
 import time
+from urllib.parse import quote as _url_quote
 from datetime import datetime, timezone
 from html import escape
 from typing import Dict, Any, List, Optional
@@ -718,6 +719,62 @@ def _lookup_email_record_by_message_id(gmail_message_id: str) -> Optional[Dict[s
     return response.data[0]
 
 
+_DRIVE_ANCHOR_RE = re.compile(
+    r'<a\b[^>]*?\bhref=["\']?(https://(?:drive|docs)\.google\.com[^"\'\s>]*)["\']?[^>]*>(.*?)</a>',
+    re.IGNORECASE | re.DOTALL,
+)
+_DRIVE_BARE_URL_RE = re.compile(
+    r'https://(?:drive|docs)\.google\.com/\S+',
+    re.IGNORECASE,
+)
+_HTML_TAG_RE = re.compile(r'<[^>]+>')
+
+
+def _classify_drive_url(url: str) -> str:
+    if 'docs.google.com/document' in url:
+        return 'google_docs'
+    if 'docs.google.com/spreadsheets' in url:
+        return 'google_sheets'
+    if 'docs.google.com/presentation' in url:
+        return 'google_slides'
+    return 'google_drive'
+
+
+def _extract_drive_linked_files(
+    body_html: Optional[str],
+    body_text: Optional[str],
+) -> List[Dict[str, Any]]:
+    """Extract Google Drive / Docs linked-file metadata from email body."""
+    seen_urls: set = set()
+    linked_files: List[Dict[str, Any]] = []
+
+    if body_html:
+        for match in _DRIVE_ANCHOR_RE.finditer(body_html):
+            url = match.group(1).rstrip('.,;)')
+            raw_title = match.group(2)
+            title = _HTML_TAG_RE.sub('', raw_title).strip() or url
+            if url not in seen_urls:
+                seen_urls.add(url)
+                linked_files.append({
+                    'title': title,
+                    'url': url,
+                    'provider': _classify_drive_url(url),
+                })
+
+    if body_text:
+        for match in _DRIVE_BARE_URL_RE.finditer(body_text):
+            url = match.group(0).rstrip('.,;)')
+            if url not in seen_urls:
+                seen_urls.add(url)
+                linked_files.append({
+                    'title': url,
+                    'url': url,
+                    'provider': _classify_drive_url(url),
+                })
+
+    return linked_files
+
+
 def _build_rendered_email_payload(
     account_id: str,
     gmail_message_id: str,
@@ -799,7 +856,7 @@ def _build_rendered_email_payload(
 
         too_large = size > MAX_ATTACHMENT_PREVIEW_BYTES
         route_url = (
-            f"/api/attachments/{gmail_message_id}/{attachment_id}"
+            f"/api/attachments/{gmail_message_id}/{_url_quote(attachment_id, safe='')}"
             if attachment_id
             else None
         )
@@ -837,11 +894,13 @@ def _build_rendered_email_payload(
         )
 
     resolved_html = _resolve_inline_cid_sources(body_html, cid_sources) if body_html else None
+    linked_files = _extract_drive_linked_files(resolved_html or body_html, body_text)
 
     return {
         "body_html": resolved_html,
         "body_text": body_text or fallback_body or "",
         "attachments": attachments,
+        "linked_files": linked_files,
     }
 
 
@@ -931,10 +990,11 @@ async def get_rendered_email(gmail_message_id: str):
         "body_html": rendered_payload.get("body_html"),
         "body_text": rendered_payload.get("body_text") or (record.get("body") or ""),
         "attachments": rendered_payload.get("attachments") or [],
+        "linked_files": rendered_payload.get("linked_files") or [],
     }
 
 
-@api_router.get("/attachments/{message_id}/{attachment_id}")
+@api_router.get("/attachments/{message_id}/{attachment_id:path}")
 async def get_attachment_stream(message_id: str, attachment_id: str):
     record = await asyncio.to_thread(_lookup_email_record_by_message_id, message_id)
     if not record:

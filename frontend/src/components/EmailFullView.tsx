@@ -1,5 +1,5 @@
 import { RefObject, useEffect, useMemo, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { ExternalLink, Sparkles } from 'lucide-react';
 import { Briefing } from '@types';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
 import { AttachmentStrip, AttachmentStripItem } from './AttachmentStrip';
@@ -11,11 +11,25 @@ interface Props {
   onBackToSummary: () => void;
 }
 
+interface LinkedFileItem {
+  title: string;
+  url: string;
+  provider: 'google_drive' | 'google_docs' | 'google_sheets' | 'google_slides' | string;
+}
+
 interface RenderedEmailPayload {
   gmail_message_id: string;
   body_html: string | null;
   body_text: string | null;
   attachments: AttachmentStripItem[];
+  linked_files?: LinkedFileItem[];
+}
+
+function linkedFileCta(provider: string): string {
+  if (provider === 'google_docs') return 'Open in Docs';
+  if (provider === 'google_sheets') return 'Open in Sheets';
+  if (provider === 'google_slides') return 'Open in Slides';
+  return 'Open in Drive';
 }
 
 function sanitizeResolvedHtml(htmlInput: string): string {
@@ -244,6 +258,27 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
           attachments={renderedEmail?.attachments || []}
           onOpenImage={setLightboxAttachment}
         />
+
+        {(renderedEmail?.linked_files ?? []).length > 0 && (
+          <div className="space-y-2 pt-1">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Linked files</p>
+            <div className="flex flex-col gap-1">
+              {(renderedEmail!.linked_files!).map((file, idx) => (
+                <a
+                  key={idx}
+                  href={file.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm bg-white/[0.03] border border-white/5 hover:border-sky-500/30 transition-colors"
+                >
+                  <ExternalLink size={13} className="shrink-0 text-sky-400" />
+                  <span className="flex-1 truncate text-sky-400 hover:text-sky-300">{file.title}</span>
+                  <span className="shrink-0 text-xs font-semibold text-sky-500 hover:text-sky-300">{linkedFileCta(file.provider)}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {lightboxAttachment && (
