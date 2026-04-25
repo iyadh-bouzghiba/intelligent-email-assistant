@@ -22,7 +22,6 @@ import asyncio
 import json
 import re
 import time
-from urllib.parse import quote as _url_quote
 from datetime import datetime, timezone
 from html import escape
 from typing import Dict, Any, List, Optional
@@ -656,6 +655,70 @@ def _collect_attachment_candidate_parts(payload: Dict[str, Any]) -> List[Dict[st
     return candidates
 
 
+def _make_stable_attachment_key(ordinal: int, filename: str, mime_type: str, size: int) -> str:
+    """
+    Build a deterministic, URL-safe attachment key from message-local metadata.
+    Never embeds the opaque Gmail attachmentId — reproducible from the same MIME payload.
+    """
+    safe_name = re.sub(r'[^A-Za-z0-9._-]', '_', filename)[:40]
+    safe_mime = re.sub(r'[^A-Za-z0-9._-]', '_', mime_type)[:20]
+    return f"{ordinal:03d}_{safe_name}_{safe_mime}_{size}"
+
+
+def _build_attachment_entries(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Single source of truth for surfaced attachment metadata.
+    Used by both the rendered payload builder and the byte-serving route.
+
+    Assigns each candidate part a stable, deterministic attachment_key derived from
+    traversal ordinal + filename + mime_type + size.  The raw Gmail attachmentId is
+    preserved internally but is never exposed as a public route token.
+    """
+    seen_dedup: set = set()
+    entries: List[Dict[str, Any]] = []
+    ordinal = 0
+
+    for part in _collect_attachment_candidate_parts(payload):
+        mime_type = (part.get("mimeType") or "application/octet-stream").strip() or "application/octet-stream"
+        filename = (part.get("filename") or "").strip()
+        body = part.get("body", {}) or {}
+        raw_attachment_id = body.get("attachmentId")
+        inline_data = body.get("data")
+        size = int(body.get("size") or 0)
+        content_id = _strip_content_id(_get_part_header(part, "Content-ID"))
+        is_image = mime_type.startswith("image/")
+
+        if not filename or not (raw_attachment_id or inline_data):
+            continue
+
+        dedup_key = (raw_attachment_id or "", filename, mime_type, size)
+        if dedup_key in seen_dedup:
+            continue
+        seen_dedup.add(dedup_key)
+
+        attachment_key = _make_stable_attachment_key(ordinal, filename, mime_type, size)
+        ordinal += 1
+
+        entries.append({
+            "attachment_key": attachment_key,
+            "raw_attachment_id": raw_attachment_id,
+            "inline_data": inline_data,
+            "filename": filename,
+            "mime_type": mime_type,
+            "size": size,
+            "is_image": is_image,
+            "content_id": content_id,
+            "part": part,
+        })
+
+    return entries
+
+
+def _build_attachment_entry_index(entries: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Build a stable attachment_key → entry lookup dict from the entries list."""
+    return {e["attachment_key"]: e for e in entries}
+
+
 def _collect_cid_references(body_html: Optional[str]) -> set:
     if not body_html:
         return set()
@@ -829,25 +892,20 @@ def _build_rendered_email_payload(
 
     cid_sources: Dict[str, str] = {}
     attachments: List[Dict[str, Any]] = []
-    seen_attachment_keys = set()
     referenced_cids = _collect_cid_references(body_html)
 
     from backend.providers.gmail import GmailProvider
     provider = GmailProvider()
 
-    for part in _collect_attachment_candidate_parts(payload):
-        mime_type = (part.get("mimeType") or "application/octet-stream").strip() or "application/octet-stream"
-        filename = (part.get("filename") or "").strip()
-        body = part.get("body", {}) or {}
-        attachment_id = body.get("attachmentId")
-        inline_data = body.get("data")
-        size = int(body.get("size") or 0)
-        content_id = _strip_content_id(_get_part_header(part, "Content-ID"))
-        is_image = mime_type.startswith("image/")
-        has_binary_payload = bool(attachment_id or inline_data)
-
-        if not filename or not has_binary_payload:
-            continue
+    for entry in _build_attachment_entries(payload):
+        attachment_key = entry["attachment_key"]
+        raw_attachment_id = entry["raw_attachment_id"]
+        inline_data = entry["inline_data"]
+        filename = entry["filename"]
+        mime_type = entry["mime_type"]
+        size = entry["size"]
+        is_image = entry["is_image"]
+        content_id = entry["content_id"]
 
         normalized_content_id = (content_id or "").lower()
         is_referenced_inline = bool(normalized_content_id and normalized_content_id in referenced_cids)
@@ -860,8 +918,8 @@ def _build_rendered_email_payload(
                 )
             else:
                 try:
-                    if attachment_id:
-                        content_bytes = provider.get_attachment_bytes(account_id, gmail_message_id, attachment_id)
+                    if raw_attachment_id:
+                        content_bytes = provider.get_attachment_bytes(account_id, gmail_message_id, raw_attachment_id)
                     else:
                         content_bytes = _decode_gmail_body_data(inline_data or "")
                 except Exception:
@@ -873,22 +931,28 @@ def _build_rendered_email_payload(
 
             continue
 
-        attachment_key = (attachment_id or "", filename, mime_type, size)
-        if attachment_key in seen_attachment_keys:
-            continue
-        seen_attachment_keys.add(attachment_key)
-
         too_large = size > MAX_ATTACHMENT_PREVIEW_BYTES
-        route_url = (
-            f"/api/attachments/{gmail_message_id}/{_url_quote(attachment_id, safe='')}"
-            if attachment_id
-            else None
-        )
+        # Stable key is URL-safe — no encoding needed, no opaque Gmail ID exposed.
+        route_url = f"/api/attachments/{gmail_message_id}/{attachment_key}" if raw_attachment_id else None
 
         preview_url = None
         if is_image and not too_large:
-            if attachment_id:
-                preview_url = route_url
+            if raw_attachment_id:
+                try:
+                    preview_bytes = provider.get_attachment_bytes(
+                        account_id, gmail_message_id, raw_attachment_id
+                    )
+                except Exception as _preview_exc:
+                    logger.warning(
+                        "[API] Failed to fetch image preview bytes for %r in message %s: %s",
+                        filename,
+                        gmail_message_id[:12],
+                        type(_preview_exc).__name__,
+                    )
+                    preview_bytes = b""
+                if preview_bytes:
+                    preview_b64 = base64.b64encode(preview_bytes).decode("ascii")
+                    preview_url = f"data:{mime_type};base64,{preview_b64}"
             elif inline_data:
                 try:
                     preview_bytes = _decode_gmail_body_data(inline_data)
@@ -900,7 +964,7 @@ def _build_rendered_email_payload(
 
         attachments.append(
             {
-                "attachment_id": attachment_id,
+                "attachment_key": attachment_key,
                 "filename": filename,
                 "mime_type": mime_type,
                 "size": size,
@@ -1018,8 +1082,13 @@ async def get_rendered_email(gmail_message_id: str):
     }
 
 
-@api_router.get("/attachments/{message_id}/{attachment_id:path}")
-async def get_attachment_stream(message_id: str, attachment_id: str):
+@api_router.get("/attachments/{message_id}/{attachment_key}")
+async def get_attachment_stream(message_id: str, attachment_key: str):
+    """
+    Serve attachment bytes by stable attachment_key.
+    The stable key is deterministic from message-local metadata (ordinal + filename + mime + size).
+    It is never the opaque Gmail attachmentId — that is resolved internally after lookup.
+    """
     record = await asyncio.to_thread(_lookup_email_record_by_message_id, message_id)
     if not record:
         raise HTTPException(status_code=404, detail="Email not found")
@@ -1034,41 +1103,33 @@ async def get_attachment_stream(message_id: str, attachment_id: str):
 
     payload = raw_message.get("payload", {}) or {}
 
-    # Use the shared index built from _collect_attachment_candidate_parts — same logic as /rendered.
-    attachment_index = _build_attachment_part_index(payload)
-    normalized_requested = _normalize_attachment_id(attachment_id)
-    index_entry = attachment_index.get(normalized_requested)
+    # Rebuild the same entry list as the rendered payload builder — guaranteed identical order.
+    entries = _build_attachment_entries(payload)
+    entry_index = _build_attachment_entry_index(entries)
+    entry = entry_index.get(attachment_key)
 
-    if not index_entry:
-        # Diagnostic log: surface candidate IDs/filenames/mimes so 404s are debuggable.
-        candidates = list(attachment_index.values())[:6]
+    if not entry:
         logger.warning(
-            "[API] Attachment 404 for message=%s requested_id=%r "
-            "candidate_ids=%r candidate_files=%r candidate_mimes=%r",
+            "[API] Attachment 404 for message=%s requested_key=%r "
+            "available_keys=%r filenames=%r mimes=%r",
             message_id[:12],
-            normalized_requested[:40],
-            [e["raw_attachment_id"][:20] for e in candidates],
-            [(e["part"].get("filename") or "")[:30] for e in candidates],
-            [(e["part"].get("mimeType") or "")[:30] for e in candidates],
+            attachment_key[:60],
+            [e["attachment_key"] for e in entries[:6]],
+            [e["filename"][:30] for e in entries[:6]],
+            [e["mime_type"][:30] for e in entries[:6]],
         )
         raise HTTPException(status_code=404, detail="Attachment not found")
 
-    attachment_part = index_entry["part"]
-    # Use the raw attachment_id from the MIME tree for the Gmail API call —
-    # avoids any URL-decoding mismatch between the route parameter and the stored ID.
-    raw_attachment_id = index_entry["raw_attachment_id"]
+    raw_attachment_id = entry["raw_attachment_id"]
+    if not raw_attachment_id:
+        raise HTTPException(status_code=404, detail="Attachment has no downloadable bytes")
 
-    body = attachment_part.get("body", {}) or {}
-    size = int(body.get("size") or 0)
+    size = entry["size"]
     if size > MAX_ATTACHMENT_PREVIEW_BYTES:
         raise HTTPException(status_code=413, detail="Attachment too large to preview or download")
 
-    filename = (attachment_part.get("filename") or attachment_id).strip() or attachment_id
-    mime_type = (
-        attachment_part.get("mimeType")
-        or mimetypes.guess_type(filename)[0]
-        or "application/octet-stream"
-    )
+    filename = entry["filename"]
+    mime_type = entry["mime_type"] or mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
     from backend.providers.gmail import GmailProvider
     provider = GmailProvider()
