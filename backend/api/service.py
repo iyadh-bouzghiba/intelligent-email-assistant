@@ -613,6 +613,30 @@ def _find_attachment_part(payload: Dict[str, Any], attachment_id: str) -> Option
     return None
 
 
+def _normalize_attachment_id(raw_id: Optional[str]) -> str:
+    """Normalize a Gmail attachment ID for consistent lookup between rendered and serving paths."""
+    if not raw_id:
+        return ""
+    return raw_id.strip()
+
+
+def _build_attachment_part_index(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """
+    Build a normalized_attachment_id → {part, raw_attachment_id} index using the same
+    _collect_attachment_candidate_parts logic as the rendered payload builder.
+    This guarantees both paths use an identical resolution strategy.
+    """
+    index: Dict[str, Dict[str, Any]] = {}
+    for part in _collect_attachment_candidate_parts(payload):
+        body = part.get("body", {}) or {}
+        att_id = body.get("attachmentId")
+        if att_id:
+            norm = _normalize_attachment_id(att_id)
+            if norm:
+                index[norm] = {"part": part, "raw_attachment_id": att_id}
+    return index
+
+
 def _collect_attachment_candidate_parts(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     candidates: List[Dict[str, Any]] = []
 
@@ -1009,9 +1033,30 @@ async def get_attachment_stream(message_id: str, attachment_id: str):
         raise HTTPException(status_code=404, detail="Raw Gmail message not found")
 
     payload = raw_message.get("payload", {}) or {}
-    attachment_part = _find_attachment_part(payload, attachment_id)
-    if not attachment_part:
+
+    # Use the shared index built from _collect_attachment_candidate_parts — same logic as /rendered.
+    attachment_index = _build_attachment_part_index(payload)
+    normalized_requested = _normalize_attachment_id(attachment_id)
+    index_entry = attachment_index.get(normalized_requested)
+
+    if not index_entry:
+        # Diagnostic log: surface candidate IDs/filenames/mimes so 404s are debuggable.
+        candidates = list(attachment_index.values())[:6]
+        logger.warning(
+            "[API] Attachment 404 for message=%s requested_id=%r "
+            "candidate_ids=%r candidate_files=%r candidate_mimes=%r",
+            message_id[:12],
+            normalized_requested[:40],
+            [e["raw_attachment_id"][:20] for e in candidates],
+            [(e["part"].get("filename") or "")[:30] for e in candidates],
+            [(e["part"].get("mimeType") or "")[:30] for e in candidates],
+        )
         raise HTTPException(status_code=404, detail="Attachment not found")
+
+    attachment_part = index_entry["part"]
+    # Use the raw attachment_id from the MIME tree for the Gmail API call —
+    # avoids any URL-decoding mismatch between the route parameter and the stored ID.
+    raw_attachment_id = index_entry["raw_attachment_id"]
 
     body = attachment_part.get("body", {}) or {}
     size = int(body.get("size") or 0)
@@ -1033,7 +1078,7 @@ async def get_attachment_stream(message_id: str, attachment_id: str):
             provider.get_attachment_bytes,
             account_id,
             message_id,
-            attachment_id,
+            raw_attachment_id,
         )
     except RuntimeError as e:
         if "auth_required" in str(e):
@@ -1041,7 +1086,8 @@ async def get_attachment_stream(message_id: str, attachment_id: str):
         raise HTTPException(status_code=502, detail="Attachment download failed")
 
     safe_filename = re.sub(r'["\\\r\n]+', "_", filename)
-    disposition_type = "inline" if mime_type.startswith("image/") else "attachment"
+    is_inline_type = mime_type.startswith("image/") or mime_type == "application/pdf"
+    disposition_type = "inline" if is_inline_type else "attachment"
 
     return Response(
         content=content,

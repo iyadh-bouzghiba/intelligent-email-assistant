@@ -1,4 +1,4 @@
-import { Download, File, FileSpreadsheet, FileText, Image as ImageIcon } from 'lucide-react';
+import { Download, Eye, File, FileSpreadsheet, FileText, Image as ImageIcon } from 'lucide-react';
 
 export interface AttachmentStripItem {
     attachment_id?: string | null;
@@ -18,144 +18,190 @@ interface Props {
     onOpenImage: (attachment: AttachmentStripItem) => void;
 }
 
-function formatBytes(size: number): string {
-    if (!Number.isFinite(size) || size <= 0) {
-        return '0 B';
-    }
+type FileCategory = 'image' | 'pdf' | 'text' | 'office' | 'other';
 
+function formatBytes(size: number): string {
+    if (!Number.isFinite(size) || size <= 0) return '0 B';
     const units = ['B', 'KB', 'MB', 'GB'];
     let value = size;
     let unitIndex = 0;
-
     while (value >= 1024 && unitIndex < units.length - 1) {
         value /= 1024;
         unitIndex += 1;
     }
-
     const rounded = value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1);
     return `${rounded} ${units[unitIndex]}`;
 }
 
-function getAttachmentIcon(mimeType: string) {
-    if (mimeType.includes('pdf')) {
-        return FileText;
-    }
+function getFileCategory(mimeType: string): FileCategory {
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType === 'application/pdf') return 'pdf';
+    if (
+        mimeType === 'text/plain' ||
+        mimeType === 'text/csv' ||
+        mimeType === 'text/tab-separated-values' ||
+        mimeType === 'application/json'
+    ) return 'text';
+    if (
+        mimeType.includes('word') ||
+        mimeType.includes('officedocument') ||
+        mimeType.includes('spreadsheetml') ||
+        mimeType.includes('excel') ||
+        mimeType.includes('presentationml') ||
+        mimeType.includes('powerpoint') ||
+        mimeType.includes('opendocument') ||
+        mimeType === 'application/vnd.ms-excel' ||
+        mimeType === 'application/vnd.ms-powerpoint' ||
+        mimeType === 'application/vnd.ms-word'
+    ) return 'office';
+    return 'other';
+}
 
+function getAttachmentIcon(mimeType: string, category: FileCategory) {
+    if (category === 'image') return ImageIcon;
+    if (category === 'pdf') return FileText;
     if (
         mimeType.includes('sheet') ||
         mimeType.includes('excel') ||
         mimeType.includes('spreadsheet') ||
         mimeType.includes('csv')
-    ) {
-        return FileSpreadsheet;
-    }
-
-    if (mimeType.includes('word') || mimeType.includes('document') || mimeType.includes('officedocument')) {
-        return FileText;
-    }
-
-    if (mimeType.startsWith('image/')) {
-        return ImageIcon;
-    }
-
+    ) return FileSpreadsheet;
+    if (
+        mimeType.includes('word') ||
+        mimeType.includes('document') ||
+        mimeType.includes('officedocument')
+    ) return FileText;
     return File;
 }
 
-export function AttachmentStrip({ attachments, onOpenImage }: Props) {
-    const displayAttachments = attachments.filter((attachment) => !attachment.is_inline);
+interface CardProps {
+    attachment: AttachmentStripItem;
+    onOpenImage: (attachment: AttachmentStripItem) => void;
+}
 
-    if (displayAttachments.length === 0) {
-        return null;
-    }
+function AttachmentCard({ attachment, onOpenImage }: CardProps) {
+    const category = getFileCategory(attachment.mime_type);
+    const Icon = getAttachmentIcon(attachment.mime_type, category);
+    const hasPreview = category === 'image' && !attachment.too_large && !!attachment.preview_url;
+    const canDownload = !attachment.too_large && !!attachment.download_url;
 
     return (
-        <div className="space-y-3">
-            <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Attachments</h3>
-                <span className="text-[11px] text-slate-500">{displayAttachments.length} item(s)</span>
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 flex flex-col gap-2 min-w-0">
+            {/* Header: thumbnail/icon + filename + size */}
+            <div className="flex items-start gap-2">
+                <div className="h-10 w-10 rounded-lg border border-white/10 bg-slate-900/80 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                    {hasPreview ? (
+                        <img
+                            src={attachment.preview_url!}
+                            alt=""
+                            className="h-10 w-10 object-cover"
+                        />
+                    ) : (
+                        <Icon size={18} className="text-slate-400" />
+                    )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                    <p
+                        className="text-xs font-medium text-slate-200 leading-tight break-all line-clamp-2"
+                        title={attachment.filename}
+                    >
+                        {attachment.filename}
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{formatBytes(attachment.size)}</p>
+                </div>
             </div>
 
-            <div className="flex flex-wrap gap-3">
-                {displayAttachments.map((attachment) => {
-                    const Icon = getAttachmentIcon(attachment.mime_type);
-                    const itemKey = `${attachment.attachment_id ?? attachment.filename}-${attachment.size}`;
-
-                    if (attachment.is_image) {
-                        return (
-                            <div
-                                key={itemKey}
-                                className="w-[80px] space-y-2"
+            {/* Actions row */}
+            <div className="flex items-center gap-2 flex-wrap">
+                {attachment.too_large ? (
+                    <span className="text-[10px] text-amber-400 leading-relaxed">
+                        {attachment.placeholder_text || 'File too large'}
+                    </span>
+                ) : (
+                    <>
+                        {/* Image: View in lightbox */}
+                        {category === 'image' && hasPreview && (
+                            <button
+                                type="button"
+                                onClick={() => onOpenImage(attachment)}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
                             >
-                                {attachment.too_large || !attachment.preview_url ? (
-                                    <div className="h-[80px] w-[80px] rounded-[6px] border border-dashed border-slate-600 bg-slate-900/60 p-2 flex items-center justify-center text-center">
-                                        <span className="text-[10px] leading-tight text-slate-400">
-                                            {attachment.placeholder_text || 'Preview unavailable'}
-                                        </span>
-                                    </div>
-                                ) : (
-                                    <button
-                                        type="button"
-                                        onClick={() => onOpenImage(attachment)}
-                                        className="block h-[80px] w-[80px] overflow-hidden rounded-[6px] border border-white/10 bg-slate-950/60 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                        aria-label={`Open image ${attachment.filename}`}
-                                    >
-                                        <img
-                                            src={attachment.preview_url}
-                                            alt={attachment.filename}
-                                            className="h-[80px] w-[80px] rounded-[6px] object-cover"
-                                        />
-                                    </button>
-                                )}
+                                <Eye size={11} />
+                                View
+                            </button>
+                        )}
 
-                                <div className="space-y-1">
-                                    <p className="text-[11px] font-medium text-slate-300 break-words leading-tight">
-                                        {attachment.filename}
-                                    </p>
-                                    <p className="text-[10px] text-slate-500">{formatBytes(attachment.size)}</p>
-                                </div>
-                            </div>
-                        );
-                    }
+                        {/* Image: no preview available */}
+                        {category === 'image' && !hasPreview && (
+                            <span className="text-[10px] text-slate-500">Preview unavailable</span>
+                        )}
 
-                    return (
-                        <div
-                            key={itemKey}
-                            className="min-w-[220px] max-w-[280px] rounded-2xl border border-white/10 bg-white/[0.03] p-3"
-                        >
-                            <div className="flex items-start gap-3">
-                                <div className="h-[44px] w-[44px] rounded-xl border border-white/10 bg-slate-900/80 flex items-center justify-center flex-shrink-0">
-                                    <Icon size={18} className="text-slate-300" />
-                                </div>
+                        {/* PDF: View in browser tab (served inline) */}
+                        {category === 'pdf' && canDownload && (
+                            <a
+                                href={attachment.download_url!}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+                            >
+                                <Eye size={11} />
+                                View
+                            </a>
+                        )}
 
-                                <div className="min-w-0 flex-1 space-y-1">
-                                    <p className="text-sm font-medium text-slate-200 break-words leading-tight">
-                                        {attachment.filename}
-                                    </p>
-                                    <p className="text-[11px] text-slate-500">
-                                        {attachment.mime_type} • {formatBytes(attachment.size)}
-                                    </p>
+                        {/* All downloadable non-image types */}
+                        {category !== 'image' && canDownload && (
+                            <a
+                                href={attachment.download_url!}
+                                download={category !== 'pdf'}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-slate-300 transition-colors"
+                            >
+                                <Download size={11} />
+                                Download
+                            </a>
+                        )}
 
-                                    {attachment.too_large ? (
-                                        <p className="text-[11px] text-amber-400 leading-relaxed">
-                                            {attachment.placeholder_text || 'File too large to preview'}
-                                        </p>
-                                    ) : attachment.download_url ? (
-                                        <a
-                                            href={attachment.download_url}
-                                            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300"
-                                            download
-                                        >
-                                            <Download size={12} />
-                                            Download
-                                        </a>
-                                    ) : (
-                                        <p className="text-[11px] text-slate-500">Download unavailable</p>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })}
+                        {/* Office files: honest note */}
+                        {category === 'office' && (
+                            <span className="text-[10px] text-slate-600">No in-app preview</span>
+                        )}
+
+                        {/* No download available */}
+                        {category !== 'image' && !canDownload && (
+                            <span className="text-[10px] text-slate-500">Download unavailable</span>
+                        )}
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}
+
+export function AttachmentStrip({ attachments, onOpenImage }: Props) {
+    const displayAttachments = attachments.filter((a) => !a.is_inline);
+
+    if (displayAttachments.length === 0) return null;
+
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Attachments
+                </h3>
+                <span className="text-[11px] text-slate-600">
+                    {displayAttachments.length} {displayAttachments.length === 1 ? 'file' : 'files'}
+                </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 max-h-[360px] overflow-y-auto pr-0.5">
+                {displayAttachments.map((attachment) => (
+                    <AttachmentCard
+                        key={`${attachment.attachment_id ?? attachment.filename}-${attachment.size}`}
+                        attachment={attachment}
+                        onOpenImage={onOpenImage}
+                    />
+                ))}
             </div>
         </div>
     );
