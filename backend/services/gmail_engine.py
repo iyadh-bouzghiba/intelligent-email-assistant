@@ -36,22 +36,69 @@ def clean_html(html_content):
     cleaned_text = '\n'.join(chunk for chunk in chunks if chunk)
     return cleaned_text
 
+def _decode_gmail_part_data(data: str) -> str:
+    """Decode Gmail base64url body data safely into UTF-8 text."""
+    if not data:
+        return ""
+
+    missing_padding = len(data) % 4
+    if missing_padding:
+        data += "=" * (4 - missing_padding)
+
+    try:
+        return base64.urlsafe_b64decode(data.encode("utf-8")).decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
 def get_message_body(payload):
-    """Recursively extracts and decodes the message body from Gmail payload."""
-    body = ""
-    if 'parts' in payload:
-        for part in payload['parts']:
-            body += get_message_body(part)
-    else:
-        if payload.get('mimeType') in ['text/plain', 'text/html']:
-            data = payload.get('body', {}).get('data')
-            if data:
-                decoded_data = base64.urlsafe_b64decode(data).decode('utf-8')
-                if payload.get('mimeType') == 'text/html':
-                    body += clean_html(decoded_data)
-                else:
-                    body += decoded_data
-    return body
+    """
+    Recursively extracts one canonical message body from a Gmail MIME payload.
+
+    Selection policy:
+    - Prefer text/plain when available anywhere in the subtree
+    - Fall back to cleaned text/html only when text/plain is absent
+    - Do not concatenate both plain and HTML representations of the same message
+    """
+    mime_type = payload.get("mimeType", "")
+    body = payload.get("body", {}) or {}
+    data = body.get("data")
+
+    if mime_type == "text/plain" and data:
+        return _decode_gmail_part_data(data)
+
+    if mime_type == "text/html" and data:
+        return clean_html(_decode_gmail_part_data(data))
+
+    parts = payload.get("parts", []) or []
+    if not parts:
+        return ""
+
+    plain_parts = []
+    html_parts = []
+
+    for part in parts:
+        child_mime = part.get("mimeType", "")
+        extracted = get_message_body(part)
+        if not extracted:
+            continue
+
+        if child_mime == "text/plain":
+            plain_parts.append(extracted)
+        elif child_mime == "text/html":
+            html_parts.append(extracted)
+        else:
+            # Nested multiparts may already resolve to canonical text.
+            # Prefer them as part of the plain bucket so we keep one output path.
+            plain_parts.append(extracted)
+
+    if plain_parts:
+        return "\n".join(segment for segment in plain_parts if segment).strip()
+
+    if html_parts:
+        return "\n".join(segment for segment in html_parts if segment).strip()
+
+    return ""
 
 def run_engine(token_data: dict, max_emails: int = 30):
     """
