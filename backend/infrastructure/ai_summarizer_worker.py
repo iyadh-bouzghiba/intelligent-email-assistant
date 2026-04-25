@@ -48,6 +48,7 @@ PROMPT_VERSION = "summ_v2_thread_aware"   # bumped: adds category field + thread
 DOCUMENT_PROMPT_VERSION = "doc_v1_attachment_text"
 AI_MAX_CHARS = int(os.getenv("AI_MAX_CHARS", "4000"))
 AI_MAX_ATTEMPTS = int(os.getenv("AI_MAX_ATTEMPTS", "5"))
+MAX_ATTACHMENTS_PER_JOB = 5
 
 # ZERO-BUDGET CONFIGURATION
 # Model: open-mistral-nemo (cost-optimized for free tier)
@@ -691,6 +692,34 @@ class AISummarizerWorker:
 
         return None
 
+    def _collect_supported_attachments(
+        self, payload: Dict[str, Any], max_count: int = MAX_ATTACHMENTS_PER_JOB
+    ) -> List[Dict[str, Any]]:
+        """Recursively collect supported attachment candidates up to max_count."""
+        results: List[Dict[str, Any]] = []
+
+        def _walk(part: Dict[str, Any]) -> None:
+            if len(results) >= max_count:
+                return
+            filename = part.get("filename", "")
+            mime_type = part.get("mimeType", "")
+            body = part.get("body", {})
+            attachment_id = body.get("attachmentId")
+            if filename and attachment_id and is_supported_attachment(mime_type, filename):
+                results.append({
+                    "filename": filename,
+                    "mime_type": mime_type,
+                    "attachment_id": attachment_id,
+                    "size": body.get("size", 0),
+                })
+            for child in part.get("parts", []):
+                if len(results) >= max_count:
+                    return
+                _walk(child)
+
+        _walk(payload)
+        return results
+
     def _call_mistral_for_document(
         self,
         doc_text: str,
@@ -791,66 +820,86 @@ class AISummarizerWorker:
                 self._mark_job_failed(job_id, attempts, "MSG_FETCH_FAILED")
                 return
 
-            # 2. Find first supported attachment in MIME tree
+            # 2. Collect all supported attachments (bounded)
             payload = raw_msg.get("payload", {})
-            attachment_info = self._find_first_supported_attachment(payload)
-            if not attachment_info:
-                logger.info(f"[AI-WORKER][DOC] No supported attachment in {gmail_message_id[:8]}..., skipping")
+            attachment_infos = self._collect_supported_attachments(payload)
+            if not attachment_infos:
+                logger.info(f"[AI-WORKER][DOC] No supported attachments in {gmail_message_id[:8]}..., skipping")
                 self._mark_job_succeeded(job_id)
                 return
 
-            filename = attachment_info["filename"]
-            mime_type = attachment_info["mime_type"]
-            attachment_id = attachment_info["attachment_id"]
-            logger.info(f"[AI-WORKER][DOC] Found attachment: {filename!r} ({mime_type})")
+            logger.info(f"[AI-WORKER][DOC] Found {len(attachment_infos)} supported attachment(s) in {gmail_message_id[:8]}...")
 
-            # 3. Download attachment bytes via GmailProvider
+            # 3 & 4. Download and extract text from each attachment
             from backend.providers.gmail import GmailProvider
             provider = GmailProvider()
-            try:
-                attachment_bytes, _ = provider.get_attachment(account_id, gmail_message_id, attachment_id)
-            except RuntimeError as e:
-                if "auth_required" in str(e):
-                    self._mark_job_failed(job_id, attempts, "AUTH_REQUIRED")
-                else:
-                    self._mark_job_failed(job_id, attempts, "ATTACHMENT_DOWNLOAD_FAILED")
-                return
-
-            # 4. Extract/process attachment
             processor = DocumentProcessor()
-            try:
-                processed = processor.process(
-                    content_bytes=attachment_bytes,
-                    mime_type=mime_type,
-                    filename=filename,
-                )
-            except UnsupportedFileType:
-                logger.info(f"[AI-WORKER][DOC] Unsupported type for {filename!r}, skipping")
-                self._mark_job_succeeded(job_id)
+
+            extracted_parts: List[str] = []
+            document_types: List[str] = []
+            filenames: List[str] = []
+            auth_failed = False
+
+            for att_info in attachment_infos:
+                att_filename = att_info["filename"]
+                att_mime = att_info["mime_type"]
+                att_id = att_info["attachment_id"]
+
+                try:
+                    att_bytes, _ = provider.get_attachment(account_id, gmail_message_id, att_id)
+                except RuntimeError as e:
+                    if "auth_required" in str(e):
+                        auth_failed = True
+                        break
+                    logger.warning(f"[AI-WORKER][DOC] Download failed for {att_filename!r}, skipping")
+                    continue
+
+                try:
+                    processed = processor.process(
+                        content_bytes=att_bytes,
+                        mime_type=att_mime,
+                        filename=att_filename,
+                    )
+                except (UnsupportedFileType, FileTooLarge, PasswordProtected) as e:
+                    logger.info(f"[AI-WORKER][DOC] Skipping {att_filename!r}: {type(e).__name__}")
+                    continue
+
+                eff_filename = processed.get("attachment_filename", att_filename)
+                doc_type = processed.get("document_type", "")
+                text = processed.get("extracted_text", "")
+
+                filenames.append(eff_filename)
+                if doc_type:
+                    document_types.append(doc_type)
+                if text and text.strip():
+                    extracted_parts.append(f"=== {eff_filename} ===\n{text.strip()}")
+
+            if auth_failed:
+                self._mark_job_failed(job_id, attempts, "AUTH_REQUIRED")
                 return
-            except FileTooLarge as e:
-                logger.warning(f"[AI-WORKER][DOC] File too large, skipping: {e}")
-                self._mark_job_succeeded(job_id)
-                return
-            except PasswordProtected:
-                logger.info(f"[AI-WORKER][DOC] Password-protected attachment {filename!r}, skipping")
+
+            if not filenames:
+                logger.info(f"[AI-WORKER][DOC] All attachments skipped for {gmail_message_id[:8]}...")
                 self._mark_job_succeeded(job_id)
                 return
 
-            doc_text = processed.get("extracted_text", "")
-            document_type = processed.get("document_type", "")
-            attachment_filename = processed.get("attachment_filename", filename)
+            attachment_count = len(filenames)
+            multi_filename = filenames[0] if attachment_count == 1 else f"{attachment_count} attachments"
+            document_type = document_types[0] if document_types else ""
+            aggregated_text = "\n\n".join(extracted_parts)
 
-            if not doc_text or not doc_text.strip():
-                logger.info(f"[AI-WORKER][DOC] Empty extraction for {attachment_filename!r}, writing fallback summary")
+            if not aggregated_text.strip():
+                logger.info(f"[AI-WORKER][DOC] Empty extraction for all attachments, writing fallback")
                 fallback_summary = {
                     "overview": "No extractable document text found.",
                     "action_items": [],
                     "urgency": "low",
                     "category": "informational",
-                    "document_filename": attachment_filename,
+                    "document_filename": multi_filename,
+                    "document_filenames": filenames,
+                    "attachment_count": attachment_count,
                 }
-                input_hash = self._compute_input_hash(f"{attachment_filename}|{document_type}|EMPTY")
+                input_hash = self._compute_input_hash(f"{multi_filename}|{document_type}|EMPTY")
                 self._write_document_summary(
                     account_id=account_id,
                     gmail_message_id=gmail_message_id,
@@ -858,14 +907,14 @@ class AISummarizerWorker:
                     summary_json=fallback_summary,
                     model=MISTRAL_MODEL,
                     document_type=document_type,
-                    attachment_filename=attachment_filename,
+                    attachment_filename=multi_filename,
                 )
                 self._mark_job_succeeded(job_id)
                 return
 
-            # 5. Hash extracted text for idempotency
+            # 5. Hash aggregated text for idempotency
             input_hash = self._compute_input_hash(
-                f"{attachment_filename}|{document_type}|{mime_type}|{doc_text[:AI_MAX_CHARS]}"
+                f"{multi_filename}|{document_type}|{aggregated_text[:AI_MAX_CHARS]}"
             )
 
             # 6. Check cache
@@ -882,18 +931,18 @@ class AISummarizerWorker:
             except Exception:
                 pass  # Non-fatal: proceed without cache
 
-            # 7. Call Mistral for document summary
+            # 7. Call Mistral with aggregated text
             raw_json = self._call_mistral_for_document(
-                doc_text=doc_text,
-                filename=attachment_filename,
-                mime_type=mime_type,
+                doc_text=aggregated_text,
+                filename=multi_filename,
+                mime_type=attachment_infos[0]["mime_type"],
                 document_type=document_type,
             )
             if not raw_json:
                 self._mark_job_failed(job_id, attempts, "MISTRAL_FAILED")
                 return
 
-            # 8. Pydantic validation (reuse AISummaryOutput schema)
+            # 8. Pydantic validation
             try:
                 validated = AISummaryOutput(**raw_json)
             except (ValidationError, TypeError) as ve:
@@ -906,10 +955,12 @@ class AISummarizerWorker:
                 "action_items": [str(a)[:80] for a in validated.action_items[:5]],
                 "urgency": validated.urgency,
                 "category": validated.category,
-                "document_filename": attachment_filename,
+                "document_filename": multi_filename,
+                "document_filenames": filenames,
+                "attachment_count": attachment_count,
             }
 
-            # 9. Write summary and mark succeeded
+            # 9. Write one aggregated summary and mark succeeded
             self._write_document_summary(
                 account_id=account_id,
                 gmail_message_id=gmail_message_id,
@@ -917,10 +968,10 @@ class AISummarizerWorker:
                 summary_json=summary_json,
                 model=MISTRAL_MODEL,
                 document_type=document_type,
-                attachment_filename=attachment_filename,
+                attachment_filename=multi_filename,
             )
             self._mark_job_succeeded(job_id)
-            logger.info(f"[AI-WORKER][DOC] Job {job_id} complete for {attachment_filename!r}")
+            logger.info(f"[AI-WORKER][DOC] Job {job_id} complete — {attachment_count} attachment(s): {filenames}")
 
         except Exception as e:
             logger.error(f"[AI-WORKER][DOC] Job {job_id} failed (type={type(e).__name__})")
