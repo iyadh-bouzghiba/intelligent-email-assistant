@@ -612,6 +612,40 @@ def _find_attachment_part(payload: Dict[str, Any], attachment_id: str) -> Option
     return None
 
 
+def _collect_attachment_candidate_parts(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    candidates: List[Dict[str, Any]] = []
+
+    def walk(part: Dict[str, Any]) -> None:
+        filename = (part.get("filename") or "").strip()
+        body = part.get("body", {}) or {}
+        attachment_id = body.get("attachmentId")
+        inline_data = body.get("data")
+
+        if filename and (attachment_id or inline_data):
+            candidates.append(part)
+
+        for child in part.get("parts", []) or []:
+            walk(child)
+
+    walk(payload)
+    return candidates
+
+
+def _collect_cid_references(body_html: Optional[str]) -> set:
+    if not body_html:
+        return set()
+
+    matches = re.findall(r'cid:([^"\'>\s]+)', body_html, flags=re.IGNORECASE)
+    normalized = set()
+
+    for match in matches:
+        value = (match or "").strip().strip("<>").strip()
+        if value:
+            normalized.add(value.lower())
+
+    return normalized
+
+
 def _build_large_file_placeholder_data_uri(filename: str, size_bytes: int) -> str:
     size_mb = size_bytes / (1024 * 1024)
     label = f"File too large to preview — {filename} ({size_mb:.1f} MB)"
@@ -715,11 +749,12 @@ def _build_rendered_email_payload(
     cid_sources: Dict[str, str] = {}
     attachments: List[Dict[str, Any]] = []
     seen_attachment_keys = set()
+    referenced_cids = _collect_cid_references(body_html)
 
     from backend.providers.gmail import GmailProvider
     provider = GmailProvider()
 
-    for part in _iter_mime_parts(payload):
+    for part in _collect_attachment_candidate_parts(payload):
         mime_type = (part.get("mimeType") or "application/octet-stream").strip() or "application/octet-stream"
         filename = (part.get("filename") or "").strip()
         body = part.get("body", {}) or {}
@@ -727,12 +762,16 @@ def _build_rendered_email_payload(
         inline_data = body.get("data")
         size = int(body.get("size") or 0)
         content_id = _strip_content_id(_get_part_header(part, "Content-ID"))
-        disposition = (_get_part_header(part, "Content-Disposition") or "").lower()
         is_image = mime_type.startswith("image/")
-        is_inline = bool(content_id) or ("inline" in disposition)
         has_binary_payload = bool(attachment_id or inline_data)
 
-        if is_image and content_id and has_binary_payload:
+        if not filename or not has_binary_payload:
+            continue
+
+        normalized_content_id = (content_id or "").lower()
+        is_referenced_inline = bool(normalized_content_id and normalized_content_id in referenced_cids)
+
+        if is_image and is_referenced_inline:
             if size > MAX_ATTACHMENT_PREVIEW_BYTES:
                 cid_sources[content_id] = _build_large_file_placeholder_data_uri(
                     filename or content_id,
@@ -751,16 +790,12 @@ def _build_rendered_email_payload(
                     encoded_bytes = base64.b64encode(content_bytes).decode("ascii")
                     cid_sources[content_id] = f"data:{mime_type};base64,{encoded_bytes}"
 
-        if not filename or not has_binary_payload:
             continue
 
         attachment_key = (attachment_id or "", filename, mime_type, size)
         if attachment_key in seen_attachment_keys:
             continue
         seen_attachment_keys.add(attachment_key)
-
-        if is_inline:
-            continue
 
         too_large = size > MAX_ATTACHMENT_PREVIEW_BYTES
         route_url = (
