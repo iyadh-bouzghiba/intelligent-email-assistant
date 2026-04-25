@@ -11,6 +11,8 @@ Bootstrap:
     Imports are resolved via proper Python package structure.
     No manual sys.path manipulation needed.
 """
+import base64
+import mimetypes
 import os
 import sys
 import logging
@@ -21,6 +23,7 @@ import json
 import re
 import time
 from datetime import datetime, timezone
+from html import escape
 from typing import Dict, Any, List, Optional
 from email.utils import parseaddr
 
@@ -553,6 +556,259 @@ async def list_emails_root(account_id: Optional[str] = Query(None)):
 # API ROUTES
 # ------------------------------------------------------------------
 api_router = APIRouter(prefix="/api", dependencies=[Depends(require_jwt_auth)])
+MAX_ATTACHMENT_PREVIEW_BYTES = 10 * 1024 * 1024
+
+
+def _decode_gmail_body_data(data: str) -> bytes:
+    if not data:
+        return b""
+
+    if len(data) % 4:
+        data += "=" * (4 - (len(data) % 4))
+
+    return base64.urlsafe_b64decode(data.encode("utf-8"))
+
+
+def _get_part_header(part: Dict[str, Any], header_name: str) -> str:
+    for header in part.get("headers", []) or []:
+        if (header.get("name") or "").lower() == header_name.lower():
+            return header.get("value") or ""
+    return ""
+
+
+def _strip_content_id(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+
+    normalized = value.strip().strip("<>").strip()
+    return normalized or None
+
+
+def _iter_mime_parts(payload: Dict[str, Any]):
+    yield payload
+    for part in payload.get("parts", []) or []:
+        yield from _iter_mime_parts(part)
+
+
+def _find_first_mime_part(payload: Dict[str, Any], mime_type: str) -> Optional[Dict[str, Any]]:
+    current_mime_type = (payload.get("mimeType") or "").lower()
+    body = payload.get("body", {}) or {}
+    if current_mime_type == mime_type.lower() and body.get("data"):
+        return payload
+
+    for part in payload.get("parts", []) or []:
+        found = _find_first_mime_part(part, mime_type)
+        if found:
+            return found
+
+    return None
+
+
+def _find_attachment_part(payload: Dict[str, Any], attachment_id: str) -> Optional[Dict[str, Any]]:
+    for part in _iter_mime_parts(payload):
+        body = part.get("body", {}) or {}
+        if body.get("attachmentId") == attachment_id:
+            return part
+    return None
+
+
+def _build_large_file_placeholder_data_uri(filename: str, size_bytes: int) -> str:
+    size_mb = size_bytes / (1024 * 1024)
+    label = f"File too large to preview — {filename} ({size_mb:.1f} MB)"
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='240' viewBox='0 0 1200 240'>"
+        "<rect width='1200' height='240' rx='16' fill='#0f172a' stroke='#334155' stroke-width='2'/>"
+        "<text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' "
+        "font-family='Arial, sans-serif' font-size='34' fill='#cbd5e1'>"
+        f"{escape(label)}"
+        "</text>"
+        "</svg>"
+    )
+    encoded_svg = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded_svg}"
+
+
+def _resolve_inline_cid_sources(body_html: str, cid_sources: Dict[str, str]) -> str:
+    resolved_html = body_html
+    for content_id, resolved_src in cid_sources.items():
+        replacement_patterns = [
+            rf"cid:{re.escape(content_id)}",
+            rf"cid:<{re.escape(content_id)}>",
+            rf"cid:%3C{re.escape(content_id)}%3E",
+        ]
+        for pattern in replacement_patterns:
+            resolved_html = re.sub(
+                pattern,
+                resolved_src,
+                resolved_html,
+                flags=re.IGNORECASE,
+            )
+    return resolved_html
+
+
+def _fetch_raw_gmail_message(account_id: str, gmail_message_id: str) -> Optional[Dict[str, Any]]:
+    try:
+        from backend.providers.gmail import GmailProvider
+        from backend.api.gmail_client import GmailClient as WorkerGmailClient
+
+        provider = GmailProvider()
+        token_data = provider._load_token_data(account_id)
+        if not token_data or "token" not in token_data:
+            raise RuntimeError("auth_required")
+
+        client = WorkerGmailClient(provider._build_worker_token_data(token_data))
+        return client.get_message(gmail_message_id)
+    except Exception as e:
+        logger.error(
+            f"[API] Raw message fetch failed for {gmail_message_id[:8]}... "
+            f"(type={type(e).__name__})"
+        )
+        return None
+
+
+def _lookup_email_record_by_message_id(gmail_message_id: str) -> Optional[Dict[str, Any]]:
+    store = safe_get_store()
+    if not store:
+        return None
+
+    response = (
+        store.client.table("emails")
+        .select("account_id,body,subject,sender,date,gmail_message_id,thread_id")
+        .eq("gmail_message_id", gmail_message_id)
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        return None
+
+    return response.data[0]
+
+
+def _build_rendered_email_payload(
+    account_id: str,
+    gmail_message_id: str,
+    fallback_body: str,
+) -> Dict[str, Any]:
+    raw_message = _fetch_raw_gmail_message(account_id, gmail_message_id)
+    if not raw_message:
+        return {
+            "body_html": None,
+            "body_text": fallback_body or "",
+            "attachments": [],
+        }
+
+    payload = raw_message.get("payload", {}) or {}
+    html_part = _find_first_mime_part(payload, "text/html")
+    text_part = _find_first_mime_part(payload, "text/plain")
+
+    body_html = None
+    if html_part:
+        html_bytes = _decode_gmail_body_data((html_part.get("body", {}) or {}).get("data", ""))
+        body_html = html_bytes.decode("utf-8", errors="replace") if html_bytes else None
+
+    body_text = fallback_body or ""
+    if text_part:
+        text_bytes = _decode_gmail_body_data((text_part.get("body", {}) or {}).get("data", ""))
+        if text_bytes:
+            body_text = text_bytes.decode("utf-8", errors="replace")
+
+    cid_sources: Dict[str, str] = {}
+    attachments: List[Dict[str, Any]] = []
+    seen_attachment_keys = set()
+
+    from backend.providers.gmail import GmailProvider
+    provider = GmailProvider()
+
+    for part in _iter_mime_parts(payload):
+        mime_type = (part.get("mimeType") or "application/octet-stream").strip() or "application/octet-stream"
+        filename = (part.get("filename") or "").strip()
+        body = part.get("body", {}) or {}
+        attachment_id = body.get("attachmentId")
+        inline_data = body.get("data")
+        size = int(body.get("size") or 0)
+        content_id = _strip_content_id(_get_part_header(part, "Content-ID"))
+        disposition = (_get_part_header(part, "Content-Disposition") or "").lower()
+        is_image = mime_type.startswith("image/")
+        is_inline = bool(content_id) or ("inline" in disposition)
+        has_binary_payload = bool(attachment_id or inline_data)
+
+        if is_image and content_id and has_binary_payload:
+            if size > MAX_ATTACHMENT_PREVIEW_BYTES:
+                cid_sources[content_id] = _build_large_file_placeholder_data_uri(
+                    filename or content_id,
+                    size,
+                )
+            else:
+                try:
+                    if attachment_id:
+                        content_bytes = provider.get_attachment_bytes(account_id, gmail_message_id, attachment_id)
+                    else:
+                        content_bytes = _decode_gmail_body_data(inline_data or "")
+                except Exception:
+                    content_bytes = b""
+
+                if content_bytes:
+                    encoded_bytes = base64.b64encode(content_bytes).decode("ascii")
+                    cid_sources[content_id] = f"data:{mime_type};base64,{encoded_bytes}"
+
+        if not filename or not has_binary_payload:
+            continue
+
+        attachment_key = (attachment_id or "", filename, mime_type, size)
+        if attachment_key in seen_attachment_keys:
+            continue
+        seen_attachment_keys.add(attachment_key)
+
+        if is_inline:
+            continue
+
+        too_large = size > MAX_ATTACHMENT_PREVIEW_BYTES
+        route_url = (
+            f"/api/attachments/{gmail_message_id}/{attachment_id}"
+            if attachment_id
+            else None
+        )
+
+        preview_url = None
+        if is_image and not too_large:
+            if attachment_id:
+                preview_url = route_url
+            elif inline_data:
+                try:
+                    preview_bytes = _decode_gmail_body_data(inline_data)
+                except Exception:
+                    preview_bytes = b""
+                if preview_bytes:
+                    preview_b64 = base64.b64encode(preview_bytes).decode("ascii")
+                    preview_url = f"data:{mime_type};base64,{preview_b64}"
+
+        attachments.append(
+            {
+                "attachment_id": attachment_id,
+                "filename": filename,
+                "mime_type": mime_type,
+                "size": size,
+                "is_inline": False,
+                "is_image": is_image,
+                "preview_url": None if too_large else preview_url,
+                "download_url": None if too_large else route_url,
+                "too_large": too_large,
+                "placeholder_text": (
+                    f"File too large to preview — {filename} ({size / (1024 * 1024):.1f} MB)"
+                    if too_large
+                    else None
+                ),
+            }
+        )
+
+    resolved_html = _resolve_inline_cid_sources(body_html, cid_sources) if body_html else None
+
+    return {
+        "body_html": resolved_html,
+        "body_text": body_text or fallback_body or "",
+        "attachments": attachments,
+    }
+
 
 @api_router.get("/emails")
 async def list_emails(account_id: Optional[str] = Query(None)):
@@ -616,6 +872,90 @@ async def list_emails_with_summaries(account_id: Optional[str] = Query(None)):
         import traceback
         logger.error(f"[API] Traceback: {traceback.format_exc()}")
         return []
+
+
+@api_router.get("/emails/{gmail_message_id}/rendered")
+async def get_rendered_email(gmail_message_id: str):
+    record = await asyncio.to_thread(_lookup_email_record_by_message_id, gmail_message_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    account_id = record.get("account_id")
+    if not account_id:
+        raise HTTPException(status_code=404, detail="Account not found for email")
+
+    rendered_payload = await asyncio.to_thread(
+        _build_rendered_email_payload,
+        account_id,
+        gmail_message_id,
+        record.get("body") or "",
+    )
+
+    return {
+        "gmail_message_id": gmail_message_id,
+        "body_html": rendered_payload.get("body_html"),
+        "body_text": rendered_payload.get("body_text") or (record.get("body") or ""),
+        "attachments": rendered_payload.get("attachments") or [],
+    }
+
+
+@api_router.get("/attachments/{message_id}/{attachment_id}")
+async def get_attachment_stream(message_id: str, attachment_id: str):
+    record = await asyncio.to_thread(_lookup_email_record_by_message_id, message_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    account_id = record.get("account_id")
+    if not account_id:
+        raise HTTPException(status_code=404, detail="Account not found for email")
+
+    raw_message = await asyncio.to_thread(_fetch_raw_gmail_message, account_id, message_id)
+    if not raw_message:
+        raise HTTPException(status_code=404, detail="Raw Gmail message not found")
+
+    payload = raw_message.get("payload", {}) or {}
+    attachment_part = _find_attachment_part(payload, attachment_id)
+    if not attachment_part:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+
+    body = attachment_part.get("body", {}) or {}
+    size = int(body.get("size") or 0)
+    if size > MAX_ATTACHMENT_PREVIEW_BYTES:
+        raise HTTPException(status_code=413, detail="Attachment too large to preview or download")
+
+    filename = (attachment_part.get("filename") or attachment_id).strip() or attachment_id
+    mime_type = (
+        attachment_part.get("mimeType")
+        or mimetypes.guess_type(filename)[0]
+        or "application/octet-stream"
+    )
+
+    from backend.providers.gmail import GmailProvider
+    provider = GmailProvider()
+
+    try:
+        content = await asyncio.to_thread(
+            provider.get_attachment_bytes,
+            account_id,
+            message_id,
+            attachment_id,
+        )
+    except RuntimeError as e:
+        if "auth_required" in str(e):
+            raise HTTPException(status_code=401, detail="Gmail credentials unavailable")
+        raise HTTPException(status_code=502, detail="Attachment download failed")
+
+    safe_filename = re.sub(r'["\\\r\n]+', "_", filename)
+    disposition_type = "inline" if mime_type.startswith("image/") else "attachment"
+
+    return Response(
+        content=content,
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f'{disposition_type}; filename="{safe_filename}"',
+            "Cache-Control": "private, max-age=300",
+        },
+    )
 
 
 @api_router.post("/sync-now")

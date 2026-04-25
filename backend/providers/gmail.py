@@ -194,6 +194,34 @@ class GmailProvider(EmailProvider):
 
         return normalized, current_cursor
 
+    def get_attachment_bytes(
+        self,
+        account_id: str,
+        message_id: str,
+        attachment_id: str,
+    ) -> bytes:
+        token_data = self._load_token_data(account_id)
+        if not token_data or "token" not in token_data:
+            raise RuntimeError("auth_required")
+
+        gmail_client = WorkerGmailClient(self._build_worker_token_data(token_data))
+        raw_attachment = (
+            gmail_client.service.users()
+            .messages()
+            .attachments()
+            .get(userId="me", messageId=message_id, id=attachment_id)
+            .execute()
+        )
+
+        data = raw_attachment.get("data", "")
+        if data and len(data) % 4:
+            data += "=" * (4 - (len(data) % 4))
+
+        if not data:
+            return b""
+
+        return base64.urlsafe_b64decode(data.encode("utf-8"))
+
     def get_attachment(
         self,
         account_id: str,
