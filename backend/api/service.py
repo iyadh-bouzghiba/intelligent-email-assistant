@@ -1083,7 +1083,7 @@ async def get_rendered_email(gmail_message_id: str):
 
 
 @api_router.get("/attachments/{message_id}/{attachment_key}")
-async def get_attachment_stream(message_id: str, attachment_key: str):
+async def get_attachment_stream(message_id: str, attachment_key: str, download: bool = Query(False)):
     """
     Serve attachment bytes by stable attachment_key.
     The stable key is deterministic from message-local metadata (ordinal + filename + mime + size).
@@ -1148,7 +1148,7 @@ async def get_attachment_stream(message_id: str, attachment_key: str):
 
     safe_filename = re.sub(r'["\\\r\n]+', "_", filename)
     is_inline_type = mime_type.startswith("image/") or mime_type == "application/pdf"
-    disposition_type = "inline" if is_inline_type else "attachment"
+    disposition_type = "attachment" if download else ("inline" if is_inline_type else "attachment")
 
     return Response(
         content=content,

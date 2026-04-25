@@ -84,6 +84,10 @@ function AttachmentCard({ attachment, onOpenImage }: CardProps) {
     const Icon = getAttachmentIcon(attachment.mime_type, category);
     const hasPreview = category === 'image' && !attachment.too_large && !!attachment.preview_url;
     const canDownload = !attachment.too_large && !!attachment.download_url;
+    const forcedDownloadUrl =
+        canDownload && attachment.download_url
+            ? `${attachment.download_url}${attachment.download_url.includes('?') ? '&' : '?'}download=1`
+            : null;
 
     return (
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 flex flex-col gap-2 min-w-0">
@@ -151,10 +155,10 @@ function AttachmentCard({ attachment, onOpenImage }: CardProps) {
                         )}
 
                         {/* All downloadable non-image types */}
-                        {category !== 'image' && canDownload && (
+                        {category !== 'image' && !!forcedDownloadUrl && (
                             <a
-                                href={attachment.download_url!}
-                                download={category !== 'pdf'}
+                                href={forcedDownloadUrl}
+                                download
                                 className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-slate-300 transition-colors"
                             >
                                 <Download size={11} />
