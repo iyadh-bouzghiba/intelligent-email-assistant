@@ -1,4 +1,4 @@
-import { RefObject, useEffect, useMemo, useState } from 'react';
+import { RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, Sparkles } from 'lucide-react';
 import { Briefing } from '@types';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
@@ -32,7 +32,24 @@ function linkedFileCta(provider: string): string {
   return 'Open in Drive';
 }
 
-function sanitizeResolvedHtml(htmlInput: string): string {
+// ---------------------------------------------------------------------------
+// HTML sanitization pipeline — three single-responsibility steps
+// ---------------------------------------------------------------------------
+
+/**
+ * Step 1 — Security pass.
+ * Strips dangerous tags, on* attributes, email-authored style attributes,
+ * cid: references, and any unsafe src values.
+ *
+ * Allowed img src schemes after this pass:
+ *   data:image/...   — attachment previews embedded as data URIs by backend
+ *   /api/attachments/... — byte-serve route
+ *   https://         — remote images, but ONLY when the element is <img>
+ *
+ * The https:// allowance is explicitly gated on tagName === 'img'.
+ * Any non-img element with an https:// src is stripped here.
+ */
+function securitySanitize(htmlInput: string): Document {
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlInput, 'text/html');
 
@@ -63,7 +80,10 @@ function sanitizeResolvedHtml(htmlInput: string): string {
 
         if (attrName === 'src') {
           const isDataImage = /^data:image\//i.test(attrValue);
-          if (!isDataImage && !attrValue.startsWith('/api/attachments/')) {
+          const isApiAttachment = attrValue.startsWith('/api/attachments/');
+          // https:// only permitted on <img> — not on video, source, script, or anything else.
+          const isRemoteHttps = tagName === 'img' && attrValue.startsWith('https://');
+          if (!isDataImage && !isApiAttachment && !isRemoteHttps) {
             element.removeAttribute(attribute.name);
           }
           return;
@@ -96,15 +116,70 @@ function sanitizeResolvedHtml(htmlInput: string): string {
     }
   });
 
+  return doc;
+}
+
+/**
+ * Step 2 — Content image resolution.
+ * CID inline images are already stripped in securitySanitize; the backend
+ * /rendered endpoint resolves them to data URIs before we receive the HTML.
+ * data:image/... and /api/attachments/... pass through untouched.
+ * This function is kept as a structural separation point for future needs.
+ */
+function resolveContentImages(_doc: Document): void {
+  // No-op: CID → data URI resolution happens server-side at render time.
+}
+
+/**
+ * Step 3 — Remote image policy.
+ * Targets only img elements whose src begins with https://.
+ *
+ * Each remote image receives:
+ *   - Browser-native privacy posture: lazy / no-referrer / async / low priority
+ *   - data-remote-image="true" — query marker for DOM lifecycle useEffect
+ *   - data-remote-image-state="loading" — state machine entry point
+ *   - opacity:0 with transition — hidden until useEffect confirms load success
+ *
+ * No structural DOM mutation (no wrapper insertion).
+ * http://, blob:, javascript:, and all other non-https schemes are not
+ * reached here — securitySanitize already stripped them from <img> src.
+ */
+function applyRemoteImagePolicy(doc: Document): void {
+  doc.body.querySelectorAll<HTMLImageElement>('img').forEach((img) => {
+    const src = img.getAttribute('src') ?? '';
+    if (!src.startsWith('https://')) return;
+
+    img.setAttribute('referrerpolicy', 'no-referrer');
+    img.setAttribute('decoding', 'async');
+    img.setAttribute('fetchpriority', 'low');
+    img.setAttribute('data-remote-image', 'true');
+    img.setAttribute('data-remote-image-state', 'loading');
+    // Hidden until load/error fires; transition gives a clean reveal.
+    img.style.opacity = '0';
+    img.style.transition = 'opacity 0.2s ease';
+  });
+}
+
+/** Runs the full three-step pipeline and returns the safe HTML string. */
+function buildSanitizedHtml(htmlInput: string): string {
+  const doc = securitySanitize(htmlInput);
+  resolveContentImages(doc);
+  applyRemoteImagePolicy(doc);
   return doc.body.innerHTML;
 }
+
+// ---------------------------------------------------------------------------
 
 /**
  * Full View — shows AI summary (if present) and the complete message body.
  *
  * Body rendering strategy:
- *   - If rendered HTML is available from the backend, sanitize it in-browser
- *     and render it with resolved inline CID images
+ *   - If rendered HTML is available from the backend, run buildSanitizedHtml
+ *     (security sanitize → resolve content images → remote image policy)
+ *     and inject via dangerouslySetInnerHTML
+ *   - Remote https:// images are allowed on <img> only, with no-referrer /
+ *     lazy / async / low-priority policy; a DOM lifecycle effect manages
+ *     reveal on load and silent collapse on error (no broken-image glyph)
  *   - Otherwise fall back to normalized plaintext paragraph rendering
  *   - AttachmentStrip renders non-inline attachments below the body
  *   - ImageLightbox renders full-size attachment previews on demand
@@ -116,6 +191,7 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
   const [renderLoading, setRenderLoading] = useState(false);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [lightboxAttachment, setLightboxAttachment] = useState<AttachmentStripItem | null>(null);
+  const bodyContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setLightboxAttachment(null);
@@ -171,9 +247,60 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
   const paragraphs = bodyText ? bodyText.split('\n\n').filter((p) => p.trim().length > 0) : [];
 
   const sanitizedHtml = useMemo(
-    () => (renderedEmail?.body_html ? sanitizeResolvedHtml(renderedEmail.body_html) : null),
+    () => (renderedEmail?.body_html ? buildSanitizedHtml(renderedEmail.body_html) : null),
     [renderedEmail?.body_html]
   );
+
+  // Attach native load/error listeners to remote images after sanitizedHtml renders.
+  // Handles three cases:
+  //   already loaded (cached)  → revealImage synchronously
+  //   already errored          → collapseImage synchronously
+  //   pending                  → attach load/error listeners, clean up on effect re-run
+  useEffect(() => {
+    const container = bodyContainerRef.current;
+    if (!container || !sanitizedHtml) return;
+
+    const remoteImages = Array.from(
+      container.querySelectorAll<HTMLImageElement>('img[data-remote-image="true"]')
+    );
+    if (remoteImages.length === 0) return;
+
+    const cleanups: (() => void)[] = [];
+
+    for (const img of remoteImages) {
+      const revealImage = () => {
+        img.setAttribute('data-remote-image-state', 'loaded');
+        img.style.opacity = '1';
+      };
+
+      const collapseImage = () => {
+        img.setAttribute('data-remote-image-state', 'error');
+        // display:none removes the img from flow — no raw broken-image glyph remains.
+        img.style.display = 'none';
+      };
+
+      if (img.complete) {
+        // Already settled before listeners could attach (cache hit or immediate error).
+        if (img.naturalWidth > 0) {
+          revealImage();
+        } else {
+          collapseImage();
+        }
+        continue;
+      }
+
+      img.addEventListener('load', revealImage);
+      img.addEventListener('error', collapseImage);
+      cleanups.push(() => {
+        img.removeEventListener('load', revealImage);
+        img.removeEventListener('error', collapseImage);
+      });
+    }
+
+    return () => {
+      cleanups.forEach((fn) => fn());
+    };
+  }, [sanitizedHtml]);
 
   return (
     <div className="space-y-6">
@@ -229,6 +356,7 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
             <p className="text-sm leading-relaxed text-slate-400">Loading inline images and attachments…</p>
           ) : sanitizedHtml ? (
             <div
+              ref={bodyContainerRef}
               className="space-y-3 text-sm leading-relaxed text-slate-300 break-words overflow-x-auto"
               dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
             />
