@@ -23,7 +23,7 @@ if not logger.handlers:
     formatter = logging.Formatter("[%(levelname)s] [%(name)s] %(message)s")
     handler.setFormatter(formatter)
     logger.addHandler(handler)
-    logger.propagate = True
+logger.propagate = False
 
 # Socket.IO for realtime notifications
 try:
@@ -173,6 +173,8 @@ def _sync_one_account(
     emitted = False
     current_cursor = last_cursor
     emails = []
+    ai_job_count = 0
+    document_job_count = 0
 
     try:
         emails, current_cursor = provider.get_delta_emails(account_id, last_cursor)
@@ -254,8 +256,6 @@ def _sync_one_account(
         except Exception as e:
             logger.warning(f"[WORKER] [{account_id}] Could not query existing emails: {e}")
 
-        ai_job_count = 0
-        document_job_count = 0
         batch_size = 25
 
         for i in range(0, len(emails), batch_size):
