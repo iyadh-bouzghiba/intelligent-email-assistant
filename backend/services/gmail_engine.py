@@ -19,7 +19,7 @@ if not logger.handlers:
     formatter = logging.Formatter('[%(levelname)s] [%(name)s] %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
-    logger.propagate = True  # Also send to root logger
+logger.propagate = False
 
 def clean_html(html_content):
     """Strips HTML tags to save context window space."""
