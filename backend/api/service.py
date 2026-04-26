@@ -827,39 +827,74 @@ def _classify_drive_url(url: str) -> str:
     return 'google_drive'
 
 
+_DRIVE_FILE_ID_RE = re.compile(r'/d/([a-zA-Z0-9_-]+)')
+
+
 def _extract_drive_linked_files(
     body_html: Optional[str],
     body_text: Optional[str],
 ) -> List[Dict[str, Any]]:
-    """Extract Google Drive / Docs linked-file metadata from email body."""
-    seen_urls: set = set()
-    linked_files: List[Dict[str, Any]] = []
+    """Extract Google Drive / Docs linked-file metadata from email body.
+
+    Deduplicates by Drive file identity (/d/{file_id}) when present,
+    falling back to canonical URL equality. Friendly anchor titles are
+    preferred over raw URL titles when merging duplicates.
+    """
+
+    def _extract_file_id(url: str) -> Optional[str]:
+        m = _DRIVE_FILE_ID_RE.search(url)
+        return m.group(1) if m else None
+
+    def _canonicalize(url: str) -> str:
+        # Strip query string and fragment; trailing punctuation already stripped by caller.
+        url = url.split('?')[0].split('#')[0]
+        return url
+
+    def _is_raw_title(title: str, url: str) -> bool:
+        # A title is "raw" when it is just the URL itself (plain-text fallback).
+        return title == url or title.startswith('https://')
+
+    def _truncate_url(url: str, limit: int = 80) -> str:
+        return url if len(url) <= limit else url[:limit] + '…'
+
+    # Ordered dedup structures: key -> entry dict, plus insertion-order list.
+    entries_by_key: Dict[str, Dict[str, Any]] = {}
+    entry_order: List[str] = []
+
+    def _upsert(title: str, url: str) -> None:
+        canonical = _canonicalize(url)
+        file_id = _extract_file_id(canonical)
+        dedup_key = f'id:{file_id}' if file_id else f'url:{canonical}'
+
+        # Fallback label: never leave a raw full-length URL as the display title.
+        display_title = title if not _is_raw_title(title, url) else _truncate_url(canonical)
+
+        if dedup_key not in entries_by_key:
+            entries_by_key[dedup_key] = {
+                'title': display_title,
+                'url': canonical,
+                'provider': _classify_drive_url(canonical),
+            }
+            entry_order.append(dedup_key)
+        else:
+            existing = entries_by_key[dedup_key]
+            # Upgrade to friendly title if the stored title is still raw/truncated.
+            if _is_raw_title(existing['title'], existing['url']) and not _is_raw_title(title, url):
+                existing['title'] = title
 
     if body_html:
         for match in _DRIVE_ANCHOR_RE.finditer(body_html):
             url = match.group(1).rstrip('.,;)')
             raw_title = match.group(2)
             title = _HTML_TAG_RE.sub('', raw_title).strip() or url
-            if url not in seen_urls:
-                seen_urls.add(url)
-                linked_files.append({
-                    'title': title,
-                    'url': url,
-                    'provider': _classify_drive_url(url),
-                })
+            _upsert(title, url)
 
     if body_text:
         for match in _DRIVE_BARE_URL_RE.finditer(body_text):
             url = match.group(0).rstrip('.,;)')
-            if url not in seen_urls:
-                seen_urls.add(url)
-                linked_files.append({
-                    'title': url,
-                    'url': url,
-                    'provider': _classify_drive_url(url),
-                })
+            _upsert(url, url)
 
-    return linked_files
+    return [entries_by_key[key] for key in entry_order]
 
 
 def _build_rendered_email_payload(
