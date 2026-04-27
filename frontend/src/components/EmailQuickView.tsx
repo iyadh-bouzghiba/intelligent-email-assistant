@@ -21,6 +21,43 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
   const bodyText = normalizeBodyText(rawText);
   const preview = bodyText.length > 320 ? bodyText.slice(0, 320) + '…' : bodyText;
 
+  const urgencyRaw = email.ai_summary_json?.urgency;
+  const normalizedUrgency = typeof urgencyRaw === 'string' ? urgencyRaw.trim().toLowerCase() : '';
+
+  const aiAnalysisCardClassName = (() => {
+    const base = 'p-4 rounded-2xl border border-white/5 bg-white/[0.03]';
+
+    if (normalizedUrgency === 'high') {
+      return `${base} border-l-[4px] border-l-[#DC2626] bg-[rgba(220,38,38,0.04)]`;
+    }
+
+    if (normalizedUrgency === 'medium') {
+      return `${base} border-l-[4px] border-l-[#D97706] bg-[rgba(217,119,6,0.04)]`;
+    }
+
+    if (normalizedUrgency === 'low') {
+      return `${base} border-l-[4px] border-l-[#059669] bg-[rgba(5,150,105,0.04)]`;
+    }
+
+    return base;
+  })();
+
+  const urgencyTextClassName = (() => {
+    if (normalizedUrgency === 'high') {
+      return 'text-[#DC2626]';
+    }
+
+    if (normalizedUrgency === 'medium') {
+      return 'text-[#D97706]';
+    }
+
+    if (normalizedUrgency === 'low') {
+      return 'text-[#059669]';
+    }
+
+    return 'text-slate-500';
+  })();
+
   return (
     <div className="space-y-6">
       {/* AI Analysis — three mutually exclusive states when no summary is present */}
@@ -64,8 +101,17 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
             )}
           </div>
 
-          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
+          <div className={aiAnalysisCardClassName}>
             <p className="text-sm leading-relaxed text-slate-200">{email.ai_summary_text}</p>
+
+            {email.ai_summary_json?.urgency && (
+              <p className={`mt-3 text-xs font-semibold ${urgencyTextClassName}`}>
+                Urgency:{' '}
+                <span className={`font-bold capitalize ${urgencyTextClassName}`}>
+                  {email.ai_summary_json.urgency}
+                </span>
+              </p>
+            )}
           </div>
 
           {email.ai_summary_json?.action_items && email.ai_summary_json.action_items.length > 0 && (
@@ -77,13 +123,6 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
                 ))}
               </ol>
             </div>
-          )}
-
-          {email.ai_summary_json?.urgency && (
-            <p className="text-xs text-slate-500">
-              Urgency:{' '}
-              <span className="font-bold text-slate-400 capitalize">{email.ai_summary_json.urgency}</span>
-            </p>
           )}
         </div>
       )}
