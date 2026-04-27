@@ -65,6 +65,7 @@ export const App = () => {
   const [activeTab, setActiveTab] = useState<'inbox' | 'sent'>('inbox');
   const [sentEmails, setSentEmails] = useState<SentEmail[]>([]);
   const [loadingSent, setLoadingSent] = useState(false);
+  const [sentCurrentPage, setSentCurrentPage] = useState(1);
   const [readStatePending, setReadStatePending] = useState(false);
 
   const requestNotificationPermission = async () => {
@@ -272,6 +273,21 @@ export const App = () => {
       .finally(() => { if (!cancelled) setLoadingSent(false); });
     return () => { cancelled = true; };
   }, [activeTab, activeEmail]);
+
+  // Reset sent page when switching tabs or accounts.
+  useEffect(() => {
+    setSentCurrentPage(1);
+  }, [activeTab, activeEmail]);
+
+  const SENT_PAGE_SIZE = 5;
+  const sentTotalPages = Math.max(1, Math.ceil(sentEmails.length / SENT_PAGE_SIZE));
+  const sentStartIndex = (sentCurrentPage - 1) * SENT_PAGE_SIZE;
+  const currentSentItems = sentEmails.slice(sentStartIndex, sentStartIndex + SENT_PAGE_SIZE);
+
+  // Clamp current page when emails shrink (e.g. re-fetch returns fewer results).
+  useEffect(() => {
+    if (sentCurrentPage > sentTotalPages) setSentCurrentPage(sentTotalPages);
+  }, [sentCurrentPage, sentTotalPages]);
 
   // fetchEmails options:
   //   reason          — readable log tag for this trigger (e.g. 'runSync', 'ws:emails_updated')
@@ -827,9 +843,10 @@ export const App = () => {
   };
 
   // Conservative sanitizer for the original message body.
-  // Removes quote prefixes, collapses blank lines, stops at prior-thread history markers,
-  // and caps at 500 chars. Used for both the read-only preview and the outbound body.
-  const sanitizeOriginalExcerpt = (body: string): string => {
+  // Removes quote prefixes, collapses blank lines, stops at prior-thread history markers.
+  // maxChars=500 (default) caps the result for read-only preview/reference use.
+  // maxChars=0 disables the cap — used by outbound send composition to preserve the full sanitized body.
+  const sanitizeOriginalExcerpt = (body: string, maxChars = 500): string => {
     // 1. Normalize line endings
     const normalized = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const lines = normalized.split('\n');
@@ -854,15 +871,19 @@ export const App = () => {
       else { blanks = 0; collapsed.push(l); }
     }
 
-    // 5. Join, trim edges, cap at 500 chars
+    // 5. Join, trim edges, optionally cap
     const result = collapsed.join('\n').trim();
-    return result.length > 500 ? result.slice(0, 500) + '…' : result;
+    if (maxChars > 0 && result.length > maxChars) {
+      return result.slice(0, maxChars) + '…';
+    }
+    return result;
   };
 
   // Builds the outbound plain-text body: user reply + professional attribution + sanitized excerpt.
+  // Disables the excerpt cap (maxChars=0) so the full sanitized body is preserved in outbound composition.
   // No ">" markers — clean for all recipients.
   const buildOutboundBody = (userText: string, date: string, sender: string, body: string): string => {
-    const excerpt = sanitizeOriginalExcerpt(body);
+    const excerpt = sanitizeOriginalExcerpt(body, 0);
     return excerpt
       ? `${userText}\n\n${buildAttribution(date, sender)}\n${excerpt}`
       : userText;
@@ -1487,10 +1508,32 @@ export const App = () => {
         {activeTab === 'sent' && (
           <div className="flex flex-col gap-4 mb-12 max-w-[720px] mx-auto">
             <SentList
-              emails={sentEmails}
+              emails={currentSentItems}
               loading={loadingSent}
               onSelect={(se: SentEmail) => openEmailDetail(sentToBriefing(se), false, true)}
             />
+            {!loadingSent && sentTotalPages > 1 && (
+              <div className="flex items-center justify-center gap-8 mt-4">
+                <button
+                  onClick={() => setSentCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={sentCurrentPage === 1}
+                  className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
+                >
+                  Previous
+                </button>
+                <div className="flex flex-col items-center min-w-[120px]">
+                  <span className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">Navigation</span>
+                  <span className="text-white font-black text-sm">{sentCurrentPage} of {sentTotalPages}</span>
+                </div>
+                <button
+                  onClick={() => setSentCurrentPage(prev => Math.min(sentTotalPages, prev + 1))}
+                  disabled={sentCurrentPage === sentTotalPages}
+                  className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         )}
 
