@@ -664,6 +664,77 @@ def _make_stable_attachment_key(ordinal: int, filename: str, mime_type: str, siz
     safe_mime = re.sub(r'[^A-Za-z0-9._-]', '_', mime_type)[:20]
     return f"{ordinal:03d}_{safe_name}_{safe_mime}_{size}"
 
+def _normalize_attachment_filename(filename: str, mime_type: str) -> str:
+    """
+    Collapse duplicated terminal extensions when the filename already includes
+    the suffix implied by the MIME type (for example: report.pdf.pdf → report.pdf).
+    Leaves all other filenames unchanged.
+    """
+    normalized = (filename or "").strip()
+    if not normalized:
+        return ""
+
+    explicit_mime = (mime_type or "").strip().lower()
+
+    candidate_exts: set = set()
+
+    fallback_exts_by_mime = {
+        "application/pdf": {".pdf"},
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {".docx"},
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {".xlsx"},
+        "image/jpeg": {".jpg", ".jpeg", ".jpe"},
+        "image/png": {".png"},
+        "image/webp": {".webp"},
+        "image/gif": {".gif"},
+        "text/csv": {".csv"},
+        "text/plain": {".txt", ".text"},
+    }
+
+    if explicit_mime in fallback_exts_by_mime:
+        candidate_exts.update(fallback_exts_by_mime[explicit_mime])
+
+    candidate_mime_types: List[str] = []
+    if explicit_mime and explicit_mime != "application/octet-stream":
+        candidate_mime_types.append(explicit_mime)
+
+    guessed_mime, _ = mimetypes.guess_type(normalized)
+    guessed_mime = (guessed_mime or "").strip().lower()
+    if guessed_mime and guessed_mime not in candidate_mime_types:
+        candidate_mime_types.append(guessed_mime)
+
+    for candidate_mime in candidate_mime_types:
+        guessed_ext = mimetypes.guess_extension(candidate_mime, strict=False)
+        cleaned_guessed_ext = (guessed_ext or "").strip().lower()
+        if cleaned_guessed_ext.startswith(".") and len(cleaned_guessed_ext) > 1:
+            candidate_exts.add(cleaned_guessed_ext)
+
+        for ext in mimetypes.guess_all_extensions(candidate_mime, strict=False) or []:
+            cleaned_ext = (ext or "").strip().lower()
+            if cleaned_ext.startswith(".") and len(cleaned_ext) > 1:
+                candidate_exts.add(cleaned_ext)
+
+    deduped = normalized
+    while True:
+        base, ext = os.path.splitext(deduped)
+        _, parent_ext = os.path.splitext(base)
+
+        current_ext = (ext or "").strip().lower()
+        previous_ext = (parent_ext or "").strip().lower()
+
+        if not current_ext or not previous_ext:
+            return deduped
+
+        if current_ext == previous_ext:
+            if candidate_exts and current_ext not in candidate_exts:
+                return deduped
+            deduped = base
+            continue
+
+        if candidate_exts and current_ext in candidate_exts and previous_ext in candidate_exts:
+            deduped = base
+            continue
+
+        return deduped
 
 def _build_attachment_entries(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
@@ -680,7 +751,8 @@ def _build_attachment_entries(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     for part in _collect_attachment_candidate_parts(payload):
         mime_type = (part.get("mimeType") or "application/octet-stream").strip() or "application/octet-stream"
-        filename = (part.get("filename") or "").strip()
+        raw_filename = (part.get("filename") or "").strip()
+        filename = _normalize_attachment_filename(raw_filename, mime_type)
         body = part.get("body", {}) or {}
         raw_attachment_id = body.get("attachmentId")
         inline_data = body.get("data")
