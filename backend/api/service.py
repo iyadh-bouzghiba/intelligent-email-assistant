@@ -865,17 +865,37 @@ def _lookup_email_record_by_message_id(gmail_message_id: str) -> Optional[Dict[s
     if not store:
         return None
 
-    response = (
+    inbox_response = (
         store.client.table("emails")
         .select("account_id,body,subject,sender,date,gmail_message_id,thread_id")
         .eq("gmail_message_id", gmail_message_id)
         .limit(1)
         .execute()
     )
-    if not response.data:
+    if inbox_response.data:
+        return inbox_response.data[0]
+
+    sent_response = (
+        store.client.table("sent_emails")
+        .select("account_id,gmail_message_id,thread_id,subject,body_preview,sent_at,to_address,source")
+        .eq("gmail_message_id", gmail_message_id)
+        .limit(1)
+        .execute()
+    )
+    if not sent_response.data:
         return None
 
-    return response.data[0]
+    sent_row = sent_response.data[0]
+    return {
+        "account_id": sent_row.get("account_id"),
+        "body": sent_row.get("body_preview") or "",
+        "subject": sent_row.get("subject"),
+        "sender": None,
+        "date": sent_row.get("sent_at"),
+        "gmail_message_id": sent_row.get("gmail_message_id"),
+        "thread_id": sent_row.get("thread_id"),
+        "source": sent_row.get("source"),
+    }
 
 
 _DRIVE_ANCHOR_RE = re.compile(
