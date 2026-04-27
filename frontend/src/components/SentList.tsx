@@ -61,8 +61,11 @@ export function SentList({ emails, loading, onSelect }: Props) {
           onClick={() => onSelect(email)}
           className="group text-left w-full flex flex-col p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] hover:border-white/10 transition-all duration-200 shadow-xl"
         >
-          {/* To / CC row */}
-          <div className="flex items-center gap-2 mb-2">
+          {/* Header row: SENT badge + To / CC */}
+          <div className="flex items-center gap-2 mb-2 min-w-0">
+            <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border bg-slate-700/40 text-slate-100 border-slate-500/40">
+              SENT
+            </span>
             <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">To</span>
             <span className="text-xs font-semibold text-slate-300 truncate">{email.to_address}</span>
             {email.cc_addresses && (
