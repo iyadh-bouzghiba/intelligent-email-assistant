@@ -247,4 +247,33 @@ BEGIN
 END;
 $$;
 
+-- 9) USER PREFERENCES (per-account AI settings — P3)
+CREATE TABLE IF NOT EXISTS public.user_preferences (
+  account_id TEXT PRIMARY KEY,
+  has_completed_onboarding BOOLEAN NOT NULL DEFAULT FALSE,
+  ai_language TEXT NOT NULL DEFAULT 'en',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT user_preferences_ai_language_chk CHECK (ai_language IN ('en', 'fr', 'ar'))
+);
+
+-- Upgrade-safe column additions for existing deployments
+ALTER TABLE public.user_preferences
+  ADD COLUMN IF NOT EXISTS has_completed_onboarding BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS ai_language TEXT NOT NULL DEFAULT 'en',
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+-- Idempotent named CHECK constraint on ai_language.
+-- PostgreSQL has no ADD CONSTRAINT IF NOT EXISTS, so the DO block attempts to add
+-- the named constraint and silently ignores duplicate_object if it already exists.
+DO $$
+BEGIN
+  ALTER TABLE public.user_preferences
+    ADD CONSTRAINT user_preferences_ai_language_chk
+    CHECK (ai_language IN ('en', 'fr', 'ar'));
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL; -- constraint already exists; nothing to do
+END;
+$$;
+
 -- GUARD: Never paste HTML entities into this SQL file. Use raw comparison operators (<=, >=) only.

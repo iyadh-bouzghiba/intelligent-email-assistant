@@ -1661,18 +1661,31 @@ export const App = () => {
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2">
                     Preferred Language
                   </label>
-                  <select
-                    value={aiLanguage}
-                    onChange={(e) => handleAiLanguageChange(e.target.value as AILanguage)}
-                    disabled={aiLanguageLoading || aiLanguageSaving}
-                    className="w-full rounded-xl bg-[#111827] border border-white/10 text-white text-sm font-semibold px-4 py-3 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-60"
+                  <div
+                    className={`flex rounded-xl bg-white/[0.04] border border-white/10 p-1 gap-1 ${aiLanguageLoading || aiLanguageSaving ? 'opacity-60 pointer-events-none' : ''}`}
+                    role="radiogroup"
+                    aria-label="AI output language"
                   >
-                    {AI_LANGUAGE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    {AI_LANGUAGE_OPTIONS.map((option) => {
+                      const isActive = aiLanguage === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={isActive}
+                          onClick={() => handleAiLanguageChange(option.value)}
+                          className={`flex-1 rounded-lg py-2 px-3 text-sm font-bold transition-all duration-150 ${
+                            isActive
+                              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
 
                   <div className="mt-2 min-h-[18px]">
                     {aiLanguageSaving ? (
