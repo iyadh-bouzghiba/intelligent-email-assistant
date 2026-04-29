@@ -2674,7 +2674,7 @@ async def update_preferences(request: PreferencesUpdateRequest):
     except Exception as e:
         logger.error(
             f"[PREFERENCES] Write failed for {request.account_id} "
-            f"(type={type(e).__name__})"
+            f"(type={type(e).__name__}): {e}"
         )
         raise HTTPException(
             status_code=500,
