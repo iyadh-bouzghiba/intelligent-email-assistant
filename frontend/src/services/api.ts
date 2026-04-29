@@ -12,6 +12,13 @@ import {
     SentEmail,
 } from "@types";
 
+export type AILanguage = "en" | "fr" | "ar";
+
+export interface PreferencesResponse {
+    account_id: string;
+    ai_language: AILanguage;
+}
+
 const AUTH_REQUIRED_EVENT = "iea:auth-required";
 
 // Production: same-origin (frontend served by backend, no env var needed).
@@ -138,6 +145,24 @@ export const apiService = {
 
     disconnectAllAccounts: async (): Promise<{ status: string; deleted_count?: number }> => {
         const response = await api.post(`${API_ROOT}/accounts/disconnect-all`);
+        return response.data;
+    },
+
+    getPreferences: async (account_id: string): Promise<PreferencesResponse> => {
+        const response = await api.get(`${API_ROOT}/preferences`, {
+            params: { account_id },
+        });
+        return response.data;
+    },
+
+    updatePreferences: async (
+        account_id: string,
+        ai_language: AILanguage
+    ): Promise<PreferencesResponse> => {
+        const response = await api.post(`${API_ROOT}/preferences`, {
+            account_id,
+            ai_language,
+        });
         return response.data;
     },
 

@@ -35,6 +35,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 import socketio
 
+from backend.infrastructure.supabase_store import SupabaseStore
+
 # CRITICAL: Configure logging with immediate flush for production visibility
 logging.basicConfig(
     level=logging.INFO,
@@ -208,7 +210,6 @@ app.add_middleware(CacheControlMiddleware)
 def safe_get_store():
     """Prevents startup crashes when Supabase is unreachable"""
     try:
-        from backend.infrastructure.supabase_store import SupabaseStore
         return SupabaseStore()
     except Exception as e:
         print(f"[WARN] Store unavailable: {e}")
@@ -2577,6 +2578,108 @@ async def disconnect_all_accounts():
     except Exception as e:
         print(f"[ERROR] [CLEANUP] Failed to delete credentials: {e}")
         return {"status": "error", "message": str(e)}
+
+SUPPORTED_PREFERENCE_LANGUAGES = {"en", "fr", "ar"}
+
+
+class PreferencesUpdateRequest(BaseModel):
+    account_id: str
+    ai_language: str
+
+
+def _normalize_preference_language(value) -> str:
+    """Normalize ai_language to a supported value, defaulting to English."""
+    normalized = (value or "en").strip().lower()
+    if normalized in SUPPORTED_PREFERENCE_LANGUAGES:
+        return normalized
+    return "en"
+
+
+def _get_preferences_store() -> SupabaseStore:
+    """Create a Supabase store for preference reads/writes."""
+    return SupabaseStore()
+
+
+@api_router.get("/preferences")
+async def get_preferences(account_id: str = Query(...)):
+    """
+    Read per-account AI language preference.
+
+    Behavior:
+    - missing row -> English
+    - null/invalid value -> English
+    - lookup failure -> English
+    """
+    ai_language = "en"
+
+    try:
+        store = _get_preferences_store()
+        response = (
+            store.client.table("user_preferences")
+            .select("ai_language")
+            .eq("account_id", account_id)
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
+        if rows:
+            ai_language = _normalize_preference_language(rows[0].get("ai_language"))
+    except Exception as e:
+        logger.warning(
+            f"[PREFERENCES] Read failed for {account_id} "
+            f"(type={type(e).__name__}) - defaulting to English"
+        )
+
+    return {
+        "account_id": account_id,
+        "ai_language": ai_language,
+    }
+
+
+@api_router.post("/preferences")
+async def update_preferences(request: PreferencesUpdateRequest):
+    """
+    Upsert per-account AI language preference.
+
+    Accepted values:
+    - en
+    - fr
+    - ar
+    """
+    requested = (request.ai_language or "").strip().lower()
+    normalized = _normalize_preference_language(requested)
+
+    if normalized != requested:
+        raise HTTPException(
+            status_code=400,
+            detail="ai_language must be one of: en, fr, ar",
+        )
+
+    try:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        store = _get_preferences_store()
+        store.client.table("user_preferences").upsert(
+            {
+                "account_id": request.account_id,
+                "ai_language": normalized,
+                "updated_at": now_iso,
+            },
+            on_conflict="account_id",
+        ).execute()
+
+        return {
+            "account_id": request.account_id,
+            "ai_language": normalized,
+        }
+    except Exception as e:
+        logger.error(
+            f"[PREFERENCES] Write failed for {request.account_id} "
+            f"(type={type(e).__name__})"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to persist preferences",
+        )
 
 @api_router.post("/emails/{gmail_message_id}/summarize")
 async def summarize_email_by_id(
