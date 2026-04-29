@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { apiService } from '@services';
+import { apiService, AILanguage } from '@services';
 import { websocketService } from '@services/websocket';
 import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Briefing, AccountInfo, SentEmail } from '@types';
+import { Briefing, AccountInfo, SentEmail, SupportedLanguage } from '@types';
 import { SentList } from './components/SentList';
 import { EmailDetailModal } from './components/EmailDetailModal';
 import { ReplyComposeModal } from './components/ReplyComposeModal';
@@ -19,12 +19,10 @@ const SUBTITLE = "Strategic Intelligence Feed";
 const ITEMS_PER_PAGE = 5;
 const MAX_CONNECTED_ACCOUNTS = 3;
 
-type AILanguage = 'en' | 'fr' | 'ar';
-
-const AI_LANGUAGE_OPTIONS: Array<{ value: AILanguage; label: string }> = [
-  { value: 'en', label: 'English' },
-  { value: 'fr', label: 'Français' },
-  { value: 'ar', label: 'العربية' },
+const FALLBACK_LANGUAGE_OPTIONS: SupportedLanguage[] = [
+  { code: 'en', label: 'English', native: 'English' },
+  { code: 'fr', label: 'French', native: 'Français' },
+  { code: 'ar', label: 'Arabic', native: 'العربية' },
 ];
 
 export const App = () => {
@@ -84,6 +82,8 @@ export const App = () => {
   const [aiLanguageLoading, setAiLanguageLoading] = useState(false);
   const [aiLanguageSaving, setAiLanguageSaving] = useState(false);
   const [aiLanguageError, setAiLanguageError] = useState<string | null>(null);
+  const [supportedLanguages, setSupportedLanguages] = useState<SupportedLanguage[]>([]);
+  const aiLanguageRef = useRef<string>('en');
 
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) return;
@@ -383,7 +383,7 @@ export const App = () => {
       if (refetchAccounts) {
         const [emails, accountsData] = await Promise.all([
           accountIdToUse
-            ? apiService.getInboxThreads(accountIdToUse)
+            ? apiService.getInboxThreads(accountIdToUse, 50, aiLanguageRef.current)
             : Promise.resolve([]),
           apiService.listAccounts()
         ]);
@@ -398,7 +398,7 @@ export const App = () => {
         }
       } else {
         emailData = accountIdToUse
-          ? await apiService.getInboxThreads(accountIdToUse)
+          ? await apiService.getInboxThreads(accountIdToUse, 50, aiLanguageRef.current)
           : [];
       }
 
@@ -465,6 +465,10 @@ export const App = () => {
           ai_summary_json: e.ai_summary_json,
           ai_summary_text: e.ai_summary_text,
           ai_summary_model: e.ai_summary_model,
+          ai_summary_language: e.ai_summary_language ?? null,
+          ai_summary_is_fallback: e.ai_summary_is_fallback ?? false,
+          ai_preferred_language: e.ai_preferred_language ?? null,
+          ai_preferred_language_available: e.ai_preferred_language_available ?? false,
           gmail_message_id: e.gmail_message_id,
           thread_id: e.thread_id,
           is_read: e.is_read !== undefined ? Boolean(e.is_read) : undefined,
@@ -828,6 +832,26 @@ export const App = () => {
     }
   }, [activeEmail]);
 
+  // Keep aiLanguageRef in sync for closure-safe access inside fetchEmails
+  useEffect(() => {
+    aiLanguageRef.current = aiLanguage;
+  }, [aiLanguage]);
+
+  // Load supported languages from backend on mount (once)
+  useEffect(() => {
+    apiService.getSupportedLanguages().then(langs => {
+      if (langs.length > 0) setSupportedLanguages(langs);
+    });
+  }, []);
+
+  // Sync selectedEmailDetail with latest briefings data so language metadata stays fresh after a re-fetch
+  useEffect(() => {
+    if (!selectedEmailDetail?.gmail_message_id) return;
+    const fresh = briefings.find(b => b.gmail_message_id === selectedEmailDetail.gmail_message_id);
+    if (fresh) setSelectedEmailDetail(fresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [briefings]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -1182,22 +1206,28 @@ export const App = () => {
     // setLoading(false) handled by fetchEmails' finally (or pending switch path)
   };
 
-  const handleAiLanguageChange = async (nextLanguage: AILanguage) => {
+  const handleAiLanguageChange = async (nextLanguage: string) => {
     if (!activeEmail || aiLanguageSaving) return;
 
     const accountId = activeEmail;
     const previousLanguage = aiLanguage;
 
-    setAiLanguage(nextLanguage);
+    aiLanguageRef.current = nextLanguage;
+    setAiLanguage(nextLanguage as AILanguage);
     setAiLanguageSaving(true);
     setAiLanguageError(null);
 
     try {
-      const response = await apiService.updatePreferences(accountId, nextLanguage);
+      const response = await apiService.updatePreferences(accountId, nextLanguage as AILanguage);
       if (activeEmailRef.current !== accountId) return;
-      setAiLanguage(response.ai_language ?? nextLanguage);
+      const savedLanguage = response.ai_language ?? nextLanguage;
+      aiLanguageRef.current = savedLanguage;
+      setAiLanguage(savedLanguage as AILanguage);
+      // Re-fetch emails with new language preference so summaries reflect the saved language
+      fetchEmails(accountId, { reason: 'language-change' });
     } catch (error) {
       if (activeEmailRef.current !== accountId) return;
+      aiLanguageRef.current = previousLanguage;
       setAiLanguage(previousLanguage);
       setAiLanguageError('Could not save AI language preference. Please try again.');
     } finally {
@@ -1666,22 +1696,22 @@ export const App = () => {
                     role="radiogroup"
                     aria-label="AI output language"
                   >
-                    {AI_LANGUAGE_OPTIONS.map((option) => {
-                      const isActive = aiLanguage === option.value;
+                    {(supportedLanguages.length > 0 ? supportedLanguages : FALLBACK_LANGUAGE_OPTIONS).map((option) => {
+                      const isActive = aiLanguage === option.code;
                       return (
                         <button
-                          key={option.value}
+                          key={option.code}
                           type="button"
                           role="radio"
                           aria-checked={isActive}
-                          onClick={() => handleAiLanguageChange(option.value)}
+                          onClick={() => handleAiLanguageChange(option.code)}
                           className={`flex-1 rounded-lg py-2 px-3 text-sm font-bold transition-all duration-150 ${
                             isActive
                               ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40'
                               : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
                           }`}
                         >
-                          {option.label}
+                          {option.native}
                         </button>
                       );
                     })}
@@ -2198,6 +2228,8 @@ export const App = () => {
             onMarkUnread={handleMarkUnread}
             onAskAssistant={handleOpenAssistant}
             getCategoryStyles={getCategoryStyles}
+            preferredLanguage={aiLanguage}
+            onGeneratePreferred={handleSummarizeFromModal}
           />
         )}
       </AnimatePresence>

@@ -36,6 +36,8 @@ from dotenv import load_dotenv
 import socketio
 
 from backend.infrastructure.supabase_store import SupabaseStore
+from backend.languages import normalize_language, SUPPORTED_LANGUAGES
+from backend.summary_versions import EMAIL_SUMMARY_PROMPT_VERSION
 
 # CRITICAL: Configure logging with immediate flush for production visibility
 logging.basicConfig(
@@ -1150,7 +1152,7 @@ async def list_emails(account_id: Optional[str] = Query(None)):
 
 
 @api_router.get("/emails-with-summaries")
-async def list_emails_with_summaries(account_id: Optional[str] = Query(None)):
+async def list_emails_with_summaries(account_id: Optional[str] = Query(None), preferred_language: str = Query("en")):
     """
     OPTIMIZED endpoint that fetches emails with AI summaries in batch.
 
@@ -1172,8 +1174,11 @@ async def list_emails_with_summaries(account_id: Optional[str] = Query(None)):
         return []
 
     try:
+        preferred_language = normalize_language(preferred_language)
         logger.info(f"[API] /emails-with-summaries called with account_id={account_id}")
-        emails = await asyncio.to_thread(store.get_emails_with_summaries, account_id=account_id)
+        emails = await asyncio.to_thread(
+            store.get_emails_with_summaries, account_id=account_id, preferred_language=preferred_language
+        )
         email_count = len(emails) if emails else 0
         logger.info(f"[API] /emails-with-summaries returning {email_count} emails")
         return emails
@@ -1660,40 +1665,64 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30, backfill_limit: 
 @api_router.get("/emails/{gmail_message_id}/summary")
 async def get_email_summary(
     gmail_message_id: str,
-    account_id: str = Query("default")
+    account_id: str = Query("default"),
+    preferred_language: str = Query("en"),
 ):
     """
     Fetch AI summary for specific email.
 
+    Prefers the preferred_language variant; falls back to English if absent.
+
     Returns:
         - summary_json: {overview, action_items, urgency} if ready
         - status: "ready"|"processing"|"failed"|"not_found"
+        - ai_summary_language: actual language of the returned row
+        - ai_summary_is_fallback: True when preferred variant was absent
+        - ai_preferred_language: the requested language
+        - ai_preferred_language_available: whether the preferred variant exists
     """
     effective_account_id = resolve_account_id(None, account_id)
+    preferred_language = normalize_language(preferred_language)
     store = safe_get_store()
     if not store:
         return {"status": "error", "message": "Store unavailable"}
 
     try:
-        # Query email_ai_summaries table
+        # Fetch all email-summary language variants for this message.
+        # Filtering by prompt_version excludes document-summary rows from this shared table.
         response = await asyncio.to_thread(
             lambda: store.client.table("email_ai_summaries")
                 .select("*")
                 .eq("account_id", effective_account_id)
                 .eq("gmail_message_id", gmail_message_id)
-                .order("created_at", desc=True)
-                .limit(1)
+                .eq("prompt_version", EMAIL_SUMMARY_PROMPT_VERSION)
                 .execute()
         )
 
-        if response.data and len(response.data) > 0:
-            summary = response.data[0]
+        rows = response.data or []
+        if rows:
+            # Build per-language index (newest per language wins if duplicates exist)
+            rows_sorted = sorted(rows, key=lambda r: r.get("updated_at") or "", reverse=True)
+            by_lang: dict = {}
+            for row in rows_sorted:
+                lang = row.get("summary_language", "en")
+                if lang not in by_lang:
+                    by_lang[lang] = row
+
+            preferred_available = preferred_language in by_lang
+            summary = by_lang.get(preferred_language) or by_lang.get("en") or rows_sorted[0]
+            actual_lang = summary.get("summary_language", "en")
+
             return {
                 "status": "ready",
                 "summary_json": summary.get("summary_json"),
                 "summary_text": summary.get("summary_text"),
                 "model": summary.get("model"),
-                "created_at": summary.get("created_at")
+                "created_at": summary.get("created_at"),
+                "ai_summary_language": actual_lang,
+                "ai_summary_is_fallback": actual_lang != preferred_language,
+                "ai_preferred_language": preferred_language,
+                "ai_preferred_language_available": preferred_available,
             }
 
         # Check if job is queued/running
@@ -2317,7 +2346,7 @@ async def get_sent_emails(account_id: str, limit: int = 50, offset: int = 0):
 
 
 @api_router.get("/inbox")
-async def get_inbox_threads(account_id: str = Query(...), limit: int = Query(50)):
+async def get_inbox_threads(account_id: str = Query(...), limit: int = Query(50), preferred_language: str = Query("en")):
     """
     Thread-aware inbox: one representative row per thread, sorted by latest activity DESC.
     Considers both inbox message dates and sent message timestamps so that a thread where
@@ -2328,9 +2357,11 @@ async def get_inbox_threads(account_id: str = Query(...), limit: int = Query(50)
         logger.warning("[INBOX] Store unavailable")
         return []
     try:
+        preferred_language = normalize_language(preferred_language)
         # Fetch raw inbox messages with a larger cap to avoid cutting mid-thread duplicates
         raw_emails = await asyncio.to_thread(
-            store.get_emails_with_summaries, limit=200, account_id=account_id
+            store.get_emails_with_summaries, limit=200, account_id=account_id,
+            preferred_language=preferred_language
         )
         # Fetch sent timestamps per thread to capture user-reply activity ordering
         sent_result = await asyncio.to_thread(
@@ -2579,25 +2610,23 @@ async def disconnect_all_accounts():
         print(f"[ERROR] [CLEANUP] Failed to delete credentials: {e}")
         return {"status": "error", "message": str(e)}
 
-SUPPORTED_PREFERENCE_LANGUAGES = {"en", "fr", "ar"}
-
-
 class PreferencesUpdateRequest(BaseModel):
     account_id: str
     ai_language: str
 
 
-def _normalize_preference_language(value) -> str:
-    """Normalize ai_language to a supported value, defaulting to English."""
-    normalized = (value or "en").strip().lower()
-    if normalized in SUPPORTED_PREFERENCE_LANGUAGES:
-        return normalized
-    return "en"
-
-
 def _get_preferences_store() -> SupabaseStore:
     """Create a Supabase store for preference reads/writes."""
     return SupabaseStore()
+
+
+@api_router.get("/preferences/languages")
+async def list_supported_languages():
+    """Return supported AI output languages for frontend selectors."""
+    return [
+        {"code": code, "label": info["label"], "native": info["native"]}
+        for code, info in SUPPORTED_LANGUAGES.items()
+    ]
 
 
 @api_router.get("/preferences")
@@ -2623,7 +2652,7 @@ async def get_preferences(account_id: str = Query(...)):
         )
         rows = response.data or []
         if rows:
-            ai_language = _normalize_preference_language(rows[0].get("ai_language"))
+            ai_language = normalize_language(rows[0].get("ai_language"))
     except Exception as e:
         logger.warning(
             f"[PREFERENCES] Read failed for {account_id} "
@@ -2647,7 +2676,7 @@ async def update_preferences(request: PreferencesUpdateRequest):
     - ar
     """
     requested = (request.ai_language or "").strip().lower()
-    normalized = _normalize_preference_language(requested)
+    normalized = normalize_language(requested)
 
     if normalized != requested:
         raise HTTPException(
