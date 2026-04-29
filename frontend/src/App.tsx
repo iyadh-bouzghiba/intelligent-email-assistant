@@ -19,6 +19,14 @@ const SUBTITLE = "Strategic Intelligence Feed";
 const ITEMS_PER_PAGE = 5;
 const MAX_CONNECTED_ACCOUNTS = 3;
 
+type AILanguage = 'en' | 'fr' | 'ar';
+
+const AI_LANGUAGE_OPTIONS: Array<{ value: AILanguage; label: string }> = [
+  { value: 'en', label: 'English' },
+  { value: 'fr', label: 'Français' },
+  { value: 'ar', label: 'العربية' },
+];
+
 export const App = () => {
   const [briefings, setBriefings] = useState<Briefing[]>([]);
   const [loading, setLoading] = useState(false);
@@ -72,6 +80,10 @@ export const App = () => {
   const [loadingSent, setLoadingSent] = useState(false);
   const [sentCurrentPage, setSentCurrentPage] = useState(1);
   const [readStatePending, setReadStatePending] = useState(false);
+  const [aiLanguage, setAiLanguage] = useState<AILanguage>('en');
+  const [aiLanguageLoading, setAiLanguageLoading] = useState(false);
+  const [aiLanguageSaving, setAiLanguageSaving] = useState(false);
+  const [aiLanguageError, setAiLanguageError] = useState<string | null>(null);
 
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) return;
@@ -816,6 +828,43 @@ export const App = () => {
     }
   }, [activeEmail]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAiLanguage = async () => {
+      if (!activeEmail) {
+        setAiLanguage('en');
+        setAiLanguageError(null);
+        setAiLanguageLoading(false);
+        setAiLanguageSaving(false);
+        return;
+      }
+
+      setAiLanguageLoading(true);
+      setAiLanguageError(null);
+
+      try {
+        const response = await apiService.getPreferences(activeEmail);
+        if (cancelled || activeEmailRef.current !== activeEmail) return;
+        setAiLanguage(response.ai_language ?? 'en');
+      } catch (error) {
+        if (cancelled || activeEmailRef.current !== activeEmail) return;
+        setAiLanguage('en');
+        setAiLanguageError(null);
+      } finally {
+        if (!cancelled && activeEmailRef.current === activeEmail) {
+          setAiLanguageLoading(false);
+        }
+      }
+    };
+
+    loadAiLanguage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEmail]);
+
   // Detect OAuth callback success and auto-activate the newly connected account
   // CRITICAL: Retry logic with exponential backoff to handle replication delays
   useEffect(() => {
@@ -1131,6 +1180,31 @@ export const App = () => {
     console.log(`[SWITCH] Target account handoff started: ${accountId}`);
     await runSync(accountId);
     // setLoading(false) handled by fetchEmails' finally (or pending switch path)
+  };
+
+  const handleAiLanguageChange = async (nextLanguage: AILanguage) => {
+    if (!activeEmail || aiLanguageSaving) return;
+
+    const accountId = activeEmail;
+    const previousLanguage = aiLanguage;
+
+    setAiLanguage(nextLanguage);
+    setAiLanguageSaving(true);
+    setAiLanguageError(null);
+
+    try {
+      const response = await apiService.updatePreferences(accountId, nextLanguage);
+      if (activeEmailRef.current !== accountId) return;
+      setAiLanguage(response.ai_language ?? nextLanguage);
+    } catch (error) {
+      if (activeEmailRef.current !== accountId) return;
+      setAiLanguage(previousLanguage);
+      setAiLanguageError('Could not save AI language preference. Please try again.');
+    } finally {
+      if (activeEmailRef.current === accountId) {
+        setAiLanguageSaving(false);
+      }
+    }
   };
 
   // Extracted: open compose in standalone modal; called by EmailDetailModal
@@ -1566,6 +1640,56 @@ export const App = () => {
           </div>
 
         </div>
+
+        {activeEmail && (
+          <div className="mb-8 max-w-[720px] mx-auto">
+            <div className="rounded-2xl bg-white/[0.03] border border-white/8 p-4 md:p-5 shadow-xl">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-1">
+                    AI Output Language
+                  </div>
+                  <div className="text-white font-bold text-sm truncate">
+                    {activeEmail}
+                  </div>
+                  <p className="text-slate-400 text-xs mt-1 leading-relaxed">
+                    Applies to new summaries, action items, document analysis, and draft replies. Existing AI output is not changed retroactively.
+                  </p>
+                </div>
+
+                <div className="w-full md:w-auto md:min-w-[240px]">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2">
+                    Preferred Language
+                  </label>
+                  <select
+                    value={aiLanguage}
+                    onChange={(e) => handleAiLanguageChange(e.target.value as AILanguage)}
+                    disabled={aiLanguageLoading || aiLanguageSaving}
+                    className="w-full rounded-xl bg-[#111827] border border-white/10 text-white text-sm font-semibold px-4 py-3 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-60"
+                  >
+                    {AI_LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="mt-2 min-h-[18px]">
+                    {aiLanguageSaving ? (
+                      <p className="text-[11px] font-semibold text-indigo-400">Saving preference…</p>
+                    ) : aiLanguageLoading ? (
+                      <p className="text-[11px] font-semibold text-slate-500">Loading preference…</p>
+                    ) : aiLanguageError ? (
+                      <p className="text-[11px] font-semibold text-rose-400">{aiLanguageError}</p>
+                    ) : (
+                      <p className="text-[11px] font-semibold text-emerald-400">Preference saved for this account.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <AnimatePresence>
           {error && (

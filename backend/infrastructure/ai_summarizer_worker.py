@@ -82,6 +82,32 @@ DOCUMENT_SYSTEM_PROMPT = (
     "inside the document itself."
 )
 
+SUPPORTED_AI_LANGUAGES = {"en", "fr", "ar"}
+
+LANGUAGE_DIRECTIVES = {
+    "en": (
+        "Write all user-visible natural-language fields in English. "
+        "Keep the JSON schema unchanged. "
+        'The "urgency" field must remain exactly one of "low", "medium", or "high". '
+        'The "category" field must remain exactly one of '
+        '"action_required", "informational", "meeting", "finance", "travel", or "alert".'
+    ),
+    "fr": (
+        "Écris tous les champs visibles par l'utilisateur en français. "
+        "Conserve strictement le schéma JSON inchangé. "
+        'Le champ "urgency" doit rester exactement une des valeurs "low", "medium" ou "high". '
+        'Le champ "category" doit rester exactement une des valeurs '
+        '"action_required", "informational", "meeting", "finance", "travel" ou "alert".'
+    ),
+    "ar": (
+        "اكتب جميع الحقول النصية الظاهرة للمستخدم باللغة العربية. "
+        "يجب الإبقاء على مخطط JSON كما هو دون أي تغيير. "
+        'يجب أن تبقى قيمة الحقل "urgency" واحدة فقط من "low" أو "medium" أو "high". '
+        'ويجب أن تبقى قيمة الحقل "category" واحدة فقط من '
+        '"action_required" أو "informational" أو "meeting" أو "finance" أو "travel" أو "alert".'
+    ),
+}
+
 
 class AISummaryOutput(BaseModel):
     """Pydantic model that validates and enforces the AI output contract."""
@@ -213,11 +239,52 @@ class AISummarizerWorker:
             )
             return []
 
+    def _normalize_ai_language(self, value: Optional[str]) -> str:
+        """Normalize ai_language to a supported value, defaulting safely to English."""
+        normalized = (value or "en").strip().lower()
+        if normalized in SUPPORTED_AI_LANGUAGES:
+            return normalized
+        return "en"
+
+    def _get_ai_language(self, account_id: str) -> str:
+        """
+        Resolve per-account AI language preference from user_preferences.
+
+        Fallback behavior:
+        - missing row -> "en"
+        - null/empty value -> "en"
+        - invalid value -> "en"
+        - lookup failure -> "en"
+        """
+        try:
+            response = (
+                self.store.client.table("user_preferences")
+                .select("ai_language")
+                .eq("account_id", account_id)
+                .limit(1)
+                .execute()
+            )
+            rows = response.data or []
+            if rows:
+                return self._normalize_ai_language(rows[0].get("ai_language"))
+        except Exception as e:
+            logger.warning(
+                f"[AI-WORKER] AI language lookup failed for {account_id} "
+                f"(type={type(e).__name__}) - defaulting to English"
+            )
+        return "en"
+
+    def _get_language_directive(self, ai_language: str) -> str:
+        """Return the prompt language directive for a normalized supported language."""
+        normalized = self._normalize_ai_language(ai_language)
+        return LANGUAGE_DIRECTIVES[normalized]
+
     def _build_prompt(
         self,
         email_data: Dict[str, Any],
         prepared_body: str,
         thread_context: List[Dict[str, Any]],
+        ai_language: str,
     ) -> str:
         """
         Build injection-safe prompt using XML-style delimiters.
@@ -226,6 +293,7 @@ class AISummarizerWorker:
         sender = email_data.get("sender", "Unknown")
         subject = email_data.get("subject", "No subject")
         date = email_data.get("date", "Unknown")
+        language_directive = self._get_language_directive(ai_language)
 
         thread_section = ""
         if thread_context:
@@ -249,6 +317,7 @@ class AISummarizerWorker:
             '- urgency: one of "low" | "medium" | "high"\n'
             '- category: one of "action_required" | "informational" | "meeting" | '
             '"finance" | "travel" | "alert"\n\n'
+            f"{language_directive}\n\n"
             "<email_metadata>\n"
             f"From: {sender}\n"
             f"Subject: {subject}\n"
@@ -256,7 +325,7 @@ class AISummarizerWorker:
             "</email_metadata>\n\n"
             "<current_email_body>\n"
             f"{prepared_body}\n"
-            f"</current_email_body>"
+            "</current_email_body>"
             f"{thread_section}\n\n"
             "Respond ONLY with valid JSON. No explanation, no prose."
         )
@@ -375,6 +444,7 @@ class AISummarizerWorker:
         email_data: Dict[str, Any],
         prepared_body: str,
         thread_context: Optional[List[Dict[str, Any]]] = None,
+        ai_language: str = "en",
     ) -> Optional[Dict[str, Any]]:
         """
         Call Mistral for JSON-only summarization with zero-budget protections.
@@ -394,6 +464,7 @@ class AISummarizerWorker:
             email_data,
             prepared_body,
             thread_context or [],
+            ai_language,
         )
 
         # Semaphore-controlled execution with 429 retry
@@ -558,6 +629,8 @@ class AISummarizerWorker:
                 self._mark_job_failed(job_id, attempts, "EMAIL_NOT_FOUND")
                 return
 
+            ai_language = self._get_ai_language(account_id)
+
             # 2. Fetch thread context (bounded; failure is non-fatal)
             thread_id = email_row.get("thread_id")
             thread_context: List[Dict[str, Any]] = []
@@ -610,7 +683,12 @@ class AISummarizerWorker:
                 return
 
             # 6. Call Mistral (semaphore + 429 retry; thread-aware prompt with injection defense)
-            raw_json = self._call_mistral(email_row, prepared_body, thread_context)
+            raw_json = self._call_mistral(
+                email_row,
+                prepared_body,
+                thread_context,
+                ai_language,
+            )
             if not raw_json:
                 self._mark_job_failed(job_id, attempts, "MISTRAL_FAILED")
                 return
@@ -726,8 +804,11 @@ class AISummarizerWorker:
         filename: str,
         mime_type: str,
         document_type: str,
+        ai_language: str = "en",
     ) -> Optional[Dict[str, Any]]:
         """Call Mistral to analyze extracted document text."""
+        language_directive = self._get_language_directive(ai_language)
+
         prompt = (
             "Analyze the document below and output ONLY a valid JSON object with "
             "these exact fields:\n"
@@ -737,6 +818,7 @@ class AISummarizerWorker:
             '- urgency: one of "low" | "medium" | "high"\n'
             '- category: one of "action_required" | "informational" | "meeting" | '
             '"finance" | "travel" | "alert"\n\n'
+            f"{language_directive}\n\n"
             "<document_metadata>\n"
             f"Filename: {filename}\n"
             f"MIME Type: {mime_type}\n"
@@ -814,6 +896,8 @@ class AISummarizerWorker:
         logger.info(f"[AI-WORKER][DOC] Processing job {job_id} for {account_id}/{gmail_message_id}")
 
         try:
+            ai_language = self._get_ai_language(account_id)
+
             # 1. Fetch raw Gmail message (MIME structure, no attachment bytes)
             raw_msg = self._fetch_raw_gmail_message(account_id, gmail_message_id)
             if not raw_msg:
@@ -937,6 +1021,7 @@ class AISummarizerWorker:
                 filename=multi_filename,
                 mime_type=attachment_infos[0]["mime_type"],
                 document_type=document_type,
+                ai_language=ai_language,
             )
             if not raw_json:
                 self._mark_job_failed(job_id, attempts, "MISTRAL_FAILED")
