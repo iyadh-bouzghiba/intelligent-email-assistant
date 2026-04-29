@@ -19,10 +19,12 @@ interface Props {
   onSwitchView: (v: 'quick' | 'full') => void;
   onOpenReply: () => void;
   onSummarize: () => void;
+  onGeneratePreferred: () => void | Promise<void>;
   onMarkRead: () => void;
   onMarkUnread: () => void;
   onAskAssistant?: () => void;
   getCategoryStyles: (cat: string) => string;
+  preferredLanguage: string;
 }
 
 const TITLE_ID = 'email-detail-title';
@@ -52,11 +54,35 @@ export function EmailDetailModal({
   onSwitchView,
   onOpenReply,
   onSummarize,
+  onGeneratePreferred,
   onMarkRead,
   onMarkUnread,
   onAskAssistant,
   getCategoryStyles,
+  preferredLanguage,
 }: Props) {
+  const languageLabel = (code?: string | null) => {
+    if (code === 'fr') return 'French';
+    if (code === 'ar') return 'Arabic';
+    return 'English';
+  };
+
+  const actualSummaryLanguage = email.ai_summary_language ?? 'en';
+  const effectivePreferredLanguage = email.ai_preferred_language ?? preferredLanguage ?? 'en';
+
+  const showPreferredLanguageMismatch = Boolean(
+    email.ai_summary_text &&
+    email.ai_summary_is_fallback &&
+    !email.ai_preferred_language_available
+  );
+
+  const summarizeButtonLabel = showPreferredLanguageMismatch
+    ? `Generate ${languageLabel(effectivePreferredLanguage)} version`
+    : 'Re-summarize';
+
+  const summarizeButtonHandler = showPreferredLanguageMismatch
+    ? onGeneratePreferred
+    : onSummarize;
   return (
     <>
       {/* Backdrop — aria-hidden so SR focus stays inside dialog */}
@@ -95,11 +121,10 @@ export function EmailDetailModal({
                     <span>{email.date}</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 mt-3">
-                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
-                      email.priority === 'High'   ? 'bg-[#FF3B5C] text-white border-[#FF3B5C]' :
+                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${email.priority === 'High' ? 'bg-[#FF3B5C] text-white border-[#FF3B5C]' :
                       email.priority === 'Medium' ? 'bg-[#FFB800] text-[#1a1a1a] border-[#FFB800]' :
-                                                    'bg-[#3D4A5C] text-[#94A3B8] border-[#3D4A5C]'
-                    }`}>
+                        'bg-[#3D4A5C] text-[#94A3B8] border-[#3D4A5C]'
+                      }`}>
                       {email.priority}
                     </span>
                     <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getCategoryStyles(email.category)}`}>
@@ -111,11 +136,10 @@ export function EmailDetailModal({
                       </span>
                     )}
                     {!detailIsSent && (
-                      <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
-                        isRead
-                          ? 'bg-slate-500/10 text-slate-500 border-slate-500/20'
-                          : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
-                      }`}>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${isRead
+                        ? 'bg-slate-500/10 text-slate-500 border-slate-500/20'
+                        : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                        }`}>
                         {isRead ? 'Read' : 'Unread'}
                       </span>
                     )}
@@ -134,6 +158,21 @@ export function EmailDetailModal({
 
             {/* ── Scrollable body ───────────────────────────────────────────── */}
             <div className="flex-1 overflow-y-auto custom-scrollbar px-5 py-6 space-y-8 min-h-0 sm:px-8 sm:py-8">
+              {showPreferredLanguageMismatch && (
+                <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-amber-300">
+                    Preferred language version not generated yet
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-amber-100/90">
+                    The saved summary currently shown is in{' '}
+                    <span className="font-semibold">{languageLabel(actualSummaryLanguage)}</span>.
+                    Your preferred language is{' '}
+                    <span className="font-semibold">{languageLabel(effectivePreferredLanguage)}</span>.
+                    Generate the preferred-language version to replace this fallback view.
+                  </p>
+                </div>
+              )}
+
               {panelView === 'quick' ? (
                 <EmailQuickView
                   email={email}
@@ -163,11 +202,11 @@ export function EmailDetailModal({
                 </button>
                 {email.ai_summary_text && email.gmail_message_id && (
                   <button
-                    onClick={onSummarize}
+                    onClick={summarizeButtonHandler}
                     className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
                   >
                     <Sparkles size={12} />
-                    Re-summarize
+                    {summarizeButtonLabel}
                   </button>
                 )}
                 {modifyScope && !detailIsSent && (

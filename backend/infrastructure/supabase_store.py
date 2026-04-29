@@ -218,7 +218,7 @@ class SupabaseStore:
             logger.error(f"[EMAILS] Traceback: {traceback.format_exc()}")
             return type('obj', (object,), {'data': []})
 
-    def get_emails_with_summaries(self, limit=50, account_id=None):
+    def get_emails_with_summaries(self, limit=50, account_id=None, preferred_language: str = "en"):
         """
         Fetches emails with AI summaries via LEFT JOIN (OPTIMIZED VERSION).
 
@@ -228,15 +228,20 @@ class SupabaseStore:
         Args:
             limit: Maximum number of emails to return (default: 50)
             account_id: Filter by specific account (optional)
+            preferred_language: Preferred summary language; falls back to English.
 
         Returns:
             List of email dictionaries with flattened summary fields:
             - ai_summary_json: JSONB object {overview, action_items, urgency}
             - ai_summary_text: Plain text overview
             - ai_summary_model: Model used (e.g., "mistral-small-latest")
+            - ai_summary_language: Actual language of the returned summary
         """
         import logging
+        from backend.languages import normalize_language
+        from backend.summary_versions import EMAIL_SUMMARY_PROMPT_VERSION
         logger = logging.getLogger("supabase_store")
+        preferred_language = normalize_language(preferred_language)
 
         try:
             # Build query with LEFT JOIN to email_ai_summaries
@@ -267,26 +272,43 @@ class SupabaseStore:
                 try:
                     summaries_query = self.client.table("email_ai_summaries").select("*")
 
-                    # Filter by account_id and gmail_message_ids
+                    # Filter by account_id and gmail_message_ids.
+                    # Also filter by prompt_version to exclude document-summary rows
+                    # from this shared table (document rows use DOCUMENT_SUMMARY_PROMPT_VERSION).
                     if account_id:
                         summaries_query = summaries_query.eq("account_id", account_id)
 
-                    summaries_query = summaries_query.in_("gmail_message_id", email_ids)
+                    summaries_query = summaries_query.in_(
+                        "gmail_message_id", email_ids
+                    ).eq("prompt_version", EMAIL_SUMMARY_PROMPT_VERSION)
 
                     summaries_result = summaries_query.execute()
 
-                    # Build map: newest row per gmail_message_id wins.
-                    # Sort by updated_at descending first so the first-seen entry
-                    # for each id is always the most recent one.
+                    # Build map: preferred_language > English fallback > newest row.
                     sorted_summaries = sorted(
                         (summaries_result.data or []),
                         key=lambda s: s.get("updated_at") or "",
                         reverse=True,
                     )
+                    candidates: dict = {}
                     for summary in sorted_summaries:
                         msg_id = summary.get("gmail_message_id")
-                        if msg_id and msg_id not in summaries_map:
-                            summaries_map[msg_id] = summary
+                        if not msg_id:
+                            continue
+                        lang = summary.get("summary_language", "en")
+                        c = candidates.setdefault(msg_id, {})
+                        if lang == preferred_language and "preferred" not in c:
+                            c["preferred"] = summary
+                        if lang == "en" and "en" not in c:
+                            c["en"] = summary
+                        if "any" not in c:
+                            c["any"] = summary
+                    for msg_id, c in candidates.items():
+                        chosen = c.get("preferred") or c.get("en") or c["any"]
+                        summaries_map[msg_id] = {
+                            "row": chosen,
+                            "preferred_available": "preferred" in c,
+                        }
 
                     logger.info(f"[EMAILS] Fetched {len(summaries_map)} summaries for {len(email_ids)} emails")
 
@@ -298,16 +320,25 @@ class SupabaseStore:
             enriched_emails = []
             for email in result.data:
                 msg_id = email.get("gmail_message_id")
-                summary = summaries_map.get(msg_id) if msg_id else None
-
-                if summary:
+                entry = summaries_map.get(msg_id) if msg_id else None
+                if entry:
+                    summary = entry["row"]
+                    actual_lang = summary.get("summary_language", "en")
                     email["ai_summary_json"] = summary.get("summary_json")
                     email["ai_summary_text"] = summary.get("summary_text")
                     email["ai_summary_model"] = summary.get("model")
+                    email["ai_summary_language"] = actual_lang
+                    email["ai_summary_is_fallback"] = actual_lang != preferred_language
+                    email["ai_preferred_language"] = preferred_language
+                    email["ai_preferred_language_available"] = entry["preferred_available"]
                 else:
                     email["ai_summary_json"] = None
                     email["ai_summary_text"] = None
                     email["ai_summary_model"] = None
+                    email["ai_summary_language"] = None
+                    email["ai_summary_is_fallback"] = False
+                    email["ai_preferred_language"] = preferred_language
+                    email["ai_preferred_language_available"] = False
 
                 enriched_emails.append(email)
 

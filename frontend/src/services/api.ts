@@ -10,6 +10,7 @@ import {
     SendEmailRequest,
     SendEmailResponse,
     SentEmail,
+    SupportedLanguage,
 } from "@types";
 
 export type AILanguage = "en" | "fr" | "ar";
@@ -183,15 +184,21 @@ export const apiService = {
         }
     },
 
-    listEmailsWithSummaries: async (account_id?: string): Promise<any[]> => {
-        const params = account_id ? { account_id } : {};
+    listEmailsWithSummaries: async (
+        account_id?: string,
+        preferred_language = 'en'
+    ): Promise<any[]> => {
+        const params = account_id
+            ? { account_id, preferred_language }
+            : { preferred_language };
+
         try {
             const response = await api.get(`${API_ROOT}/emails-with-summaries`, { params });
             console.log(`📡 API: Fetched ${response.data?.length || 0} emails with summaries`);
             return response.data;
         } catch (error) {
             console.warn("📡 API: emails-with-summaries unreachable, falling back to listEmails", error);
-            // Fallback to old endpoint if new one fails
+            // Final graceful fallback — old endpoint is language-blind and may omit summary metadata
             return apiService.listEmails(account_id);
         }
     },
@@ -252,16 +259,31 @@ export const apiService = {
         }
     },
 
+    // Supported languages — /api/preferences/languages
+    getSupportedLanguages: async (): Promise<SupportedLanguage[]> => {
+        try {
+            const response = await api.get(`${API_ROOT}/preferences/languages`);
+            return response.data ?? [];
+        } catch (error) {
+            console.warn('📡 API: getSupportedLanguages failed, returning empty list', error);
+            return [];
+        }
+    },
+
     // Thread-aware inbox — /api/inbox (one row per thread, sorted by latest activity)
-    getInboxThreads: async (account_id: string, limit = 50): Promise<any[]> => {
+    getInboxThreads: async (
+        account_id: string,
+        limit = 50,
+        preferred_language = 'en'
+    ): Promise<any[]> => {
         try {
             const response = await api.get(`${API_ROOT}/inbox`, {
-                params: { account_id, limit },
+                params: { account_id, limit, preferred_language },
             });
             return response.data ?? [];
         } catch (error) {
             console.warn('📡 API: getInboxThreads failed, falling back to listEmailsWithSummaries', error);
-            return apiService.listEmailsWithSummaries(account_id);
+            return apiService.listEmailsWithSummaries(account_id, preferred_language);
         }
     },
 

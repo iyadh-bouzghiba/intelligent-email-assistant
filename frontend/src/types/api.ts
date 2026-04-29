@@ -72,6 +72,10 @@ export interface Briefing {
     };
     ai_summary_text?: string;
     ai_summary_model?: string;
+    ai_summary_language?: string | null;
+    ai_summary_is_fallback?: boolean;
+    ai_preferred_language?: string | null;
+    ai_preferred_language_available?: boolean;
     gmail_message_id?: string;
     thread_id?: string; // Gmail thread ID (required for send functionality)
     is_read?: boolean;  // false = unread (UNREAD label present in Gmail)
@@ -87,6 +91,12 @@ export interface SentEmail {
     subject: string | null;
     body_preview: string | null;
     sent_at: string;
+}
+
+export interface SupportedLanguage {
+    code: string;
+    label: string;
+    native: string;
 }
 
 export interface BriefingResponse {

@@ -15,7 +15,6 @@ ZERO-BUDGET OPTIMIZATIONS (Phase 1):
 """
 
 import hashlib
-import json
 import logging
 import os
 import re
@@ -28,6 +27,8 @@ from pydantic import BaseModel, ValidationError
 
 from backend.infrastructure.supabase_store import SupabaseStore
 from backend.engine.nlp_engine import MistralEngine
+from backend.languages import normalize_language, get_summary_instruction
+from backend.summary_versions import EMAIL_SUMMARY_PROMPT_VERSION, DOCUMENT_SUMMARY_PROMPT_VERSION
 from backend.services.email_preprocessor import EmailPreprocessor
 from backend.services.token_counter import TokenCounter, TokenLimits
 from backend.document_processor import (
@@ -44,8 +45,8 @@ logger = logging.getLogger(__name__)
 JOB_TYPE = "email_summarize_v1"           # legacy alias kept for RPC compatibility
 EMAIL_JOB_TYPE = "email_summarize_v1"
 DOCUMENT_JOB_TYPE = "document_process_v1"
-PROMPT_VERSION = "summ_v2_thread_aware"   # bumped: adds category field + thread context
-DOCUMENT_PROMPT_VERSION = "doc_v1_attachment_text"
+PROMPT_VERSION = EMAIL_SUMMARY_PROMPT_VERSION
+DOCUMENT_PROMPT_VERSION = DOCUMENT_SUMMARY_PROMPT_VERSION
 AI_MAX_CHARS = int(os.getenv("AI_MAX_CHARS", "4000"))
 AI_MAX_ATTEMPTS = int(os.getenv("AI_MAX_ATTEMPTS", "5"))
 MAX_ATTACHMENTS_PER_JOB = 5
@@ -82,31 +83,7 @@ DOCUMENT_SYSTEM_PROMPT = (
     "inside the document itself."
 )
 
-SUPPORTED_AI_LANGUAGES = {"en", "fr", "ar"}
-
-LANGUAGE_DIRECTIVES = {
-    "en": (
-        "Write all user-visible natural-language fields in English. "
-        "Keep the JSON schema unchanged. "
-        'The "urgency" field must remain exactly one of "low", "medium", or "high". '
-        'The "category" field must remain exactly one of '
-        '"action_required", "informational", "meeting", "finance", "travel", or "alert".'
-    ),
-    "fr": (
-        "Écris tous les champs visibles par l'utilisateur en français. "
-        "Conserve strictement le schéma JSON inchangé. "
-        'Le champ "urgency" doit rester exactement une des valeurs "low", "medium" ou "high". '
-        'Le champ "category" doit rester exactement une des valeurs '
-        '"action_required", "informational", "meeting", "finance", "travel" ou "alert".'
-    ),
-    "ar": (
-        "اكتب جميع الحقول النصية الظاهرة للمستخدم باللغة العربية. "
-        "يجب الإبقاء على مخطط JSON كما هو دون أي تغيير. "
-        'يجب أن تبقى قيمة الحقل "urgency" واحدة فقط من "low" أو "medium" أو "high". '
-        'ويجب أن تبقى قيمة الحقل "category" واحدة فقط من '
-        '"action_required" أو "informational" أو "meeting" أو "finance" أو "travel" أو "alert".'
-    ),
-}
+# Language registry is centralised in backend.languages — no local copies.
 
 
 class AISummaryOutput(BaseModel):
@@ -241,10 +218,7 @@ class AISummarizerWorker:
 
     def _normalize_ai_language(self, value: Optional[str]) -> str:
         """Normalize ai_language to a supported value, defaulting safely to English."""
-        normalized = (value or "en").strip().lower()
-        if normalized in SUPPORTED_AI_LANGUAGES:
-            return normalized
-        return "en"
+        return normalize_language(value)
 
     def _get_ai_language(self, account_id: str) -> str:
         """
@@ -266,7 +240,7 @@ class AISummarizerWorker:
             )
             rows = response.data or []
             if rows:
-                return self._normalize_ai_language(rows[0].get("ai_language"))
+                return normalize_language(rows[0].get("ai_language"))
         except Exception as e:
             logger.warning(
                 f"[AI-WORKER] AI language lookup failed for {account_id} "
@@ -276,8 +250,7 @@ class AISummarizerWorker:
 
     def _get_language_directive(self, ai_language: str) -> str:
         """Return the prompt language directive for a normalized supported language."""
-        normalized = self._normalize_ai_language(ai_language)
-        return LANGUAGE_DIRECTIVES[normalized]
+        return get_summary_instruction(ai_language)
 
     def _build_prompt(
         self,
@@ -413,10 +386,11 @@ class AISummarizerWorker:
         """Compute SHA256 hash of masked+truncated input for caching."""
         return hashlib.sha256(masked_input.encode('utf-8')).hexdigest()
 
-    def _check_cache(self, account_id: str, gmail_message_id: str, input_hash: str) -> bool:
+    def _check_cache(self, account_id: str, gmail_message_id: str, input_hash: str, summary_language: str = "en") -> bool:
         """
-        Check if summary already exists with same input_hash.
+        Check if a summary variant already exists with the same input_hash and language.
 
+        Language-aware: an English cache hit does NOT short-circuit French/Arabic generation.
         Returns True if cached (skip Mistral call).
         """
         try:
@@ -424,12 +398,12 @@ class AISummarizerWorker:
                 "id,input_hash"
             ).eq("account_id", account_id).eq(
                 "gmail_message_id", gmail_message_id
-            ).eq("prompt_version", PROMPT_VERSION).execute()
+            ).eq("prompt_version", PROMPT_VERSION).eq("summary_language", summary_language).execute()
 
             if response.data and len(response.data) > 0:
                 cached_hash = response.data[0].get("input_hash")
                 if cached_hash == input_hash:
-                    logger.info(f"[AI-WORKER] Cache hit for {account_id}/{gmail_message_id}")
+                    logger.info(f"[AI-WORKER] Cache hit ({summary_language}) for {account_id}/{gmail_message_id}")
                     return True
 
             return False
@@ -515,23 +489,25 @@ class AISummarizerWorker:
         gmail_message_id: str,
         input_hash: str,
         summary_json: Dict[str, Any],
-        model: str
+        model: str,
+        summary_language: str = "en",
     ):
-        """Upsert summary to email_ai_summaries."""
+        """Upsert language-variant summary to email_ai_summaries."""
         try:
             now_iso = datetime.now(timezone.utc).isoformat()
             self.store.client.table("email_ai_summaries").upsert({
                 "account_id": account_id,
                 "gmail_message_id": gmail_message_id,
                 "prompt_version": PROMPT_VERSION,
+                "summary_language": summary_language,
                 "model": model,
                 "input_hash": input_hash,
                 "summary_json": summary_json,
                 "summary_text": summary_json.get("overview", ""),
                 "updated_at": now_iso
-            }, on_conflict="account_id,gmail_message_id,prompt_version").execute()
+            }, on_conflict="account_id,gmail_message_id,prompt_version,summary_language").execute()
 
-            logger.info(f"[AI-WORKER] Summary written for {account_id}/{gmail_message_id}")
+            logger.info(f"[AI-WORKER] Summary written ({summary_language}) for {account_id}/{gmail_message_id}")
 
         except Exception as e:
             err_type = type(e).__name__
@@ -667,7 +643,7 @@ class AISummarizerWorker:
                     "category": "informational",
                 }
                 input_hash = self._compute_input_hash(prepared_body)
-                self._write_summary(account_id, gmail_message_id, input_hash, summary_json, MISTRAL_MODEL)
+                self._write_summary(account_id, gmail_message_id, input_hash, summary_json, MISTRAL_MODEL, ai_language)
                 self._mark_job_succeeded(job_id)
                 return
 
@@ -677,8 +653,8 @@ class AISummarizerWorker:
             hashed_input = f"Subject: {subject}\nFrom: {sender}\n\n{prepared_body}{thread_hash_tag}"
             input_hash = self._compute_input_hash(hashed_input)
 
-            # 5. Check cache
-            if self._check_cache(account_id, gmail_message_id, input_hash):
+            # 5. Check cache — language-scoped: French/Arabic generation is never skipped by an English hit
+            if self._check_cache(account_id, gmail_message_id, input_hash, ai_language):
                 self._mark_job_succeeded(job_id)
                 return
 
@@ -711,8 +687,8 @@ class AISummarizerWorker:
                 "category": validated.category,
             }
 
-            # 9. Write summary
-            self._write_summary(account_id, gmail_message_id, input_hash, summary_json, MISTRAL_MODEL)
+            # 9. Write summary — keyed by (account, message, prompt_version, language)
+            self._write_summary(account_id, gmail_message_id, input_hash, summary_json, MISTRAL_MODEL, ai_language)
 
             # 10. Mark succeeded
             self._mark_job_succeeded(job_id)
@@ -876,9 +852,10 @@ class AISummarizerWorker:
                     "summary_text": summary_json.get("overview", ""),
                     "document_type": document_type,
                     "attachment_filename": attachment_filename,
+                    "summary_language": "en",
                     "updated_at": now_iso,
                 },
-                on_conflict="account_id,gmail_message_id,prompt_version",
+                on_conflict="account_id,gmail_message_id,prompt_version,summary_language",
             ).execute()
             logger.info(f"[AI-WORKER][DOC] Document summary written for {account_id}/{gmail_message_id}")
         except Exception as e:
@@ -896,8 +873,6 @@ class AISummarizerWorker:
         logger.info(f"[AI-WORKER][DOC] Processing job {job_id} for {account_id}/{gmail_message_id}")
 
         try:
-            ai_language = self._get_ai_language(account_id)
-
             # 1. Fetch raw Gmail message (MIME structure, no attachment bytes)
             raw_msg = self._fetch_raw_gmail_message(account_id, gmail_message_id)
             if not raw_msg:
@@ -1007,7 +982,7 @@ class AISummarizerWorker:
                     "account_id", account_id
                 ).eq("gmail_message_id", gmail_message_id).eq(
                     "prompt_version", DOCUMENT_PROMPT_VERSION
-                ).execute()
+                ).eq("summary_language", "en").execute()
                 if cached.data and cached.data[0].get("input_hash") == input_hash:
                     logger.info(f"[AI-WORKER][DOC] Cache hit for {gmail_message_id[:8]}...")
                     self._mark_job_succeeded(job_id)
@@ -1021,7 +996,7 @@ class AISummarizerWorker:
                 filename=multi_filename,
                 mime_type=attachment_infos[0]["mime_type"],
                 document_type=document_type,
-                ai_language=ai_language,
+                ai_language="en",
             )
             if not raw_json:
                 self._mark_job_failed(job_id, attempts, "MISTRAL_FAILED")
