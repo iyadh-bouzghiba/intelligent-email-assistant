@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from backend.languages import normalize_language, get_draft_instruction
+from backend.tones import normalize_tone, get_tone_instruction
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,11 @@ class EmailAgent:
     def _get_language_directive(self, ai_language: str) -> str:
         """Return the draft-language directive for a normalized supported language."""
         return get_draft_instruction(ai_language)
+
+    def _get_tone_directive(self, tone: Optional[str]) -> str:
+        """Return the tone directive for a normalized supported tone."""
+        normalized = normalize_tone(tone)
+        return get_tone_instruction(normalized)
 
     # ------------------------------------------------------------------
     # Rate limiting  (rate_limit_counters table)
@@ -291,6 +297,7 @@ class EmailAgent:
         body_excerpt: str,
         user_instruction: str,
         conversation_id: Optional[str] = None,
+        tone: Optional[str] = "professional",
     ) -> Dict[str, str]:
         """
         Generate a draft reply for the user to review.
@@ -315,6 +322,8 @@ class EmailAgent:
 
         ai_language = self._get_ai_language(account_id)
         language_directive = self._get_language_directive(ai_language)
+        normalized_tone = normalize_tone(tone)
+        tone_directive = self._get_tone_directive(normalized_tone)
 
         # 4. Few-shot examples from accepted feedback
         from backend.learning.fewshot_injector import get_fewshot_examples
@@ -331,12 +340,14 @@ class EmailAgent:
         safe_excerpt = (body_excerpt or "")[:BODY_EXCERPT_CHARS]
         prompt = (
             f"{fewshot_block}"
-            "Draft a professional email reply for the user to review and send. "
-            "Be concise and match a professional tone.\n\n"
-            f"{language_directive}\n\n"
+            "Draft an email reply for the user to review and send. "
+            "You NEVER send email.\n\n"
+            f"{language_directive}\n"
+            f"{tone_directive}\n\n"
             "<email_metadata>\n"
             f"Subject: {subject}\n"
             f"From: {sender}\n"
+            f"Requested tone: {normalized_tone}\n"
             "</email_metadata>\n\n"
             "<email_body>\n"
             f"{safe_excerpt}\n"
