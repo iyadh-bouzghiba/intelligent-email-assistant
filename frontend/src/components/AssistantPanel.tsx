@@ -1,17 +1,33 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Bot, X, Send, RefreshCw, Sparkles, AlertCircle, CheckCircle } from 'lucide-react';
-import { Briefing } from '@types';
+import { Briefing, DraftTone, SupportedTone } from '@types';
+import { apiService } from '@services';
 
 const BASE_URL: string = import.meta.env.PROD
   ? window.location.origin
   : (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(/\/$/, '');
+
+const FALLBACK_TONES: SupportedTone[] = [
+  { code: 'professional', label: 'Professional' },
+  { code: 'casual', label: 'Casual' },
+  { code: 'concise', label: 'Concise' },
+  { code: 'empathetic', label: 'Empathetic' },
+];
 
 interface Props {
   email: Briefing;
   /** Called with the generated draft text; the caller populates ReplyComposeModal. */
   onUseDraft: (draft: string) => void;
   onClose: () => void;
+
+  /**
+   * Optional controlled tone contract for future App.tsx orchestration.
+   * If omitted, this component falls back to internal local tone state.
+   */
+  selectedTone?: DraftTone;
+  availableTones?: SupportedTone[];
+  onToneChange?: (tone: DraftTone) => void;
 }
 
 type PanelState =
@@ -23,7 +39,7 @@ type PanelState =
   | 'error';
 
 /**
- * AI Assistant panel — BL-08/BL-09.
+ * AI Assistant panel — BL-08/BL-09, extended for P4 tone-aware drafting.
  *
  * Send safety: this component never sends email. Clicking "Use this draft"
  * populates the caller's compose state; the user reviews and sends via
@@ -36,7 +52,14 @@ type PanelState =
  * Rate limit: the backend enforces 10 agent actions per account per hour.
  * The remaining quota is reflected in the footer.
  */
-export function AssistantPanel({ email, onUseDraft, onClose }: Props) {
+export function AssistantPanel({
+  email,
+  onUseDraft,
+  onClose,
+  selectedTone,
+  availableTones,
+  onToneChange,
+}: Props) {
   const [state, setState] = useState<PanelState>('checking');
   const [instruction, setInstruction] = useState('');
   const [draft, setDraft] = useState('');
@@ -44,17 +67,34 @@ export function AssistantPanel({ email, onUseDraft, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [rateLimitRemaining, setRateLimitRemaining] = useState(10);
   const [consenting, setConsenting] = useState(false);
+  const [localTone, setLocalTone] = useState<DraftTone>('professional');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const toneOptions = availableTones && availableTones.length > 0 ? availableTones : FALLBACK_TONES;
+  const effectiveTone: DraftTone = selectedTone ?? localTone;
 
   useEffect(() => {
     checkStatus();
-  }, [email.account]);
+    setConversationId(null);
+    setDraft('');
+    setInstruction('');
+    setError(null);
+    setState('checking');
+  }, [email.account, email.thread_id]);
 
   useEffect(() => {
     if (state === 'ready' && textareaRef.current) {
       textareaRef.current.focus();
     }
   }, [state]);
+
+  const handleToneSelection = (tone: DraftTone) => {
+    if (onToneChange) {
+      onToneChange(tone);
+      return;
+    }
+    setLocalTone(tone);
+  };
 
   const checkStatus = async () => {
     setState('checking');
@@ -94,17 +134,14 @@ export function AssistantPanel({ email, onUseDraft, onClose }: Props) {
     setState('generating');
     setError(null);
     try {
-      const res = await axios.post(
-        `${BASE_URL}/api/threads/${email.thread_id}/draft`,
-        {
-          account_id: email.account,
-          user_instruction: instruction,
-          conversation_id: conversationId,
-        },
-        { withCredentials: true }
-      );
-      setDraft(res.data.draft ?? '');
-      setConversationId(res.data.conversation_id ?? null);
+      const res = await apiService.draftThreadReply(email.thread_id, {
+        account_id: email.account,
+        user_instruction: instruction,
+        conversation_id: conversationId,
+        tone: effectiveTone,
+      });
+      setDraft(res.draft ?? '');
+      setConversationId(res.conversation_id ?? null);
       setRateLimitRemaining((prev) => Math.max(0, prev - 1));
       setState('draft_ready');
     } catch (e: any) {
@@ -247,6 +284,24 @@ export function AssistantPanel({ email, onUseDraft, onClose }: Props) {
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                Tone
+              </label>
+              <select
+                value={effectiveTone}
+                onChange={(e) => handleToneSelection(e.target.value as DraftTone)}
+                disabled={state === 'generating'}
+                className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 disabled:opacity-50 transition-all"
+              >
+                {toneOptions.map((tone) => (
+                  <option key={tone.code} value={tone.code} className="bg-slate-900 text-slate-200">
+                    {tone.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                 Instruction
               </label>
               <textarea
@@ -280,6 +335,14 @@ export function AssistantPanel({ email, onUseDraft, onClose }: Props) {
               <p className="text-xs font-bold text-emerald-400">
                 Draft ready — review before sending
               </p>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                Tone
+              </p>
+              <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wide">
+                {toneOptions.find((tone) => tone.code === effectiveTone)?.label ?? effectiveTone}
+              </span>
             </div>
             <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08]">
               <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap break-words">

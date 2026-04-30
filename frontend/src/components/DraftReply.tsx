@@ -3,24 +3,46 @@ import { apiService } from '@services';
 import { DraftReplyResponse } from '@types';
 import { Mail, Loader2, AlertCircle, Copy, Check } from 'lucide-react';
 
+/**
+ * Legacy / minimal-repair draft helper.
+ *
+ * Scope is intentionally limited:
+ * - fixes the broken backend contract
+ * - does NOT introduce full tone/template UX
+ * - not treated as a primary live user-visible surface
+ */
 export const DraftReply: React.FC = () => {
     const [threadId, setThreadId] = useState('');
+    const [accountId, setAccountId] = useState('');
+    const [instruction, setInstruction] = useState('');
     const [result, setResult] = useState<DraftReplyResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
 
+    const canSubmit =
+        threadId.trim().length > 0 &&
+        accountId.trim().length > 0 &&
+        instruction.trim().length > 0;
+
     const handleDraft = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!threadId.trim()) return;
+        if (!canSubmit) return;
 
         setLoading(true);
         setError(null);
+
         try {
-            const data = await apiService.draftThreadReply(threadId.trim());
+            const data = await apiService.draftThreadReply(threadId.trim(), {
+                account_id: accountId.trim(),
+                user_instruction: instruction.trim(),
+            });
             setResult(data);
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to generate draft. Please check the Thread ID.');
+            setError(
+                err.response?.data?.detail ||
+                'Failed to generate draft. Please verify the Thread ID, Account ID, and instruction.'
+            );
             setResult(null);
         } finally {
             setLoading(false);
@@ -36,28 +58,43 @@ export const DraftReply: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <form onSubmit={handleDraft} className="relative">
-                <div className="flex gap-2">
-                    <div className="relative flex-grow">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <Mail className="h-5 w-5 text-slate-400" />
-                        </div>
-                        <input
-                            type="text"
-                            value={threadId}
-                            onChange={(e) => setThreadId(e.target.value)}
-                            placeholder="Enter Thread ID to draft reply..."
-                            className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all shadow-sm"
-                        />
+            <form onSubmit={handleDraft} className="space-y-3">
+                <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Mail className="h-5 w-5 text-slate-400" />
                     </div>
-                    <button
-                        type="submit"
-                        disabled={loading || !threadId.trim()}
-                        className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-md shadow-indigo-200"
-                    >
-                        {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Generate Draft'}
-                    </button>
+                    <input
+                        type="text"
+                        value={threadId}
+                        onChange={(e) => setThreadId(e.target.value)}
+                        placeholder="Enter Thread ID…"
+                        className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all shadow-sm"
+                    />
                 </div>
+
+                <input
+                    type="text"
+                    value={accountId}
+                    onChange={(e) => setAccountId(e.target.value)}
+                    placeholder="Enter Account ID (email)…"
+                    className="block w-full px-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all shadow-sm"
+                />
+
+                <textarea
+                    value={instruction}
+                    onChange={(e) => setInstruction(e.target.value)}
+                    placeholder="Enter reply instruction…"
+                    rows={4}
+                    className="block w-full px-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all shadow-sm resize-none"
+                />
+
+                <button
+                    type="submit"
+                    disabled={loading || !canSubmit}
+                    className="w-full px-6 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-md shadow-indigo-200"
+                >
+                    {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Generate Draft'}
+                </button>
             </form>
 
             {error && (
@@ -88,7 +125,12 @@ export const DraftReply: React.FC = () => {
                             )}
                         </button>
                     </div>
-                    <div className="p-6">
+                    <div className="p-6 space-y-3">
+                        {result.conversation_id && (
+                            <p className="text-xs text-slate-500">
+                                Conversation ID: <span className="font-mono">{result.conversation_id}</span>
+                            </p>
+                        )}
                         <div className="bg-slate-50/50 rounded-lg p-4 border border-slate-100">
                             <pre className="whitespace-pre-wrap font-sans text-slate-800 leading-relaxed text-sm">
                                 {result.draft}
