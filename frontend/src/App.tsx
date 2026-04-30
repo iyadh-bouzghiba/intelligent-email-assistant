@@ -82,6 +82,7 @@ export const App = () => {
   const [aiLanguageLoading, setAiLanguageLoading] = useState(false);
   const [aiLanguageSaving, setAiLanguageSaving] = useState(false);
   const [aiLanguageError, setAiLanguageError] = useState<string | null>(null);
+  const [aiLanguageSavedAccountId, setAiLanguageSavedAccountId] = useState<string | null>(null);
   const [supportedLanguages, setSupportedLanguages] = useState<SupportedLanguage[]>([]);
   const aiLanguageRef = useRef<string>('en');
 
@@ -859,6 +860,7 @@ export const App = () => {
       if (!activeEmail) {
         setAiLanguage('en');
         setAiLanguageError(null);
+        setAiLanguageSavedAccountId(null);
         setAiLanguageLoading(false);
         setAiLanguageSaving(false);
         return;
@@ -866,6 +868,7 @@ export const App = () => {
 
       setAiLanguageLoading(true);
       setAiLanguageError(null);
+      setAiLanguageSavedAccountId(null);
 
       try {
         const response = await apiService.getPreferences(activeEmail);
@@ -1149,6 +1152,7 @@ export const App = () => {
     setSendSuccess(false);
     setPanelError(null);
     setScrollToActions(false);
+    setAiLanguageSavedAccountId(null);
   };
 
   // Close details panel. Compose state is handled by the selectedEmailDetail invariant effect.
@@ -1216,6 +1220,7 @@ export const App = () => {
     setAiLanguage(nextLanguage as AILanguage);
     setAiLanguageSaving(true);
     setAiLanguageError(null);
+    setAiLanguageSavedAccountId(null);
 
     try {
       const response = await apiService.updatePreferences(accountId, nextLanguage as AILanguage);
@@ -1223,12 +1228,14 @@ export const App = () => {
       const savedLanguage = response.ai_language ?? nextLanguage;
       aiLanguageRef.current = savedLanguage;
       setAiLanguage(savedLanguage as AILanguage);
+      setAiLanguageSavedAccountId(accountId);
       // Re-fetch emails with new language preference so summaries reflect the saved language
       fetchEmails(accountId, { reason: 'language-change' });
     } catch (error) {
       if (activeEmailRef.current !== accountId) return;
       aiLanguageRef.current = previousLanguage;
       setAiLanguage(previousLanguage);
+      setAiLanguageSavedAccountId(null);
       setAiLanguageError('Could not save AI language preference. Please try again.');
     } finally {
       if (activeEmailRef.current === accountId) {
@@ -1705,11 +1712,10 @@ export const App = () => {
                           role="radio"
                           aria-checked={isActive}
                           onClick={() => handleAiLanguageChange(option.code)}
-                          className={`flex-1 rounded-lg py-2 px-3 text-sm font-bold transition-all duration-150 ${
-                            isActive
-                              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40'
-                              : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                          }`}
+                          className={`flex-1 rounded-lg py-2 px-3 text-sm font-bold transition-all duration-150 ${isActive
+                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                            }`}
                         >
                           {option.native}
                         </button>
@@ -1719,14 +1725,14 @@ export const App = () => {
 
                   <div className="mt-2 min-h-[18px]">
                     {aiLanguageSaving ? (
-                      <p className="text-[11px] font-semibold text-indigo-400">Saving preference…</p>
+                      <p className="text-[11px] font-semibold text-indigo-300">Saving preference…</p>
                     ) : aiLanguageLoading ? (
                       <p className="text-[11px] font-semibold text-slate-500">Loading preference…</p>
                     ) : aiLanguageError ? (
                       <p className="text-[11px] font-semibold text-rose-400">{aiLanguageError}</p>
-                    ) : (
+                    ) : aiLanguageSavedAccountId === activeEmail ? (
                       <p className="text-[11px] font-semibold text-emerald-400">Preference saved for this account.</p>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
