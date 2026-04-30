@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import threading
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
 from backend.infrastructure.supabase_store import SupabaseStore
@@ -9,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 class ControlPlane:
     _instance = None
+    _instance_lock = threading.Lock()
     _policy_cache = {}
     _last_fetch = 0
     _cache_ttl = 60 # Seconds
@@ -17,13 +19,31 @@ class ControlPlane:
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(ControlPlane, cls).__new__(cls)
+            with cls._instance_lock:
+                if cls._instance is None:
+                    instance = super(ControlPlane, cls).__new__(cls)
+                    instance.store = None
+                    cls._instance = instance
+
+        cls._instance._ensure_store_initialized()
+        return cls._instance
+
+    def _ensure_store_initialized(self) -> bool:
+        """Initializes SupabaseStore exactly once per instance, safely under concurrency."""
+        if self.store is not None:
+            return True
+
+        with self.__class__._instance_lock:
+            if self.store is not None:
+                return True
+
             try:
-                cls._instance.store = SupabaseStore()
+                self.store = SupabaseStore()
+                return True
             except Exception as e:
                 logger.warning(f"[CONTROLPLANE] Persistence layer unavailable: {e}")
-                cls._instance.store = None
-        return cls._instance
+                self.store = None
+                return False
 
     def _get_policy(self) -> Dict[str, Any]:
         """Loads policy from cache or Supabase with fail-open logic."""
@@ -72,6 +92,8 @@ class ControlPlane:
 
     def verify_schema(self) -> bool:
         """Validates DB schema and sets schema_state. Never raises."""
+        self._ensure_store_initialized()
+
         if not self.store:
             logger.warning("[CONTROLPLANE] Schema verification skipped: persistence layer unavailable")
             ControlPlane.schema_state = "uninitialized"
