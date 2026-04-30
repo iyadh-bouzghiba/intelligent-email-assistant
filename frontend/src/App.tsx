@@ -92,6 +92,10 @@ export const App = () => {
   const [templateSaving, setTemplateSaving] = useState(false);
   const [templateDeletingId, setTemplateDeletingId] = useState<string | null>(null);
   const [aiLanguageResolvedAccountId, setAiLanguageResolvedAccountId] = useState<string | null>(null);
+  const selectedEmailIdentity =
+    selectedEmailDetail?.gmail_message_id ??
+    selectedEmailDetail?.thread_id ??
+    null;
   const aiLanguageRef = useRef<string>('en');
   const aiLanguageResolvedAccountRef = useRef<string | null>(null);
 
@@ -308,18 +312,18 @@ export const App = () => {
     }
   }, [activeModal]);
 
-  // INVARIANT: Whenever selected email changes or panel closes, force compose back to neutral.
-  // This is a defensive guard — even if a future call path bypasses closeDetailPanel/openEmailDetail,
-  // compose state cannot leak across email identity changes.
+  // INVARIANT: Whenever the selected email identity changes or panel closes, force compose back to neutral.
+  // This avoids leaking compose state across different emails while preserving compose state when the
+  // currently selected email is merely refreshed from the latest briefings data.
   useEffect(() => {
-    if (!selectedEmailDetail) {
+    if (!selectedEmailIdentity) {
       setActiveModal('none');
     }
     setReplyBody('');
     setReplyCC('');
     setSending(false);
     setPanelError(null);
-  }, [selectedEmailDetail]);
+  }, [selectedEmailIdentity]);
 
   // Auto-scroll to action items when panel opens via "View N more" button
   useEffect(() => {
