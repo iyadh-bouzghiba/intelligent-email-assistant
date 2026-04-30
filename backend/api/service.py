@@ -140,7 +140,7 @@ sio = socketio.AsyncServer(
     transports=["websocket", "polling"],  # FIXED: Enable polling fallback for stability
     ping_timeout=30,                      # FIXED: Increased to 30s (Render's idle timeout limit)
     ping_interval=15,                     # FIXED: Increased to 15s for high-latency networks
-    logger=True,
+    logger=False,
     engineio_logger=True,
 )
 
