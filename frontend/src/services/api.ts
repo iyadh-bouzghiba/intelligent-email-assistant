@@ -2,18 +2,24 @@ import axios from "axios";
 import {
     SummaryResponse,
     HealthStatus,
+    DraftReplyRequest,
     DraftReplyResponse,
     ThreadListResponse,
     SimulateEmailRequest,
     BriefingResponse,
     AccountsResponse,
-    SendEmailRequest,
     SendEmailResponse,
     SentEmail,
     SupportedLanguage,
+    SupportedTone,
+    EmailTemplate,
+    CreateTemplateRequest,
+    DeleteTemplateResponse,
+    AILanguage,
+    TemplateLanguage,
 } from "@types";
 
-export type AILanguage = "en" | "fr" | "ar";
+export type { AILanguage } from "@types";
 
 export interface PreferencesResponse {
     account_id: string;
@@ -89,11 +95,17 @@ export const apiService = {
         return response.data;
     },
 
+    /**
+     * Backend contract for POST /api/threads/{thread_id}/draft
+     * Requires account_id + user_instruction; optional conversation_id + tone.
+     */
     draftThreadReply: async (
-        thread_id: string
+        thread_id: string,
+        payload: DraftReplyRequest
     ): Promise<DraftReplyResponse> => {
         const response = await api.post(
-            `${API_ROOT}/threads/${thread_id}/draft`
+            `${API_ROOT}/threads/${encodeURIComponent(thread_id)}/draft`,
+            payload
         );
         return response.data;
     },
@@ -259,7 +271,7 @@ export const apiService = {
         }
     },
 
-    // Supported languages — /api/preferences/languages
+    // Supported languages — public /api/preferences/languages
     getSupportedLanguages: async (): Promise<SupportedLanguage[]> => {
         try {
             const response = await api.get(`${API_ROOT}/preferences/languages`);
@@ -268,6 +280,51 @@ export const apiService = {
             console.warn('📡 API: getSupportedLanguages failed, returning empty list', error);
             return [];
         }
+    },
+
+    // Supported draft tones — authenticated /api/tones
+    getSupportedTones: async (): Promise<SupportedTone[]> => {
+        try {
+            const response = await api.get(`${API_ROOT}/tones`);
+            return response.data ?? [];
+        } catch (error) {
+            console.warn('📡 API: getSupportedTones failed, returning empty list', error);
+            return [];
+        }
+    },
+
+    // Reusable templates — authenticated /api/templates
+    listTemplates: async (
+        account_id: string,
+        language: TemplateLanguage
+    ): Promise<EmailTemplate[]> => {
+        try {
+            const response = await api.get(`${API_ROOT}/templates`, {
+                params: { account_id, language },
+            });
+            return response.data ?? [];
+        } catch (error) {
+            console.warn('📡 API: listTemplates failed, returning empty list', error);
+            return [];
+        }
+    },
+
+    createTemplate: async (
+        payload: CreateTemplateRequest
+    ): Promise<EmailTemplate> => {
+        const response = await api.post(`${API_ROOT}/templates`, payload);
+        return response.data;
+    },
+
+    deleteTemplate: async (
+        template_id: string,
+        account_id: string
+    ): Promise<DeleteTemplateResponse> => {
+        const response = await api.delete(
+            `${API_ROOT}/templates/${encodeURIComponent(template_id)}`,
+            { params: { account_id } }
+        );
+        return response.data;
     },
 
     // Thread-aware inbox — /api/inbox (one row per thread, sorted by latest activity)

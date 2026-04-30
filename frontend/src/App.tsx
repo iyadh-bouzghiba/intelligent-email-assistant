@@ -3,7 +3,7 @@ import { apiService, AILanguage } from '@services';
 import { websocketService } from '@services/websocket';
 import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Briefing, AccountInfo, SentEmail, SupportedLanguage } from '@types';
+import { Briefing, AccountInfo, SentEmail, SupportedLanguage, SupportedTone, EmailTemplate, DraftTone } from '@types';
 import { SentList } from './components/SentList';
 import { EmailDetailModal } from './components/EmailDetailModal';
 import { ReplyComposeModal } from './components/ReplyComposeModal';
@@ -84,7 +84,16 @@ export const App = () => {
   const [aiLanguageError, setAiLanguageError] = useState<string | null>(null);
   const [aiLanguageSavedAccountId, setAiLanguageSavedAccountId] = useState<string | null>(null);
   const [supportedLanguages, setSupportedLanguages] = useState<SupportedLanguage[]>([]);
+  const [selectedTone, setSelectedTone] = useState<DraftTone>('professional');
+  const [availableTones, setAvailableTones] = useState<SupportedTone[]>([]);
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [templateDeletingId, setTemplateDeletingId] = useState<string | null>(null);
+  const [aiLanguageResolvedAccountId, setAiLanguageResolvedAccountId] = useState<string | null>(null);
   const aiLanguageRef = useRef<string>('en');
+  const aiLanguageResolvedAccountRef = useRef<string | null>(null);
 
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) return;
@@ -838,11 +847,27 @@ export const App = () => {
     aiLanguageRef.current = aiLanguage;
   }, [aiLanguage]);
 
-  // Load supported languages from backend on mount (once)
+  // Load supported languages + tones from backend on mount (once)
   useEffect(() => {
-    apiService.getSupportedLanguages().then(langs => {
+    let cancelled = false;
+
+    const loadStaticOptions = async () => {
+      const [langs, tones] = await Promise.all([
+        apiService.getSupportedLanguages(),
+        apiService.getSupportedTones(),
+      ]);
+
+      if (cancelled) return;
+
       if (langs.length > 0) setSupportedLanguages(langs);
-    });
+      if (tones.length > 0) setAvailableTones(tones);
+    };
+
+    loadStaticOptions();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Sync selectedEmailDetail with latest briefings data so language metadata stays fresh after a re-fetch
@@ -857,6 +882,9 @@ export const App = () => {
     let cancelled = false;
 
     const loadAiLanguage = async () => {
+      aiLanguageResolvedAccountRef.current = null;
+      setAiLanguageResolvedAccountId(null);
+
       if (!activeEmail) {
         setAiLanguage('en');
         setAiLanguageError(null);
@@ -873,11 +901,18 @@ export const App = () => {
       try {
         const response = await apiService.getPreferences(activeEmail);
         if (cancelled || activeEmailRef.current !== activeEmail) return;
-        setAiLanguage(response.ai_language ?? 'en');
+
+        const resolvedLanguage = response.ai_language ?? 'en';
+        setAiLanguage(resolvedLanguage);
+        aiLanguageResolvedAccountRef.current = activeEmail;
+        setAiLanguageResolvedAccountId(activeEmail);
       } catch (error) {
         if (cancelled || activeEmailRef.current !== activeEmail) return;
+
         setAiLanguage('en');
         setAiLanguageError(null);
+        aiLanguageResolvedAccountRef.current = activeEmail;
+        setAiLanguageResolvedAccountId(activeEmail);
       } finally {
         if (!cancelled && activeEmailRef.current === activeEmail) {
           setAiLanguageLoading(false);
@@ -891,6 +926,58 @@ export const App = () => {
       cancelled = true;
     };
   }, [activeEmail]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTemplatesForActiveContext = async () => {
+      if (!activeEmail) {
+        setTemplates([]);
+        setTemplatesLoading(false);
+        setTemplatesError(null);
+        setTemplateSaving(false);
+        setTemplateDeletingId(null);
+        setSelectedTone('professional');
+        return;
+      }
+
+      const languageResolvedForActiveAccount =
+        aiLanguageResolvedAccountId === activeEmail &&
+        aiLanguageResolvedAccountRef.current === activeEmail;
+
+      // Block template loading until the active account's language is resolved.
+      // This avoids transient wrong-language fetches on account switch.
+      if (!languageResolvedForActiveAccount) {
+        setTemplates([]);
+        setTemplatesLoading(false);
+        setTemplatesError(null);
+        return;
+      }
+
+      setTemplatesLoading(true);
+      setTemplatesError(null);
+
+      try {
+        const rows = await apiService.listTemplates(activeEmail, aiLanguage);
+        if (cancelled || activeEmailRef.current !== activeEmail) return;
+        setTemplates(rows);
+      } catch (error) {
+        if (cancelled || activeEmailRef.current !== activeEmail) return;
+        setTemplates([]);
+        setTemplatesError('Could not load templates. Please try again.');
+      } finally {
+        if (!cancelled && activeEmailRef.current === activeEmail) {
+          setTemplatesLoading(false);
+        }
+      }
+    };
+
+    loadTemplatesForActiveContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEmail, aiLanguage, aiLanguageResolvedAccountId]);
 
   // Detect OAuth callback success and auto-activate the newly connected account
   // CRITICAL: Retry logic with exponential backoff to handle replication delays
@@ -1153,6 +1240,16 @@ export const App = () => {
     setPanelError(null);
     setScrollToActions(false);
     setAiLanguageSavedAccountId(null);
+
+    // P4 shared tone/template state
+    setSelectedTone('professional');
+    setTemplates([]);
+    setTemplatesLoading(false);
+    setTemplatesError(null);
+    setTemplateSaving(false);
+    setTemplateDeletingId(null);
+    setAiLanguageResolvedAccountId(null);
+    aiLanguageResolvedAccountRef.current = null;
   };
 
   // Close details panel. Compose state is handled by the selectedEmailDetail invariant effect.
@@ -1175,6 +1272,10 @@ export const App = () => {
     setPanelView('quick');
     setDetailIsSent(isSent);
     setIsDetailRead(!!item.is_read);
+    setSelectedTone('professional');
+    setTemplatesError(null);
+    setTemplateSaving(false);
+    setTemplateDeletingId(null);
     setSelectedEmailDetail(item);
     // Auto-mark read for unread inbox items when modify scope is available
     if (!isSent && !item.is_read && item.thread_id && activeEmail) {
@@ -1216,6 +1317,9 @@ export const App = () => {
     const accountId = activeEmail;
     const previousLanguage = aiLanguage;
 
+    aiLanguageResolvedAccountRef.current = null;
+    setAiLanguageResolvedAccountId(null);
+
     aiLanguageRef.current = nextLanguage;
     setAiLanguage(nextLanguage as AILanguage);
     setAiLanguageSaving(true);
@@ -1225,18 +1329,31 @@ export const App = () => {
     try {
       const response = await apiService.updatePreferences(accountId, nextLanguage as AILanguage);
       if (activeEmailRef.current !== accountId) return;
+
       const savedLanguage = response.ai_language ?? nextLanguage;
       aiLanguageRef.current = savedLanguage;
       setAiLanguage(savedLanguage as AILanguage);
       setAiLanguageSavedAccountId(accountId);
+
+      aiLanguageResolvedAccountRef.current = accountId;
+      setAiLanguageResolvedAccountId(accountId);
+
       // Re-fetch emails with new language preference so summaries reflect the saved language
       fetchEmails(accountId, { reason: 'language-change' });
+
+      // Explicitly refresh templates for the new saved language
+      await refreshTemplatesForContext(accountId, savedLanguage as AILanguage);
     } catch (error) {
       if (activeEmailRef.current !== accountId) return;
+
       aiLanguageRef.current = previousLanguage;
       setAiLanguage(previousLanguage);
       setAiLanguageSavedAccountId(null);
       setAiLanguageError('Could not save AI language preference. Please try again.');
+
+      // Restore the previous account-language context as authoritative
+      aiLanguageResolvedAccountRef.current = accountId;
+      setAiLanguageResolvedAccountId(accountId);
     } finally {
       if (activeEmailRef.current === accountId) {
         setAiLanguageSaving(false);
@@ -1244,9 +1361,88 @@ export const App = () => {
     }
   };
 
+  const handleToneChange = (nextTone: DraftTone) => {
+    setSelectedTone(nextTone);
+  };
+
+  const refreshTemplatesForContext = async (accountId: string, language: AILanguage) => {
+    const rows = await apiService.listTemplates(accountId, language);
+    if (activeEmailRef.current === accountId) {
+      setTemplates(rows);
+    }
+    return rows;
+  };
+
+  const handleApplyTemplate = (template: EmailTemplate) => {
+    setReplyBody(template.body || '');
+    setSelectedTone(template.tone || 'professional');
+    setPanelError(null);
+    setTemplatesError(null);
+  };
+
+  const handleSaveTemplate = async (name: string) => {
+    if (!activeEmail) return;
+
+    const trimmedName = name.trim();
+    const trimmedBody = replyBody.trim();
+
+    if (!trimmedName || !trimmedBody) return;
+
+    const accountId = activeEmail;
+    const language = aiLanguage;
+
+    setTemplateSaving(true);
+    setTemplatesError(null);
+
+    try {
+      await apiService.createTemplate({
+        account_id: accountId,
+        name: trimmedName,
+        tone: selectedTone,
+        language,
+        body: trimmedBody,
+      });
+
+      if (activeEmailRef.current !== accountId) return;
+      await refreshTemplatesForContext(accountId, language);
+    } catch (error) {
+      if (activeEmailRef.current !== accountId) return;
+      setTemplatesError('Could not save template. Please try again.');
+    } finally {
+      if (activeEmailRef.current === accountId) {
+        setTemplateSaving(false);
+      }
+    }
+  };
+
+  const handleDeleteTemplate = async (templateId: string) => {
+    if (!activeEmail || !templateId) return;
+
+    const accountId = activeEmail;
+    const language = aiLanguage;
+
+    setTemplateDeletingId(templateId);
+    setTemplatesError(null);
+
+    try {
+      await apiService.deleteTemplate(templateId, accountId);
+
+      if (activeEmailRef.current !== accountId) return;
+      await refreshTemplatesForContext(accountId, language);
+    } catch (error) {
+      if (activeEmailRef.current !== accountId) return;
+      setTemplatesError('Could not delete template. Please try again.');
+    } finally {
+      if (activeEmailRef.current === accountId) {
+        setTemplateDeletingId(null);
+      }
+    }
+  };
+
   // Extracted: open compose in standalone modal; called by EmailDetailModal
   const handleOpenReply = () => {
     setPanelError(null);
+    setTemplatesError(null);
     if (!selectedEmailDetail?.thread_id) {
       setPanelError('Cannot reply: thread ID missing. Please refresh your emails and try again.');
       return;
@@ -1255,6 +1451,7 @@ export const App = () => {
     setReplySubject(subject);
     setReplyBody('');
     setReplyCC('');
+    setSelectedTone('professional');
     setActiveModal('compose');
     setSendSuccess(false);
   };
@@ -2256,6 +2453,17 @@ export const App = () => {
             onReplyBodyChange={setReplyBody}
             onReplySubjectChange={setReplySubject}
             onReplyCCChange={setReplyCC}
+            selectedTone={selectedTone}
+            availableTones={availableTones}
+            onToneChange={handleToneChange}
+            templates={templates}
+            templatesLoading={templatesLoading}
+            templatesError={templatesError}
+            templateSaving={templateSaving}
+            templateDeletingId={templateDeletingId}
+            onApplyTemplate={handleApplyTemplate}
+            onSaveTemplate={handleSaveTemplate}
+            onDeleteTemplate={handleDeleteTemplate}
             buildAttribution={buildAttribution}
           />
         )}
@@ -2274,6 +2482,9 @@ export const App = () => {
               email={selectedEmailDetail}
               onUseDraft={handleUseDraft}
               onClose={() => setActiveModal('detail')}
+              selectedTone={selectedTone}
+              availableTones={availableTones}
+              onToneChange={handleToneChange}
             />
           </div>
         </>

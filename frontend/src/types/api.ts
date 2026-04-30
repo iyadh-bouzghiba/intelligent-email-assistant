@@ -1,3 +1,7 @@
+export type AILanguage = "en" | "fr" | "ar";
+export type DraftTone = "professional" | "casual" | "concise" | "empathetic";
+export type TemplateLanguage = AILanguage | "neutral";
+
 export interface SummaryResponse {
     thread_id: string;
     summary: string;           // CRITICAL: Must be 'summary'
@@ -33,15 +37,21 @@ export interface HealthStatus {
     timestamp: string;
 }
 
+/**
+ * Backend contract for POST /api/threads/{thread_id}/draft
+ */
 export interface DraftReplyRequest {
-    content: string;
-    subject?: string;
-    sender?: string;
+    account_id: string;
+    user_instruction: string;
+    conversation_id?: string | null;
+    tone?: DraftTone;
 }
 
 export interface DraftReplyResponse {
     thread_id: string;
     draft: string;
+    conversation_id?: string | null;
+    status?: string;
 }
 
 export interface SimulateEmailRequest {
@@ -94,9 +104,37 @@ export interface SentEmail {
 }
 
 export interface SupportedLanguage {
-    code: string;
+    code: AILanguage;
     label: string;
     native: string;
+}
+
+export interface SupportedTone {
+    code: DraftTone;
+    label: string;
+}
+
+export interface EmailTemplate {
+    id?: string;
+    account_id: string;
+    name: string;
+    tone: DraftTone;
+    language: TemplateLanguage;
+    body: string;
+    created_at?: string;
+}
+
+export interface CreateTemplateRequest {
+    account_id: string;
+    name: string;
+    tone?: DraftTone;
+    language: TemplateLanguage;
+    body: string;
+}
+
+export interface DeleteTemplateResponse {
+    status: string;
+    id: string;
 }
 
 export interface BriefingResponse {
