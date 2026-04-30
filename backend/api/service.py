@@ -37,6 +37,7 @@ import socketio
 
 from backend.infrastructure.supabase_store import SupabaseStore
 from backend.languages import normalize_language, SUPPORTED_LANGUAGES
+from backend.tones import SUPPORTED_TONES, normalize_tone, list_supported_tones
 from backend.summary_versions import EMAIL_SUMMARY_PROMPT_VERSION
 
 # CRITICAL: Configure logging with immediate flush for production visibility
@@ -1852,6 +1853,7 @@ class AgentDraftRequest(BaseModel):
     account_id: str
     user_instruction: str
     conversation_id: Optional[str] = None
+    tone: Optional[str] = "professional"
 
 
 class AgentConsentRequest(BaseModel):
@@ -1913,6 +1915,8 @@ async def draft_thread_reply(thread_id: str, request: AgentDraftRequest):
 
     from backend.assistant.agent import EmailAgent, AgentRateLimitError, AgentApprovalError
     agent = EmailAgent(store)
+    normalized_tone = normalize_tone(request.tone)
+
     try:
         result = await agent.propose_draft(
             account_id=effective_account_id,
@@ -1922,6 +1926,7 @@ async def draft_thread_reply(thread_id: str, request: AgentDraftRequest):
             body_excerpt=body_excerpt,
             user_instruction=request.user_instruction,
             conversation_id=request.conversation_id,
+            tone=normalized_tone,
         )
     except AgentRateLimitError as e:
         raise HTTPException(status_code=429, detail=str(e))
@@ -2615,18 +2620,151 @@ class PreferencesUpdateRequest(BaseModel):
     ai_language: str
 
 
+class TemplateCreateRequest(BaseModel):
+    account_id: str
+    name: str
+    tone: Optional[str] = "professional"
+    language: str
+    body: str
+
+
 def _get_preferences_store() -> SupabaseStore:
     """Create a Supabase store for preference reads/writes."""
     return SupabaseStore()
 
 
-@api_router.get("/preferences/languages")
+@app.get("/api/preferences/languages")
 async def list_supported_languages():
     """Return supported AI output languages for frontend selectors."""
     return [
         {"code": code, "label": info["label"], "native": info["native"]}
         for code, info in SUPPORTED_LANGUAGES.items()
     ]
+
+
+@api_router.get("/tones")
+async def list_tones():
+    """Return supported draft tones for authenticated compose flows."""
+    return list_supported_tones()
+
+
+@api_router.get("/templates")
+async def list_templates(account_id: str, language: str = Query("en")):
+    """
+    List templates for an account filtered by the active language plus neutral templates.
+    """
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+
+    effective_account_id = resolve_account_id(None, account_id)
+    requested_language = (language or "en").strip().lower()
+
+    if requested_language == "neutral":
+        language_filter = ["neutral"]
+    elif requested_language in SUPPORTED_LANGUAGES:
+        normalized_language = normalize_language(requested_language)
+        language_filter = [normalized_language, "neutral"]
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported language")
+
+    try:
+        result = await asyncio.to_thread(
+            lambda: store.client.table("email_templates")
+            .select("*")
+            .eq("account_id", effective_account_id)
+            .in_("language", language_filter)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return result.data or []
+    except Exception as e:
+        logger.error(f"[TEMPLATES] List failed for {effective_account_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to load templates")
+
+
+@api_router.post("/templates")
+async def create_template(request: TemplateCreateRequest):
+    """
+    Create a reusable email template for one account.
+    """
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+
+    effective_account_id = resolve_account_id(None, request.account_id)
+    name = (request.name or "").strip()
+    body = (request.body or "").strip()
+    requested_tone = (request.tone or "professional").strip().lower()
+    requested_language = (request.language or "").strip().lower()
+
+    if not name:
+        raise HTTPException(status_code=400, detail="Template name is required")
+
+    if not body:
+        raise HTTPException(status_code=400, detail="Template body is required")
+
+    if requested_tone not in SUPPORTED_TONES:
+        raise HTTPException(status_code=400, detail="Unsupported tone")
+
+    if requested_language == "neutral":
+        stored_language = "neutral"
+    elif requested_language in SUPPORTED_LANGUAGES:
+        stored_language = normalize_language(requested_language)
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported language")
+
+    payload = {
+        "account_id": effective_account_id,
+        "name": name,
+        "tone": requested_tone,
+        "language": stored_language,
+        "body": body,
+    }
+
+    try:
+        result = await asyncio.to_thread(
+            lambda: store.client.table("email_templates")
+            .insert(payload)
+            .execute()
+        )
+        rows = result.data or []
+        if rows:
+            return rows[0]
+        return payload
+    except Exception as e:
+        logger.error(f"[TEMPLATES] Create failed for {effective_account_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create template")
+
+
+@api_router.delete("/templates/{template_id}")
+async def delete_template(template_id: str, account_id: str = Query(...)):
+    """
+    Delete a template for one account only.
+    """
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+
+    effective_account_id = resolve_account_id(None, account_id)
+
+    try:
+        result = await asyncio.to_thread(
+            lambda: store.client.table("email_templates")
+            .delete()
+            .eq("id", template_id)
+            .eq("account_id", effective_account_id)
+            .execute()
+        )
+        rows = result.data or []
+        if not rows:
+            raise HTTPException(status_code=404, detail="Template not found")
+        return {"status": "deleted", "id": template_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[TEMPLATES] Delete failed for {effective_account_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete template")
 
 
 @api_router.get("/preferences")
