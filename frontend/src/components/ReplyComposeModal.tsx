@@ -239,146 +239,187 @@ export function ReplyComposeModal({
                 className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
               />
 
-              {/* P4 tone + template controls */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                    Tone
-                  </label>
-                  <select
-                    value={effectiveTone}
-                    onChange={(e) => handleToneSelection(e.target.value as DraftTone)}
-                    disabled={sending}
-                    className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 disabled:opacity-50 transition-all"
-                  >
-                    {toneOptions.map((tone) => (
-                      <option key={tone.code} value={tone.code} className="bg-slate-900 text-slate-200">
-                        {tone.label}
-                      </option>
-                    ))}
-                  </select>
+              {/* Draft tools */}
+              <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3 sm:px-4 sm:py-4 space-y-3">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.2em]">
+                    Draft Tools
+                  </p>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Adjust tone, apply a saved template, or save this reply for faster reuse.
+                  </p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                    Template
-                  </label>
-                  <select
-                    value={selectedTemplateId}
-                    onChange={(e) => setSelectedTemplateId(e.target.value)}
-                    disabled={templatesLoading || templateOptions.length === 0}
-                    className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 disabled:opacity-50 transition-all"
-                  >
-                    <option value="" className="bg-slate-900 text-slate-200">
-                      {templatesLoading
-                        ? 'Loading templates…'
-                        : templateOptions.length > 0
-                          ? 'Select a template'
-                          : 'No templates available'}
-                    </option>
-                    {templateOptions.map((template) => (
-                      <option key={template.id ?? `${template.name}-${template.language}`} value={template.id ?? ''} className="bg-slate-900 text-slate-200">
-                        {template.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                      Tone
+                    </label>
 
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleApplySelectedTemplate}
-                  disabled={!selectedTemplate || !onApplyTemplate}
-                  className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
-                >
-                  <Sparkles size={12} />
-                  Apply Template
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowSaveTemplateForm((v) => !v)}
-                  disabled={!onSaveTemplate}
-                  className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
-                >
-                  <Save size={12} />
-                  Save as Template
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleDeleteSelectedTemplate}
-                  disabled={!selectedTemplate?.id || !onDeleteTemplate || templateDeletingId === selectedTemplate?.id}
-                  className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-rose-500/[0.08] border border-rose-500/20 text-rose-300 hover:text-rose-200 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
-                >
-                  {templateDeletingId === selectedTemplate?.id ? (
-                    <>
-                      <RefreshCw size={12} className="animate-spin" />
-                      Deleting…
-                    </>
-                  ) : (
-                    <>
-                      <Trash2 size={12} />
-                      Delete Template
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {showSaveTemplateForm && (
-                <div className="space-y-2 px-3 py-3 rounded-xl bg-white/[0.03] border border-white/[0.08]">
-                  <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                    Template Name
-                  </label>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="text"
-                      value={templateName}
-                      onChange={(e) => setTemplateName(e.target.value)}
-                      placeholder="e.g. Security acknowledgment"
-                      disabled={templateSaving}
-                      className="flex-1 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 disabled:opacity-50 transition-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSaveTemplate}
-                      disabled={!templateName.trim() || templateSaving || !onSaveTemplate}
-                      className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all"
+                    <div
+                      role="radiogroup"
+                      aria-label="Reply tone"
+                      className="flex flex-wrap gap-2"
                     >
-                      {templateSaving ? (
-                        <>
-                          <RefreshCw size={12} className="animate-spin" />
-                          Saving…
-                        </>
-                      ) : (
-                        <>
-                          <Save size={12} />
-                          Save
-                        </>
-                      )}
-                    </button>
+                      {toneOptions.map((tone) => {
+                        const isSelected = effectiveTone === tone.code;
+
+                        return (
+                          <button
+                            key={tone.code}
+                            type="button"
+                            role="radio"
+                            aria-checked={isSelected}
+                            disabled={sending}
+                            onClick={() => handleToneSelection(tone.code)}
+                            className={`min-h-[40px] px-3 py-2 rounded-xl text-xs font-bold transition-all border ${isSelected
+                              ? 'bg-indigo-600/90 border-indigo-400/60 text-white shadow-md shadow-indigo-900/20'
+                              : 'bg-white/[0.03] border-white/10 text-slate-300 hover:text-white hover:bg-white/[0.06]'
+                              } ${sending ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          >
+                            {tone.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                      Template
+                    </label>
+                    <select
+                      value={selectedTemplateId}
+                      onChange={(e) => setSelectedTemplateId(e.target.value)}
+                      disabled={templatesLoading || templateOptions.length === 0}
+                      className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/40 disabled:opacity-50 transition-all"
+                    >
+                      <option value="" className="bg-slate-900 text-slate-200">
+                        {templatesLoading
+                          ? 'Loading templates…'
+                          : templateOptions.length > 0
+                            ? 'Select a template'
+                            : 'No templates saved yet — write a reply, then tap Save as Template to reuse it later.'}
+                      </option>
+                      {templateOptions.map((template) => (
+                        <option
+                          key={template.id ?? `${template.name}-${template.language}`}
+                          value={template.id ?? ''}
+                          className="bg-slate-900 text-slate-200"
+                        >
+                          {template.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
-              )}
 
-              <textarea
-                ref={replyTextareaRef}
-                value={replyBody}
-                onChange={(e) => onReplyBodyChange(e.target.value)}
-                placeholder="Write your reply here…"
-                rows={6}
-                className="w-full p-3 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
-              />
+                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleApplySelectedTemplate}
+                    disabled={!selectedTemplate || !onApplyTemplate}
+                    className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-md shadow-indigo-900/20"
+                  >
+                    <Sparkles size={12} />
+                    Apply Template
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowSaveTemplateForm((v) => !v)}
+                    disabled={!onSaveTemplate}
+                    className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-white/[0.04] border border-white/10 text-slate-300 hover:text-white hover:bg-white/[0.07] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
+                  >
+                    <Save size={12} />
+                    Save as Template
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDeleteSelectedTemplate}
+                    disabled={!selectedTemplate?.id || !onDeleteTemplate || templateDeletingId === selectedTemplate?.id}
+                    className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-rose-500/[0.06] border border-rose-500/20 text-rose-300 hover:text-rose-200 hover:bg-rose-500/[0.1] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
+                  >
+                    {templateDeletingId === selectedTemplate?.id ? (
+                      <>
+                        <RefreshCw size={12} className="animate-spin" />
+                        Deleting…
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 size={12} />
+                        Delete Template
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {showSaveTemplateForm && (
+                  <div className="space-y-2 rounded-xl border border-white/[0.08] bg-black/10 px-3 py-3">
+                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                      Template Name
+                    </label>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={templateName}
+                        onChange={(e) => setTemplateName(e.target.value)}
+                        placeholder="e.g. Security acknowledgment"
+                        disabled={templateSaving}
+                        className="flex-1 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 disabled:opacity-50 transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveTemplate}
+                        disabled={!templateName.trim() || templateSaving || !onSaveTemplate}
+                        className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all"
+                      >
+                        {templateSaving ? (
+                          <>
+                            <RefreshCw size={12} className="animate-spin" />
+                            Saving…
+                          </>
+                        ) : (
+                          <>
+                            <Save size={12} />
+                            Save
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-indigo-500/[0.14] bg-white/[0.035] px-3 py-3 sm:px-4 sm:py-4 space-y-2 shadow-lg shadow-black/10">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.2em]">
+                    Reply Body
+                  </p>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Write, review, and refine your final reply before sending.
+                  </p>
+                </div>
+
+                <textarea
+                  ref={replyTextareaRef}
+                  value={replyBody}
+                  onChange={(e) => onReplyBodyChange(e.target.value)}
+                  placeholder="Write your reply here…"
+                  rows={6}
+                  className="w-full min-h-[220px] resize-none bg-transparent border-0 p-0 text-sm leading-relaxed text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-0"
+                />
+              </div>
 
               {/* —— Reference context —— read-only, never included in outbound body —— */}
               {hasReference && (
-                <div className="border-t border-white/[0.08] pt-3 space-y-2">
+                <div className="border-t border-white/[0.06] pt-4 space-y-3">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest select-none">
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] select-none">
                       Reference — not sent
                     </p>
-                    <span className="text-[9px] font-black text-indigo-300 uppercase tracking-wider">
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.14em]">
                       Tone: {toneOptions.find((tone) => tone.code === effectiveTone)?.label ?? effectiveTone}
                     </span>
                   </div>
@@ -386,18 +427,23 @@ export function ReplyComposeModal({
                   {/* AI summary + action items — always visible when present */}
                   {hasAiSummary && (
                     <div className="space-y-2">
-                      <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-indigo-500/[0.06] border border-indigo-500/[0.12]">
-                        <Sparkles size={10} className="text-indigo-400 mt-0.5 flex-shrink-0" />
-                        <p className="text-xs text-indigo-300/80 leading-relaxed">
+                      <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-white/[0.025] border border-white/[0.06]">
+                        <Sparkles size={10} className="text-indigo-300 mt-0.5 flex-shrink-0" />
+                        <p className="text-xs text-slate-300/85 leading-relaxed">
                           {email.ai_summary_text}
                         </p>
                       </div>
+
                       {email.ai_summary_json?.action_items && email.ai_summary_json.action_items.length > 0 && (
-                        <div className="px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06] space-y-1">
-                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider">Action items</p>
-                          <ol className="space-y-0.5 list-decimal list-inside">
+                        <div className="px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05] space-y-1.5">
+                          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.14em]">
+                            Action items
+                          </p>
+                          <ol className="space-y-1 list-decimal list-inside">
                             {email.ai_summary_json.action_items.map((action: string, idx: number) => (
-                              <li key={idx} className="text-xs text-slate-400 leading-relaxed">{action}</li>
+                              <li key={idx} className="text-xs text-slate-400 leading-relaxed">
+                                {action}
+                              </li>
                             ))}
                           </ol>
                         </div>
@@ -413,7 +459,7 @@ export function ReplyComposeModal({
                         <button
                           type="button"
                           onClick={() => setShowQuoted(v => !v)}
-                          className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-400 transition-colors"
+                          className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-300 transition-colors"
                           aria-expanded={showQuoted}
                         >
                           <ChevronDown
@@ -422,13 +468,14 @@ export function ReplyComposeModal({
                           />
                           {showQuoted ? 'Hide original' : 'Show original'}
                         </button>
+
                         {showQuoted && (
-                          <div className="mt-2 pl-3 border-l-2 border-indigo-500/30 bg-white/[0.03] rounded-r-lg">
-                            <div className="py-2 pr-3 space-y-1.5">
-                              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider select-none">
+                          <div className="mt-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3">
+                            <div className="py-2.5 space-y-1.5">
+                              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.14em] select-none">
                                 {buildAttribution(email.date || '', email.sender || '')}
                               </p>
-                              <div className="max-h-56 overflow-y-auto custom-scrollbar">
+                              <div className="max-h-56 overflow-y-auto custom-scrollbar pr-1">
                                 <p className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap break-words">
                                   {displayBody}
                                 </p>
@@ -439,12 +486,12 @@ export function ReplyComposeModal({
                       </div>
                     ) : (
                       /* No AI summary — show full original message directly */
-                      <div className="pl-3 border-l-2 border-indigo-500/30 bg-white/[0.03] rounded-r-lg">
-                        <div className="py-2 pr-3 space-y-1.5">
-                          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider select-none">
+                      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3">
+                        <div className="py-2.5 space-y-1.5">
+                          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.14em] select-none">
                             {buildAttribution(email.date || '', email.sender || '')}
                           </p>
-                          <div className="max-h-56 overflow-y-auto custom-scrollbar">
+                          <div className="max-h-56 overflow-y-auto custom-scrollbar pr-1">
                             <p className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap break-words">
                               {displayBody}
                             </p>

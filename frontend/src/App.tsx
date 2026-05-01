@@ -1881,26 +1881,26 @@ export const App = () => {
 
         {activeEmail && (
           <div className="mb-8 max-w-[720px] mx-auto">
-            <div className="rounded-2xl bg-white/[0.03] border border-white/8 p-4 md:p-5 shadow-xl">
+            <div className="rounded-2xl bg-white/[0.02] border border-white/[0.06] p-4 md:p-5 shadow-lg shadow-black/10">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div className="min-w-0">
-                  <div className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-1">
+                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-1">
                     AI Output Language
                   </div>
-                  <div className="text-white font-bold text-sm truncate">
+                  <div className="text-slate-200 font-semibold text-sm truncate">
                     {activeEmail}
                   </div>
-                  <p className="text-slate-400 text-xs mt-1 leading-relaxed">
+                  <p className="text-slate-500 text-xs mt-1 leading-relaxed">
                     Applies to new summaries, action items, document analysis, and draft replies. Existing AI output is not changed retroactively.
                   </p>
                 </div>
 
                 <div className="w-full md:w-auto md:min-w-[240px]">
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2">
+                  <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-2">
                     Preferred Language
                   </label>
                   <div
-                    className={`flex rounded-xl bg-white/[0.04] border border-white/10 p-1 gap-1 ${aiLanguageLoading || aiLanguageSaving ? 'opacity-60 pointer-events-none' : ''}`}
+                    className={`flex rounded-xl bg-white/[0.03] border border-white/[0.08] p-1 gap-1 ${aiLanguageLoading || aiLanguageSaving ? 'opacity-60 pointer-events-none' : ''}`}
                     role="radiogroup"
                     aria-label="AI output language"
                   >
@@ -1913,9 +1913,9 @@ export const App = () => {
                           role="radio"
                           aria-checked={isActive}
                           onClick={() => handleAiLanguageChange(option.code)}
-                          className={`flex-1 rounded-lg py-2 px-3 text-sm font-bold transition-all duration-150 ${isActive
-                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                          className={`flex-1 rounded-lg py-2 px-3 text-sm font-semibold transition-all duration-150 border ${isActive
+                            ? 'bg-indigo-500/18 border-indigo-400/30 text-indigo-100 shadow-sm shadow-indigo-950/20'
+                            : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
                             }`}
                         >
                           {option.native}
@@ -1926,13 +1926,13 @@ export const App = () => {
 
                   <div className="mt-2 min-h-[18px]">
                     {aiLanguageSaving ? (
-                      <p className="text-[11px] font-semibold text-indigo-300">Saving preference…</p>
+                      <p className="text-[11px] font-medium text-indigo-300">Saving preference…</p>
                     ) : aiLanguageLoading ? (
-                      <p className="text-[11px] font-semibold text-slate-500">Loading preference…</p>
+                      <p className="text-[11px] font-medium text-slate-500">Loading preference…</p>
                     ) : aiLanguageError ? (
-                      <p className="text-[11px] font-semibold text-rose-400">{aiLanguageError}</p>
+                      <p className="text-[11px] font-medium text-rose-400">{aiLanguageError}</p>
                     ) : aiLanguageSavedAccountId === activeEmail ? (
-                      <p className="text-[11px] font-semibold text-emerald-400">Preference saved for this account.</p>
+                      <p className="text-[11px] font-medium text-emerald-400">Preference saved for this account.</p>
                     ) : null}
                   </div>
                 </div>
