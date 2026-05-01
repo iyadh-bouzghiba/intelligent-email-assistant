@@ -1656,6 +1656,10 @@ export const App = () => {
   // during the "Analyzing..." skeleton state on first account selection.
   const showFeedNavigation = Boolean(activeEmail) && (!loading || briefings.length > 0);
   const showWakingOverlay = startupPhase === 'waking';
+  const canShowSyncControl =
+    startupPhase === 'ready' &&
+    Boolean(activeEmail) &&
+    connectedAccounts.length > 0;
 
   if (startupPhase !== 'ready') {
     return (
@@ -1727,20 +1731,22 @@ export const App = () => {
                 )}
               </div>
 
-              <button
-                onClick={async () => {
-                  if (!activeEmail || syncingRef.current) return;
-                  console.log('[REFRESH] Manual refresh for account:', activeEmail);
-                  setLoading(true);
-                  await runSync(activeEmail);
-                  // setLoading(false) handled by fetchEmails' finally
-                }}
-                disabled={loading || syncing}
-                className="group flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
-              >
-                <RefreshCw size={18} className={`${syncing ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-700`} />
-                {syncing ? 'Syncing...' : 'Sync'}
-              </button>
+              {canShowSyncControl && (
+                <button
+                  onClick={async () => {
+                    if (!activeEmail || syncingRef.current) return;
+                    console.log('[REFRESH] Manual refresh for account:', activeEmail);
+                    setLoading(true);
+                    await runSync(activeEmail);
+                    // setLoading(false) handled by fetchEmails' finally
+                  }}
+                  disabled={loading || syncing}
+                  className="group flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
+                >
+                  <RefreshCw size={18} className={`${syncing ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-700`} />
+                  {syncing ? 'Syncing...' : 'Sync'}
+                </button>
+              )}
             </div>
           </div>
 
@@ -1756,7 +1762,7 @@ export const App = () => {
                 onSwitchAccount={handleSwitchAccount}
                 onRequestDisconnect={(id) => setConfirmDisconnect(id)}
               />
-              {activeEmail && (
+              {canShowSyncControl && (
                 <button
                   onClick={async () => {
                     if (!activeEmail || syncingRef.current) return;
