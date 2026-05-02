@@ -137,9 +137,17 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
       )}
 
       <div className="space-y-3">
-        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-          {isSent ? 'Outbound Preview' : 'Preview'}
-        </h3>
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+            {isSent ? 'Outbound Preview' : 'Preview'}
+          </h3>
+          {isSent && (
+            <p className="text-xs leading-relaxed text-slate-500">
+              Preview only — use Read full email to view the complete sent message.
+            </p>
+          )}
+        </div>
+
         <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
           <p className="text-sm leading-relaxed text-slate-300 whitespace-pre-wrap break-words">
             {preview || (isSent ? 'No outbound preview available.' : 'No preview available.')}
@@ -154,6 +162,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
           )}
         </div>
       </div>
+
 
       {!isSent && onAskAssistant && (
         <button
