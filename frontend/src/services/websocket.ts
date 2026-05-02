@@ -17,9 +17,30 @@ interface ThreadAnalyzedData {
     timestamp: string;
 }
 
+export type EmailsUpdatedData =
+    | { count: number; timestamp?: string }
+    | { count_new: number; timestamp?: string };
+
+export interface SummaryReadyData {
+    count_summarized: number;
+}
+
+interface WebSocketEventMap {
+    thread_analyzed: ThreadAnalyzedData;
+    emails_updated: EmailsUpdatedData;
+    summary_ready: SummaryReadyData;
+}
+
+type WebSocketEventName = keyof WebSocketEventMap;
+type WebSocketListener<K extends WebSocketEventName> = (payload: WebSocketEventMap[K]) => void;
+
+type ListenerRegistry = {
+    [K in WebSocketEventName]?: Array<WebSocketListener<K>>;
+};
+
 class WebSocketService {
     private socket: Socket | null = null;
-    private listeners: Map<string, Function[]> = new Map();
+    private listeners: ListenerRegistry = {};
 
     private getSocketUrl(): string {
         // Production: same-origin (frontend served by backend).
@@ -61,8 +82,8 @@ class WebSocketService {
             ...(IS_DEV && isLocalSocket
                 ? { transports: ["websocket"] }
                 : IS_DEV
-                ? { transports: ["polling"], upgrade: false, rememberUpgrade: false }
-                : { transports: ["websocket", "polling"] }),
+                    ? { transports: ["polling"], upgrade: false, rememberUpgrade: false }
+                    : { transports: ["websocket", "polling"] }),
         };
 
         this.socket = io(SOCKET_URL, socketOptions);
@@ -93,9 +114,14 @@ class WebSocketService {
             this.emit("thread_analyzed", data);
         });
 
-        this.socket.on("emails_updated", (data: { count: number; timestamp: string }) => {
+        this.socket.on("emails_updated", (data: EmailsUpdatedData) => {
             console.log("[WebSocket] Emails updated:", data);
             this.emit("emails_updated", data);
+        });
+
+        this.socket.on("summary_ready", (data: SummaryReadyData) => {
+            console.log("[WebSocket] Summary ready:", data);
+            this.emit("summary_ready", data);
         });
     }
 
@@ -107,25 +133,27 @@ class WebSocketService {
         }
     }
 
-    on(event: string, callback: Function) {
-        if (!this.listeners.has(event)) {
-            this.listeners.set(event, []);
-        }
-        this.listeners.get(event)!.push(callback);
+    on<K extends WebSocketEventName>(event: K, callback: WebSocketListener<K>) {
+        const eventListeners = (this.listeners[event] ??= []) as Array<WebSocketListener<K>>;
+        eventListeners.push(callback);
     }
 
-    off(event: string, callback: Function) {
-        const eventListeners = this.listeners.get(event);
+    off<K extends WebSocketEventName>(event: K, callback: WebSocketListener<K>) {
+        const eventListeners = this.listeners[event] as Array<WebSocketListener<K>> | undefined;
         if (!eventListeners) return;
 
         const index = eventListeners.indexOf(callback);
         if (index > -1) {
             eventListeners.splice(index, 1);
         }
+
+        if (eventListeners.length === 0) {
+            delete this.listeners[event];
+        }
     }
 
-    private emit(event: string, data: any) {
-        const eventListeners = this.listeners.get(event);
+    private emit<K extends WebSocketEventName>(event: K, data: WebSocketEventMap[K]) {
+        const eventListeners = this.listeners[event] as Array<WebSocketListener<K>> | undefined;
         if (!eventListeners) return;
 
         eventListeners.forEach((callback) => callback(data));

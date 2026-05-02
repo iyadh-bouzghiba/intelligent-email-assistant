@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { isAxiosError } from 'axios';
 import { apiService } from '@services';
 import { SummaryResponse } from '@types';
 import { ResultsCard } from './ResultsCard';
@@ -19,8 +20,13 @@ export const EmailAnalyzer: React.FC = () => {
         try {
             const data = await apiService.analyzeThread(threadId.trim());
             setResult(data);
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to analyze thread. Please check the Thread ID.');
+        } catch (err: unknown) {
+            const detail =
+                isAxiosError(err) && typeof err.response?.data?.detail === 'string'
+                    ? err.response.data.detail
+                    : null;
+
+            setError(detail || 'Failed to analyze thread. Please check the Thread ID.');
             setResult(null);
         } finally {
             setLoading(false);

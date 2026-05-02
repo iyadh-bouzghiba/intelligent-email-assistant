@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { isAxiosError } from 'axios';
 import { apiService } from '@services';
 import { DraftReplyResponse } from '@types';
 import { Mail, Loader2, AlertCircle, Copy, Check } from 'lucide-react';
@@ -38,9 +39,14 @@ export const DraftReply: React.FC = () => {
                 user_instruction: instruction.trim(),
             });
             setResult(data);
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const detail =
+                isAxiosError(err) && typeof err.response?.data?.detail === 'string'
+                    ? err.response.data.detail
+                    : null;
+
             setError(
-                err.response?.data?.detail ||
+                detail ||
                 'Failed to generate draft. Please verify the Thread ID, Account ID, and instruction.'
             );
             setResult(null);

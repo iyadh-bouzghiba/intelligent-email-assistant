@@ -52,6 +52,8 @@ const FALLBACK_TONES: SupportedTone[] = [
   { code: 'empathetic', label: 'Empathetic' },
 ];
 
+const EMPTY_TEMPLATES: EmailTemplate[] = [];
+
 /**
  * Standalone blocking modal for composing a reply.
  *
@@ -109,7 +111,7 @@ export function ReplyComposeModal({
 
   const toneOptions = availableTones && availableTones.length > 0 ? availableTones : FALLBACK_TONES;
   const effectiveTone: DraftTone = selectedTone ?? localTone;
-  const templateOptions = templates ?? [];
+  const templateOptions = templates ?? EMPTY_TEMPLATES;
 
   useEffect(() => {
     setSelectedTemplateId('');
