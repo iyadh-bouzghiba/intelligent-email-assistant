@@ -1639,13 +1639,25 @@ export const App = () => {
     account: se.account_id,
     subject: se.subject || '(No Subject)',
     sender: `You → ${se.to_address}${se.cc_addresses ? ` · cc: ${se.cc_addresses}` : ''}`,
-    date: (() => { try { return new Date(se.sent_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }); } catch { return se.sent_at; } })(),
+    date: (() => {
+      try {
+        return new Date(se.sent_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+      } catch {
+        return se.sent_at;
+      }
+    })(),
     priority: 'Medium',
     category: 'General',
     should_alert: false,
     summary: se.body_preview || 'No preview available.',
     action: '',
     body: se.body_preview || '',
+    sentMeta: {
+      toAddress: se.to_address,
+      ccAddresses: se.cc_addresses,
+      sentAt: se.sent_at,
+      bodyPreview: se.body_preview,
+    },
     thread_id: se.thread_id || undefined,
     gmail_message_id: se.gmail_message_id || undefined,
     is_read: true,

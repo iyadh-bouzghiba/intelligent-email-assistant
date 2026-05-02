@@ -62,6 +62,13 @@ export interface SimulateEmailRequest {
     thread_id?: string;
 }
 
+export interface BriefingSentMeta {
+    toAddress: string;
+    ccAddresses?: string | null;
+    sentAt: string;
+    bodyPreview?: string | null;
+}
+
 export interface Briefing {
     account: string;
     subject: string;
@@ -73,6 +80,9 @@ export interface Briefing {
     summary: string;
     action: string;
     body?: string;
+
+    // Sent-detail structured metadata (frontend-only enrichment from SentEmail)
+    sentMeta?: BriefingSentMeta;
 
     // AI summary fields (from backend)
     ai_summary_json?: {
