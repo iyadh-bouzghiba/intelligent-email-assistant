@@ -394,7 +394,7 @@ export function ReplyComposeModal({
                 )}
               </div>
 
-              <div className="rounded-2xl border border-indigo-500/[0.14] bg-white/[0.035] px-3 py-3 sm:px-4 sm:py-4 space-y-2 shadow-lg shadow-black/10">
+              <div className="rounded-2xl border border-indigo-500/[0.14] bg-white/[0.035] px-3 py-3 sm:px-4 sm:py-4 space-y-2 shadow-lg shadow-black/10 transition-colors duration-150 focus-within:border-indigo-500/[0.26] focus-within:bg-white/[0.05]">
                 <div className="space-y-1">
                   <p className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.2em]">
                     Reply Body
