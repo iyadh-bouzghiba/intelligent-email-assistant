@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import axios, { isAxiosError } from 'axios';
 import { Bot, X, Send, RefreshCw, Sparkles, AlertCircle, CheckCircle } from 'lucide-react';
 import { Briefing, DraftTone, SupportedTone } from '@types';
 import { apiService } from '@services';
@@ -39,7 +39,7 @@ type PanelState =
   | 'error';
 
 /**
- * AI Assistant panel — BL-08/BL-09, extended for P4 tone-aware drafting.
+ * AI Assistant panel - BL-08/BL-09, extended for P4 tone-aware drafting.
  *
  * Send safety: this component never sends email. Clicking "Use this draft"
  * populates the caller's compose state; the user reviews and sends via
@@ -73,30 +73,7 @@ export function AssistantPanel({
   const toneOptions = availableTones && availableTones.length > 0 ? availableTones : FALLBACK_TONES;
   const effectiveTone: DraftTone = selectedTone ?? localTone;
 
-  useEffect(() => {
-    checkStatus();
-    setConversationId(null);
-    setDraft('');
-    setInstruction('');
-    setError(null);
-    setState('checking');
-  }, [email.account, email.thread_id]);
-
-  useEffect(() => {
-    if (state === 'ready' && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [state]);
-
-  const handleToneSelection = (tone: DraftTone) => {
-    if (onToneChange) {
-      onToneChange(tone);
-      return;
-    }
-    setLocalTone(tone);
-  };
-
-  const checkStatus = async () => {
+  const checkStatus = useCallback(async () => {
     setState('checking');
     setError(null);
     try {
@@ -110,6 +87,29 @@ export function AssistantPanel({
       setState('error');
       setError('Could not check assistant status.');
     }
+  }, [email.account]);
+
+  useEffect(() => {
+    checkStatus();
+    setConversationId(null);
+    setDraft('');
+    setInstruction('');
+    setError(null);
+    setState('checking');
+  }, [checkStatus, email.thread_id]);
+
+  useEffect(() => {
+    if (state === 'ready' && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [state]);
+
+  const handleToneSelection = (tone: DraftTone) => {
+    if (onToneChange) {
+      onToneChange(tone);
+      return;
+    }
+    setLocalTone(tone);
   };
 
   const handleConsent = async () => {
@@ -144,14 +144,20 @@ export function AssistantPanel({
       setConversationId(res.conversation_id ?? null);
       setRateLimitRemaining((prev) => Math.max(0, prev - 1));
       setState('draft_ready');
-    } catch (e: any) {
-      if (e.response?.status === 429) {
+    } catch (e: unknown) {
+      const status = isAxiosError(e) ? e.response?.status : undefined;
+      const detail =
+        isAxiosError(e) && typeof e.response?.data?.detail === 'string'
+          ? e.response.data.detail
+          : null;
+
+      if (status === 429) {
         setError('Rate limit reached (10/hour). Try again next hour.');
-      } else if (e.response?.status === 403) {
+      } else if (status === 403) {
         setState('consent_required');
         return;
       } else {
-        setError(e.response?.data?.detail ?? 'Draft generation failed.');
+        setError(detail ?? 'Draft generation failed.');
       }
       setState('ready');
     }
@@ -224,7 +230,7 @@ export function AssistantPanel({
         {state === 'checking' && (
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <RefreshCw size={12} className="animate-spin" />
-            Checking assistant status…
+            Checking assistant status...
           </div>
         )}
 
@@ -246,7 +252,7 @@ export function AssistantPanel({
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
                 The AI assistant drafts replies for your review. It will never send email on
-                your behalf — you review and send every message through the compose window.
+                your behalf - you review and send every message through the compose window.
               </p>
               <p className="text-[10px] text-slate-500 leading-relaxed">
                 Draft actions are limited to 10 per hour. Your email subjects (not body
@@ -260,7 +266,7 @@ export function AssistantPanel({
               className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold transition-colors"
             >
               {consenting
-                ? <><RefreshCw size={12} className="animate-spin" /> Enabling…</>
+                ? <><RefreshCw size={12} className="animate-spin" /> Enabling...</>
                 : <><Sparkles size={12} /> Enable AI Assistant</>}
             </button>
           </div>
@@ -314,8 +320,8 @@ export function AssistantPanel({
                     handleGenerate();
                   }
                 }}
-                placeholder="e.g. Acknowledge receipt and say I'll respond by Friday…"
-                rows={4}
+                placeholder="e.g. Acknowledge receipt and say I'll respond by Friday"
+              rows={4}
                 disabled={state === 'generating'}
                 className="w-full p-3 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 disabled:opacity-50 transition-all"
               />
@@ -333,7 +339,7 @@ export function AssistantPanel({
             <div className="flex items-center gap-2">
               <CheckCircle size={13} className="text-emerald-400" />
               <p className="text-xs font-bold text-emerald-400">
-                Draft ready — review before sending
+                Draft ready - review before sending
               </p>
             </div>
             <div className="flex items-center justify-between gap-3">
@@ -350,7 +356,7 @@ export function AssistantPanel({
               </p>
             </div>
             <p className="text-[10px] text-slate-500 leading-relaxed">
-              "Use this draft" opens the compose window. You review and send — nothing is
+              "Use this draft" opens the compose window. You review and send - nothing is
               sent automatically.
             </p>
           </div>
@@ -366,7 +372,7 @@ export function AssistantPanel({
             className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors"
           >
             {state === 'generating'
-              ? <><RefreshCw size={12} className="animate-spin" /> Generating…</>
+              ? <><RefreshCw size={12} className="animate-spin" /> Generating...</>
               : <><Bot size={12} /> Generate Draft</>}
           </button>
         )}

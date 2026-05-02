@@ -10,7 +10,7 @@ export interface SummaryResponse {
     deadlines: string[];
     key_participants: string[];
     confidence_score: number;
-    classification?: any;
+    classification?: unknown | null;
     last_updated?: string;
 }
 
@@ -52,6 +52,25 @@ export interface DraftReplyResponse {
     draft: string;
     conversation_id?: string | null;
     status?: string;
+}
+
+export interface InboxThreadRow {
+    date?: string | null;
+    created_at?: string | null;
+    ai_summary_json?: Briefing['ai_summary_json'] | null;
+    ai_summary_text?: string | null;
+    body?: string | null;
+    subject?: string | null;
+    sender?: string | null;
+    account_id?: string | null;
+    ai_summary_model?: string | null;
+    ai_summary_language?: string | null;
+    ai_summary_is_fallback?: boolean | null;
+    ai_preferred_language?: string | null;
+    ai_preferred_language_available?: boolean | null;
+    gmail_message_id?: string | null;
+    thread_id?: string | null;
+    is_read?: unknown;
 }
 
 export interface SimulateEmailRequest {

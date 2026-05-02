@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, User } from 'lucide-react';
 import { AccountInfo } from '@types';
-import { AccountSwitcherList, getAccountColor, getEmailInitials } from './AccountSwitcherList';
+import { AccountSwitcherList } from './AccountSwitcherList';
+import { getAccountColor, getEmailInitials } from './accountSwitcherHelpers';
 
 interface Props {
   connectedAccounts: AccountInfo[];
@@ -78,17 +79,20 @@ export function AccountSwitcherMobile({
         ref={buttonRef}
         onClick={(e) => {
           e.stopPropagation();
-          isOpen ? close() : setIsOpen(true);
+          if (isOpen) {
+            close();
+          } else {
+            setIsOpen(true);
+          }
         }}
         aria-label={activeEmail ? 'Switch account' : 'Select account'}
         title={activeEmail ? 'Switch account' : 'Select account'}
         aria-expanded={isOpen}
         aria-haspopup="menu"
-        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-slate-200 active:scale-95 transition-all min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:ring-offset-0 ${
-          isOpen
-            ? 'bg-white/[0.05] border-indigo-500/40 ring-1 ring-indigo-500/20'
-            : 'bg-white/[0.03] border-white/10 hover:bg-white/[0.05]'
-        }`}
+        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-slate-200 active:scale-95 transition-all min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:ring-offset-0 ${isOpen
+          ? 'bg-white/[0.05] border-indigo-500/40 ring-1 ring-indigo-500/20'
+          : 'bg-white/[0.03] border-white/10 hover:bg-white/[0.05]'
+          }`}
       >
         {activeEmail ? (
           <span className="flex items-center gap-2 min-w-0 flex-1">
@@ -97,13 +101,12 @@ export function AccountSwitcherMobile({
             >
               {getEmailInitials(activeEmail)}
               <span
-                className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full ring-[1.5px] ring-[#0f172a] ${
-                  isReconnectRequired
-                    ? 'bg-[#F59E0B]'
-                    : isOffline
+                className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full ring-[1.5px] ring-[#0f172a] ${isReconnectRequired
+                  ? 'bg-[#F59E0B]'
+                  : isOffline
                     ? 'bg-[#EF4444]'
                     : 'bg-[#22C55E]'
-                }`}
+                  }`}
               />
             </span>
             <span className="text-[11px] font-bold text-slate-300 truncate">

@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiService, AILanguage } from '@services';
-import { websocketService } from '@services/websocket';
+import { websocketService, type EmailsUpdatedData, type SummaryReadyData } from '@services/websocket';
 import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Briefing, AccountInfo, SentEmail, SupportedLanguage, SupportedTone, EmailTemplate, DraftTone } from '@types';
+import { Briefing, AccountInfo, SentEmail, SupportedLanguage, SupportedTone, EmailTemplate, DraftTone, InboxThreadRow } from '@types';
 import { SentList } from './components/SentList';
 import { EmailDetailModal } from './components/EmailDetailModal';
 import { ReplyComposeModal } from './components/ReplyComposeModal';
@@ -11,7 +11,7 @@ import { AssistantPanel } from './components/AssistantPanel';
 import { AccountSwitcherMobile } from './components/AccountSwitcherMobile';
 import { AccountSwitcherDesktop } from './components/AccountSwitcherDesktop';
 import { WakingUp } from './components/WakingUp';
-import { getAccountColor, getEmailInitials } from './components/AccountSwitcherList';
+import { getAccountColor, getEmailInitials } from './components/accountSwitcherHelpers';
 
 const AUTH_REQUIRED_EVENT = 'iea:auth-required';
 const BRAND_NAME = "EXECUTIVE BRAIN";
@@ -70,7 +70,7 @@ export const App = () => {
   const [sending, setSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
-  const [diagnosticClickCount, setDiagnosticClickCount] = useState(0);
+  const [, setDiagnosticClickCount] = useState(0);
   const [panelView, setPanelView] = useState<'quick' | 'full'>('quick');
   const [detailIsSent, setDetailIsSent] = useState(false);
   const [activeTab, setActiveTab] = useState<'inbox' | 'sent'>('inbox');
@@ -391,7 +391,7 @@ export const App = () => {
       // Accounts are only refetched when the caller explicitly needs them
       // (e.g. OAuth callback, post-connect activation).
       // Routine email polls skip /api/accounts — halves request count in settled state.
-      let emailData: any[];
+      let emailData: InboxThreadRow[];
       let accountsForAutoSelect: AccountInfo[] | null = null;
 
       if (refetchAccounts) {
@@ -435,7 +435,7 @@ export const App = () => {
       const ordered = emailData || [];
 
       // Map DB schema to UI Briefing model
-      const mapped: Briefing[] = ordered.map((e: any) => {
+      const mapped: Briefing[] = ordered.map((e: InboxThreadRow) => {
         const isoDate = e.date ?? e.created_at;
         let formattedDate = 'Unknown time';
         try {
@@ -462,7 +462,7 @@ export const App = () => {
           e.subject || '',
           e.sender || '',
           e.body || '',
-          e.ai_summary_text
+          e.ai_summary_text ?? undefined
         );
 
         const briefing: Briefing = {
@@ -476,15 +476,15 @@ export const App = () => {
           summary: displaySummary,
           action: primaryAction,
           body: e.body || '',
-          ai_summary_json: e.ai_summary_json,
-          ai_summary_text: e.ai_summary_text,
-          ai_summary_model: e.ai_summary_model,
+          ai_summary_json: e.ai_summary_json ?? undefined,
+          ai_summary_text: e.ai_summary_text ?? undefined,
+          ai_summary_model: e.ai_summary_model ?? undefined,
           ai_summary_language: e.ai_summary_language ?? null,
           ai_summary_is_fallback: e.ai_summary_is_fallback ?? false,
           ai_preferred_language: e.ai_preferred_language ?? null,
           ai_preferred_language_available: e.ai_preferred_language_available ?? false,
-          gmail_message_id: e.gmail_message_id,
-          thread_id: e.thread_id,
+          gmail_message_id: e.gmail_message_id ?? undefined,
+          thread_id: e.thread_id ?? undefined,
           is_read: e.is_read !== undefined ? Boolean(e.is_read) : undefined,
         };
 
@@ -517,7 +517,7 @@ export const App = () => {
       if (effectiveId) {
         autoSummarizeEmails(mapped, effectiveId);
       }
-    } catch (err: any) {
+    } catch {
       console.warn(`📡 [FETCH] Degraded (reason: ${reason})`);
       // Suppress error UI during active sync — transient failures are expected there
       if (!syncingRef.current) {
@@ -785,7 +785,7 @@ export const App = () => {
     // Note: autoSync removed from init - will sync when user selects account
 
     // Realtime updates via WebSocket
-    const handleEmailsUpdated = (data: { count_new: number }) => {
+    const handleEmailsUpdated = (data: EmailsUpdatedData) => {
       console.log("[STRATEGY] Realtime update received:", data);
       // Skip if runSync is already active — its fetchEmails completion will carry the update
       if (syncingRef.current) {
@@ -795,7 +795,7 @@ export const App = () => {
       fetchEmails(activeEmailRef.current, { reason: 'ws:emails_updated' });
     };
 
-    const handleSummaryReady = (data: { count_summarized: number }) => {
+    const handleSummaryReady = (data: SummaryReadyData) => {
       console.log("[STRATEGY] Summaries ready:", data);
       // Could refetch thread data if needed
     };
@@ -835,6 +835,7 @@ export const App = () => {
         clearTimeout(summaryRefreshTimerRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-only startup orchestration: timers, websocket subscriptions, wake retry, and init lifecycle must not be rebound by callback identity changes
   }, []);
 
 
@@ -1057,6 +1058,7 @@ export const App = () => {
 
     // Start activation attempts
     attemptActivation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot OAuth callback handler: URL param consumption, history cleanup, and retry activation flow must not retrigger due to callback identity changes
   }, []);
 
   const getCategoryStyles = (category: string) => {
@@ -1210,7 +1212,7 @@ export const App = () => {
       } else {
         setPanelError(result.error || 'Failed to send. Please check your connection and try again.');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[SEND] Unexpected error:', err);
       setPanelError('Network error: Could not reach the server. Please try again.');
     } finally {
@@ -2013,10 +2015,10 @@ export const App = () => {
             {/* Right: category chips — inbox only */}
             {activeTab === 'inbox' && (
               <div className="flex items-center gap-1.5 flex-wrap">
-                {['All', 'Security', 'Financial', 'Work', 'Personal', 'Marketing', 'General'].map((cat) => (
+                {(['All', 'Security', 'Financial', 'Work', 'Personal', 'Marketing', 'General'] as const).map((cat) => (
                   <button
                     key={cat}
-                    onClick={() => { setFilterCategory(cat as any); setCurrentPage(1); }}
+                    onClick={() => { setFilterCategory(cat); setCurrentPage(1); }}
                     className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterCategory === cat ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
                   >
                     {cat}

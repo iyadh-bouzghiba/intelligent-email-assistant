@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { AccountInfo } from '@types';
-import { AccountSwitcherList, getAccountColor, getEmailInitials } from './AccountSwitcherList';
+import { AccountSwitcherList } from './AccountSwitcherList';
+import { getAccountColor, getEmailInitials } from './accountSwitcherHelpers';
 
 interface Props {
   connectedAccounts: AccountInfo[];
@@ -79,9 +80,8 @@ export function AccountSwitcherDesktop({
             >
               {getEmailInitials(activeEmail)}
               <span
-                className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0f172a] ${
-                  isOffline ? 'bg-[#EF4444]' : 'bg-[#22C55E]'
-                }`}
+                className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0f172a] ${isOffline ? 'bg-[#EF4444]' : 'bg-[#22C55E]'
+                  }`}
               />
             </span>
             <span className="text-[11px] font-bold text-slate-300 truncate max-w-[120px]">

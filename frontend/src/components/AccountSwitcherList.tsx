@@ -1,32 +1,6 @@
 import { AlertCircle, LogOut } from 'lucide-react';
 import { AccountInfo } from '@types';
-
-// Pure helpers — defined here and exported so mobile/desktop surfaces can share them
-// without duplicating logic. Module-level so they never trigger re-renders.
-
-export const getAccountColor = (email: string): string => {
-  const colors = [
-    'from-blue-500 to-indigo-600',
-    'from-purple-500 to-pink-600',
-    'from-emerald-500 to-teal-600',
-    'from-amber-500 to-orange-600',
-    'from-rose-500 to-red-600',
-    'from-cyan-500 to-blue-600',
-  ];
-  const hash = email.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return colors[hash % colors.length];
-};
-
-export const getEmailInitials = (email: string): string => {
-  if (!email || email === 'default') return '?';
-  const username = email.split('@')[0];
-  if (username.length === 1) return username.toUpperCase();
-  const parts = username.split(/[._-]/);
-  if (parts.length > 1) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-  return username.substring(0, 2).toUpperCase();
-};
+import { getAccountColor, getEmailInitials } from './accountSwitcherHelpers';
 
 interface Props {
   connectedAccounts: AccountInfo[];
@@ -76,9 +50,8 @@ export function AccountSwitcherList({
         return (
           <div
             key={info.account_id}
-            className={`flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] transition-colors ${
-              isActive ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'border-l-2 border-transparent'
-            }`}
+            className={`flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] transition-colors ${isActive ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'border-l-2 border-transparent'
+              }`}
           >
             {/* Avatar + 4-state status dot */}
             <div className="relative flex-shrink-0">
@@ -89,23 +62,22 @@ export function AccountSwitcherList({
               </div>
               {/* 4-state indicator: RECONNECT(amber) / CURRENT(green) / READY(blue) / OFFLINE(red) */}
               <span
-                className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0f172a] ${
-                  info.auth_required
-                    ? 'bg-[#F59E0B]'
-                    : offlineAccounts.has(info.account_id)
+                className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0f172a] ${info.auth_required
+                  ? 'bg-[#F59E0B]'
+                  : offlineAccounts.has(info.account_id)
                     ? 'bg-[#EF4444]'
                     : isActive
-                    ? 'bg-[#22C55E]'
-                    : 'bg-[#3B82F6]'
-                }`}
+                      ? 'bg-[#22C55E]'
+                      : 'bg-[#3B82F6]'
+                  }`}
                 title={
                   info.auth_required
                     ? 'Reconnect required'
                     : offlineAccounts.has(info.account_id)
-                    ? 'Offline'
-                    : isActive
-                    ? 'Current'
-                    : 'Ready'
+                      ? 'Offline'
+                      : isActive
+                        ? 'Current'
+                        : 'Ready'
                 }
               />
             </div>

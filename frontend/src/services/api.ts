@@ -1,9 +1,10 @@
-import axios from "axios";
+import axios, { isAxiosError } from "axios";
 import {
     SummaryResponse,
     HealthStatus,
     DraftReplyRequest,
     DraftReplyResponse,
+    InboxThreadRow,
     ThreadListResponse,
     SimulateEmailRequest,
     BriefingResponse,
@@ -126,11 +127,20 @@ export const apiService = {
                 }
             );
             return response.data;
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('[API] sendThreadReply failed:', error);
+
+            const apiError =
+                isAxiosError(error) && typeof error.response?.data?.error === 'string'
+                    ? error.response.data.error
+                    : undefined;
+
+            const message =
+                error instanceof Error ? error.message : 'Network error';
+
             return {
                 success: false,
-                error: error.response?.data?.error || error.message || 'Network error'
+                error: apiError || message
             };
         }
     },
@@ -180,7 +190,7 @@ export const apiService = {
     },
 
     // REST Emails — primary source for polling
-    listEmails: async (account_id?: string): Promise<any[]> => {
+    listEmails: async (account_id?: string): Promise<InboxThreadRow[]> => {
         const params = account_id ? { account_id } : {};
         try {
             const response = await api.get(`${API_ROOT}/emails`, { params });
@@ -199,7 +209,7 @@ export const apiService = {
     listEmailsWithSummaries: async (
         account_id?: string,
         preferred_language = 'en'
-    ): Promise<any[]> => {
+    ): Promise<InboxThreadRow[]> => {
         const params = account_id
             ? { account_id, preferred_language }
             : { preferred_language };
@@ -248,9 +258,18 @@ export const apiService = {
                 { timeout: 35000 }
             );
             return response.data;
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.warn('[API] setThreadReadState failed:', error);
-            return { success: false, error: error.response?.data?.error || error.message };
+
+            const apiError =
+                isAxiosError(error) && typeof error.response?.data?.error === 'string'
+                    ? error.response.data.error
+                    : undefined;
+
+            const message =
+                error instanceof Error ? error.message : 'Network error';
+
+            return { success: false, error: apiError || message };
         }
     },
 
@@ -332,7 +351,7 @@ export const apiService = {
         account_id: string,
         limit = 50,
         preferred_language = 'en'
-    ): Promise<any[]> => {
+    ): Promise<InboxThreadRow[]> => {
         try {
             const response = await api.get(`${API_ROOT}/inbox`, {
                 params: { account_id, limit, preferred_language },

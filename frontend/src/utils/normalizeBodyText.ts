@@ -39,7 +39,7 @@ export function normalizeBodyText(text: string): string {
   // The token must be followed by optional horizontal whitespace then a
   // newline or end-of-string — i.e. it must be the entire first line.
   // Nothing mid-body is ever touched.
-  s = s.replace(/^(?:\(\)|\[\]|\{\}|[(){}\[\]])[^\S\n]*(?:\n|$)/, '');
+  s = s.replace(/^(?:\(\)|\[\]|\{\}|[(){}[\]])[^\S\n]*(?:\n|$)/, '');
 
   // Collapse 3+ consecutive blank lines to 2
   s = s.replace(/\n{3,}/g, '\n\n');
