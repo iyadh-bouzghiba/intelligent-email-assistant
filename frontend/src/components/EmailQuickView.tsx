@@ -13,11 +13,22 @@ interface Props {
 }
 
 /**
- * Quick View — shows AI summary + a short normalized body preview.
+ * Quick View
+ *
+ * Inbox:
+ *   - Shows AI analysis, urgency, action items, and assistant entry point.
+ * Sent:
+ *   - Suppresses AI-analysis framing and instead shows a lightweight outbound preview.
+ *
  * All action buttons live in EmailDetailModal's footer.
  */
 export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizing, onAskAssistant }: Props) {
-  const rawText = email.body || email.summary || '';
+  const isSent = Boolean(email.sentMeta);
+
+  const rawText = isSent
+    ? (email.sentMeta?.bodyPreview || email.body || email.summary || '')
+    : (email.body || email.summary || '');
+
   const bodyText = normalizeBodyText(rawText);
   const preview = bodyText.length > 320 ? bodyText.slice(0, 320) + '…' : bodyText;
 
@@ -60,8 +71,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
 
   return (
     <div className="space-y-6">
-      {/* AI Analysis — three mutually exclusive states when no summary is present */}
-      {!email.ai_summary_text && isSummarizing && (
+      {!isSent && !email.ai_summary_text && isSummarizing && (
         /* Skeleton — summarization actively in progress */
         <div className="space-y-4">
           <div className="flex items-center gap-2">
@@ -75,7 +85,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
         </div>
       )}
 
-      {!email.ai_summary_text && !isSummarizing && (
+      {!isSent && !email.ai_summary_text && !isSummarizing && (
         /* Placeholder — auto-summarization queued, result arriving shortly */
         <div className="space-y-4">
           <div className="flex items-center gap-2">
@@ -90,8 +100,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
         </div>
       )}
 
-      {/* AI Analysis */}
-      {email.ai_summary_text && (
+      {!isSent && email.ai_summary_text && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Sparkles size={16} className="text-indigo-400" />
@@ -127,12 +136,13 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
         </div>
       )}
 
-      {/* Body Preview */}
       <div className="space-y-3">
-        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Preview</h3>
+        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+          {isSent ? 'Outbound Preview' : 'Preview'}
+        </h3>
         <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
           <p className="text-sm leading-relaxed text-slate-300 whitespace-pre-wrap break-words">
-            {preview || 'No preview available.'}
+            {preview || (isSent ? 'No outbound preview available.' : 'No preview available.')}
           </p>
           {bodyText.length > 320 && (
             <button
@@ -145,8 +155,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
         </div>
       </div>
 
-      {/* AI Assistant trigger */}
-      {onAskAssistant && (
+      {!isSent && onAskAssistant && (
         <button
           onClick={onAskAssistant}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] hover:bg-indigo-500/[0.08] hover:border-indigo-500/30 text-slate-400 hover:text-indigo-300 text-xs font-semibold transition-all"

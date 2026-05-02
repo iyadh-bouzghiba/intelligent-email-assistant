@@ -83,6 +83,21 @@ export function EmailDetailModal({
   const summarizeButtonHandler = showPreferredLanguageMismatch
     ? onGeneratePreferred
     : onSummarize;
+
+  const sentMeta = detailIsSent ? email.sentMeta : undefined;
+
+  const sentAtDisplay = (() => {
+    if (!sentMeta?.sentAt) return email.date;
+    try {
+      return new Date(sentMeta.sentAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    } catch {
+      return sentMeta.sentAt;
+    }
+  })();
+
+  const showPreferredLanguageBanner = !detailIsSent && showPreferredLanguageMismatch;
+  const showSummarizeButton = !detailIsSent && Boolean(email.ai_summary_text && email.gmail_message_id);
+
   return (
     <>
       {/* Backdrop — aria-hidden so SR focus stays inside dialog */}
@@ -115,33 +130,59 @@ export function EmailDetailModal({
                   <h2 id={TITLE_ID} className="text-xl font-black text-white mb-2 leading-tight">
                     {email.subject}
                   </h2>
-                  <div id={DESC_ID} className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
-                    <span className="font-semibold text-slate-300">{email.sender}</span>
-                    <span className="text-slate-600">|</span>
-                    <span>{email.date}</span>
+                  <div id={DESC_ID} className="flex flex-col gap-2 text-sm text-slate-400">
+                    {detailIsSent ? (
+                      <>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-600">To</span>
+                          <span className="font-semibold text-slate-200 break-all">
+                            {sentMeta?.toAddress || 'Unknown recipient'}
+                          </span>
+                        </div>
+
+                        {sentMeta?.ccAddresses && (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-600">CC</span>
+                            <span className="text-slate-300 break-all">{sentMeta.ccAddresses}</span>
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-600">Sent at</span>
+                          <span>{sentAtDisplay}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-slate-300">{email.sender}</span>
+                        <span className="text-slate-600">|</span>
+                        <span>{email.date}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 mt-3">
-                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${email.priority === 'High' ? 'bg-[#FF3B5C] text-white border-[#FF3B5C]' :
-                      email.priority === 'Medium' ? 'bg-[#FFB800] text-[#1a1a1a] border-[#FFB800]' :
-                        'bg-[#3D4A5C] text-[#94A3B8] border-[#3D4A5C]'
-                      }`}>
-                      {email.priority}
-                    </span>
-                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getCategoryStyles(email.category)}`}>
-                      {email.category}
-                    </span>
-                    {detailIsSent && (
+                    {detailIsSent ? (
                       <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border bg-slate-500/10 text-slate-400 border-slate-500/20">
                         Sent
                       </span>
-                    )}
-                    {!detailIsSent && (
-                      <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${isRead
-                        ? 'bg-slate-500/10 text-slate-500 border-slate-500/20'
-                        : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
-                        }`}>
-                        {isRead ? 'Read' : 'Unread'}
-                      </span>
+                    ) : (
+                      <>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${email.priority === 'High' ? 'bg-[#FF3B5C] text-white border-[#FF3B5C]' :
+                          email.priority === 'Medium' ? 'bg-[#FFB800] text-[#1a1a1a] border-[#FFB800]' :
+                            'bg-[#3D4A5C] text-[#94A3B8] border-[#3D4A5C]'
+                          }`}>
+                          {email.priority}
+                        </span>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getCategoryStyles(email.category)}`}>
+                          {email.category}
+                        </span>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${isRead
+                          ? 'bg-slate-500/10 text-slate-500 border-slate-500/20'
+                          : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                          }`}>
+                          {isRead ? 'Read' : 'Unread'}
+                        </span>
+                      </>
                     )}
                   </div>
                 </div>
@@ -158,7 +199,7 @@ export function EmailDetailModal({
 
             {/* ── Scrollable body ───────────────────────────────────────────── */}
             <div className="flex-1 overflow-y-auto custom-scrollbar px-5 py-6 space-y-8 min-h-0 sm:px-8 sm:py-8">
-              {showPreferredLanguageMismatch && (
+              {showPreferredLanguageBanner && (
                 <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
                   <p className="text-[11px] font-bold uppercase tracking-wide text-amber-300">
                     Preferred language version not generated yet
@@ -200,7 +241,7 @@ export function EmailDetailModal({
                 >
                   Close
                 </button>
-                {email.ai_summary_text && email.gmail_message_id && (
+                {showSummarizeButton && (
                   <button
                     onClick={summarizeButtonHandler}
                     className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"

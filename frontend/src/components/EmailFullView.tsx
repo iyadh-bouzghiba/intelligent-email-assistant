@@ -242,9 +242,20 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
     return () => controller.abort();
   }, [email.gmail_message_id]);
 
+  const isSent = Boolean(email.sentMeta);
+
   const rawText = renderedEmail?.body_text || email.body || email.summary || '';
   const bodyText = normalizeBodyText(rawText);
   const paragraphs = bodyText ? bodyText.split('\n\n').filter((p) => p.trim().length > 0) : [];
+
+  const sectionTitle = isSent ? 'Sent Message' : 'Full Message';
+  const backLabel = isSent ? '← Outbound Preview' : '← Summary';
+  const loadingLabel = isSent
+    ? 'Loading sent message content…'
+    : 'Loading inline images and attachments…';
+  const emptyBodyLabel = isSent
+    ? 'No sent message body available.'
+    : 'No message body available.';
 
   const sanitizedHtml = useMemo(
     () => (renderedEmail?.body_html ? buildSanitizedHtml(renderedEmail.body_html) : null),
@@ -304,8 +315,7 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
 
   return (
     <div className="space-y-6">
-      {/* AI Analysis — mirrored from Quick View so context is preserved */}
-      {email.ai_summary_text && (
+      {!isSent && email.ai_summary_text && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Sparkles size={16} className="text-indigo-400" />
@@ -339,21 +349,20 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
         </div>
       )}
 
-      {/* Full Message */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Full Message</h3>
+          <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">{sectionTitle}</h3>
           <button
             onClick={onBackToSummary}
             className="text-[10px] font-bold text-slate-600 hover:text-slate-400 transition-colors"
           >
-            ← Summary
+            {backLabel}
           </button>
         </div>
 
         <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
           {renderLoading ? (
-            <p className="text-sm leading-relaxed text-slate-400">Loading inline images and attachments…</p>
+            <p className="text-sm leading-relaxed text-slate-400">{loadingLabel}</p>
           ) : sanitizedHtml ? (
             <div
               ref={bodyContainerRef}
@@ -372,7 +381,7 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
               ))}
             </div>
           ) : (
-            <p className="text-sm leading-relaxed text-slate-500 italic">No message body available.</p>
+            <p className="text-sm leading-relaxed text-slate-500 italic">{emptyBodyLabel}</p>
           )}
         </div>
 
