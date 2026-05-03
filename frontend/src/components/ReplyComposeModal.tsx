@@ -254,12 +254,12 @@ export function ReplyComposeModal({
               />
 
               {/* Draft tools */}
-              <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3 sm:px-4 sm:py-4 space-y-3">
+              <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 sm:px-4 sm:py-3 space-y-2.5">
                 <div className="space-y-1">
-                  <p className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.2em]">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.18em]">
                     Draft Tools
                   </p>
-                  <p className="text-xs text-slate-500 leading-relaxed">
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
                     Adjust tone, apply a saved template, or save this reply for faster reuse.
                   </p>
                 </div>
@@ -287,8 +287,8 @@ export function ReplyComposeModal({
                             disabled={sending}
                             onClick={() => handleToneSelection(tone.code)}
                             className={`min-h-[40px] px-3 py-2 rounded-xl text-xs font-bold transition-all border ${isSelected
-                              ? 'bg-indigo-600/90 border-indigo-400/60 text-white shadow-md shadow-indigo-900/20'
-                              : 'bg-white/[0.03] border-white/10 text-slate-300 hover:text-white hover:bg-white/[0.06]'
+                              ? 'bg-indigo-500/15 border-indigo-400/30 text-indigo-200'
+                              : 'bg-white/[0.02] border-white/[0.08] text-slate-300 hover:text-white hover:bg-white/[0.05]'
                               } ${sending ? 'opacity-50 cursor-not-allowed' : ''}`}
                           >
                             {tone.label}
@@ -339,7 +339,7 @@ export function ReplyComposeModal({
                     type="button"
                     onClick={handleApplySelectedTemplate}
                     disabled={!selectedTemplate || !onApplyTemplate}
-                    className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-md shadow-indigo-900/20"
+                    className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-200 hover:text-white hover:bg-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
                   >
                     <Sparkles size={12} />
                     Apply Template
@@ -352,7 +352,7 @@ export function ReplyComposeModal({
                       setShowSaveTemplateForm((v) => !v);
                     }}
                     disabled={!canToggleSaveTemplateForm}
-                    className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-white/[0.04] border border-white/10 text-slate-300 hover:text-white hover:bg-white/[0.07] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
+                    className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-white/[0.03] border border-white/10 text-slate-300 hover:text-white hover:bg-white/[0.06] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
                   >
                     <Save size={12} />
                     Save as Template
@@ -379,7 +379,7 @@ export function ReplyComposeModal({
                 </div>
 
                 {showSaveTemplateForm && (
-                  <div className="space-y-2 rounded-xl border border-white/[0.08] bg-black/10 px-3 py-3">
+                  <div className="space-y-2 rounded-xl border border-white/[0.06] bg-black/5 px-3 py-2.5">
                     <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                       Template Name
                     </label>
@@ -420,7 +420,7 @@ export function ReplyComposeModal({
                   <p className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.2em]">
                     Reply Body
                   </p>
-                  <p className="text-xs text-slate-500 leading-relaxed">
+                  <p className="text-xs text-slate-400 leading-relaxed">
                     Write, review, and refine your final reply before sending.
                   </p>
                 </div>
@@ -431,7 +431,7 @@ export function ReplyComposeModal({
                   onChange={(e) => onReplyBodyChange(e.target.value)}
                   placeholder="Write your reply here…"
                   rows={6}
-                  className="w-full min-h-[220px] resize-none bg-transparent border-0 p-0 text-sm leading-relaxed text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-0"
+                  className="w-full min-h-[220px] resize-none bg-transparent border-0 p-0 text-sm leading-relaxed text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-0"
                 />
               </div>
 
@@ -482,7 +482,7 @@ export function ReplyComposeModal({
                         <button
                           type="button"
                           onClick={() => setShowQuoted(v => !v)}
-                          className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-slate-300 transition-colors"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-white/[0.08] bg-white/[0.03] text-[10px] font-semibold text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors"
                           aria-expanded={showQuoted}
                         >
                           <ChevronDown
