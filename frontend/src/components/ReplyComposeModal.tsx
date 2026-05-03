@@ -313,7 +313,7 @@ export function ReplyComposeModal({
                           ? 'Loading templates…'
                           : templateOptions.length > 0
                             ? 'Select a template'
-                            : 'No templates saved yet — write a reply, then tap Save as Template to reuse it later.'}
+                            : 'No templates saved yet'}
                       </option>
                       {templateOptions.map((template) => (
                         <option
@@ -325,6 +325,12 @@ export function ReplyComposeModal({
                         </option>
                       ))}
                     </select>
+
+                    {!templatesLoading && templateOptions.length === 0 && (
+                      <p className="text-[11px] leading-relaxed text-slate-500">
+                        To create your first template, write a reply, then tap Save as Template to reuse it later.
+                      </p>
+                    )}
                   </div>
                 </div>
 
