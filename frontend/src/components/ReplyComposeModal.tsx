@@ -112,6 +112,15 @@ export function ReplyComposeModal({
   const toneOptions = availableTones && availableTones.length > 0 ? availableTones : FALLBACK_TONES;
   const effectiveTone: DraftTone = selectedTone ?? localTone;
   const templateOptions = templates ?? EMPTY_TEMPLATES;
+  const hasSaveTemplateHandler = typeof onSaveTemplate === 'function';
+  const hasSaveableReplyBody = replyBody.trim().length > 0;
+  const canToggleSaveTemplateForm =
+    hasSaveTemplateHandler &&
+    hasSaveableReplyBody &&
+    !templateSaving;
+  const canSubmitTemplateSave =
+    canToggleSaveTemplateForm &&
+    templateName.trim().length > 0;
 
   useEffect(() => {
     setSelectedTemplateId('');
@@ -138,10 +147,13 @@ export function ReplyComposeModal({
   };
 
   const handleSaveTemplate = async () => {
-    if (!onSaveTemplate) return;
+    const saveTemplate = onSaveTemplate;
+    if (!saveTemplate || !hasSaveableReplyBody || templateSaving) return;
+
     const trimmed = templateName.trim();
     if (!trimmed) return;
-    await onSaveTemplate(trimmed);
+
+    await saveTemplate(trimmed);
     setTemplateName('');
     setShowSaveTemplateForm(false);
   };
@@ -329,8 +341,11 @@ export function ReplyComposeModal({
 
                   <button
                     type="button"
-                    onClick={() => setShowSaveTemplateForm((v) => !v)}
-                    disabled={!onSaveTemplate}
+                    onClick={() => {
+                      if (!canToggleSaveTemplateForm) return;
+                      setShowSaveTemplateForm((v) => !v);
+                    }}
+                    disabled={!canToggleSaveTemplateForm}
                     className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-white/[0.04] border border-white/10 text-slate-300 hover:text-white hover:bg-white/[0.07] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
                   >
                     <Save size={12} />
@@ -374,7 +389,7 @@ export function ReplyComposeModal({
                       <button
                         type="button"
                         onClick={handleSaveTemplate}
-                        disabled={!templateName.trim() || templateSaving || !onSaveTemplate}
+                        disabled={!canSubmitTemplateSave}
                         className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all"
                       >
                         {templateSaving ? (
