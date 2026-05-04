@@ -1712,72 +1712,79 @@ export const App = () => {
             </div>
 
             {/* Desktop-only controls */}
-            <div className="hidden sm:flex items-center gap-3 flex-wrap justify-end min-w-0">
-              <div className="flex flex-col gap-1.5 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/5">
-                <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center justify-end gap-3 flex-wrap min-w-0">
+              {/* Desktop utility rail — compact, future-extensible, only when an account is connected */}
+              {connectedAccounts.length > 0 && (
+                <div className="flex items-center gap-2 flex-shrink-0 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/5">
+                  <Shield
+                    size={14}
+                    aria-hidden="true"
+                    className={`${notificationsEnabled ? 'text-indigo-300' : 'text-slate-500'}`}
+                  />
                   <span
                     id="sentinel-alerts-label"
-                    className="text-[10px] font-black text-slate-500 uppercase tracking-widest"
+                    className="text-[11px] font-bold text-slate-300 whitespace-nowrap"
                   >
-                    Sentinel Alerts
+                    Urgency Alerts
                   </span>
                   <button
                     type="button"
                     aria-labelledby="sentinel-alerts-label"
                     aria-describedby="sentinel-alerts-help"
                     aria-pressed={notificationsEnabled}
+                    title="Browser alerts for new high-urgency emails on this device. Requires notification permission."
                     onClick={() => notificationsEnabled ? setNotificationsEnabled(false) : requestNotificationPermission()}
                     className={`w-10 h-5 rounded-full relative transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f172a] ${notificationsEnabled ? 'bg-indigo-600' : 'bg-slate-700'}`}
                   >
                     <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 ${notificationsEnabled ? 'left-6' : 'left-1'}`} />
                   </button>
+                  <span id="sentinel-alerts-help" className="sr-only">
+                    Browser alerts for new high-urgency emails on this device. Requires notification permission.
+                  </span>
                 </div>
-                <p
-                  id="sentinel-alerts-help"
-                  className="text-[11px] text-slate-500 leading-relaxed max-w-[240px]"
-                >
-                  Browser alerts for new high-urgency emails on this device. Requires notification permission.
-                </p>
-              </div>
+              )}
 
-              <div className="relative">
-                {connectedAccounts.length === 0 ? (
-                  <a
-                    href={apiService.getGoogleAuthUrl()}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 border border-indigo-500/50 text-white text-sm font-bold transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+              {/* Desktop session/action rail — account context and immediate actions only */}
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="relative">
+                  {connectedAccounts.length === 0 ? (
+                    <a
+                      href={apiService.getGoogleAuthUrl()}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 border border-indigo-500/50 text-white text-sm font-bold transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+                    >
+                      <Mail size={16} />
+                      <span>Connect Account</span>
+                    </a>
+                  ) : (
+                    <AccountSwitcherDesktop
+                      connectedAccounts={connectedAccounts}
+                      activeEmail={activeEmail}
+                      offlineAccounts={offlineAccounts}
+                      maxAccounts={MAX_CONNECTED_ACCOUNTS}
+                      authUrl={apiService.getGoogleAuthUrl()}
+                      onSwitchAccount={handleSwitchAccount}
+                      onRequestDisconnect={(id) => setConfirmDisconnect(id)}
+                    />
+                  )}
+                </div>
+
+                {canShowSyncControl && (
+                  <button
+                    onClick={async () => {
+                      if (!activeEmail || syncingRef.current) return;
+                      console.log('[REFRESH] Manual refresh for account:', activeEmail);
+                      setLoading(true);
+                      await runSync(activeEmail);
+                      // setLoading(false) handled by fetchEmails' finally
+                    }}
+                    disabled={loading || syncing}
+                    className="group flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
                   >
-                    <Mail size={16} />
-                    <span>Connect Account</span>
-                  </a>
-                ) : (
-                  <AccountSwitcherDesktop
-                    connectedAccounts={connectedAccounts}
-                    activeEmail={activeEmail}
-                    offlineAccounts={offlineAccounts}
-                    maxAccounts={MAX_CONNECTED_ACCOUNTS}
-                    authUrl={apiService.getGoogleAuthUrl()}
-                    onSwitchAccount={handleSwitchAccount}
-                    onRequestDisconnect={(id) => setConfirmDisconnect(id)}
-                  />
+                    <RefreshCw size={18} className={`${syncing ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-700`} />
+                    {syncing ? 'Syncing...' : 'Sync'}
+                  </button>
                 )}
               </div>
-
-              {canShowSyncControl && (
-                <button
-                  onClick={async () => {
-                    if (!activeEmail || syncingRef.current) return;
-                    console.log('[REFRESH] Manual refresh for account:', activeEmail);
-                    setLoading(true);
-                    await runSync(activeEmail);
-                    // setLoading(false) handled by fetchEmails' finally
-                  }}
-                  disabled={loading || syncing}
-                  className="group flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
-                >
-                  <RefreshCw size={18} className={`${syncing ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-700`} />
-                  {syncing ? 'Syncing...' : 'Sync'}
-                </button>
-              )}
             </div>
           </div>
 
