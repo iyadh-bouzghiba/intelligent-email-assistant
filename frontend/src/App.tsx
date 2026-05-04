@@ -1692,7 +1692,7 @@ export const App = () => {
         <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-500/[0.03] blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '2s' }} />
       </div>
 
-      <header className="sticky top-0 z-50 border-b border-white/5 bg-[#0f172a]/80 backdrop-blur-xl">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-[#0f172a]/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 py-4">
           {/* Primary row — brand + desktop controls */}
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1713,7 +1713,7 @@ export const App = () => {
 
             {/* Desktop-only controls */}
             <div className="hidden sm:flex items-center justify-end gap-3 flex-wrap min-w-0">
-              {/* Desktop utility rail � compact, future-extensible, only when an account is connected */}
+              {/* Desktop utility rail — compact, future-extensible, only when an account is connected */}
               {connectedAccounts.length > 0 && (
                 <div className="flex items-center gap-2 flex-shrink-0 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/5">
                   <Shield
@@ -1744,7 +1744,7 @@ export const App = () => {
                 </div>
               )}
 
-              {/* Desktop session/action rail � account context and immediate actions only */}
+              {/* Desktop session/action rail — account context and immediate actions only */}
               <div className="flex items-center gap-3 min-w-0">
                 <div className="relative">
                   {connectedAccounts.length === 0 ? (
@@ -1829,7 +1829,7 @@ export const App = () => {
             className="fixed bottom-10 left-1/2 z-[100] px-6 py-3 rounded-2xl bg-indigo-600 text-white font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-indigo-500/40 border border-white/10 flex items-center gap-3"
           >
             <Shield size={16} />
-            Sentinel Defense Online
+            Urgency Alerts enabled
           </motion.div>
         )}
       </AnimatePresence>
@@ -1867,543 +1867,547 @@ export const App = () => {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {hasLegacyAccounts && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="max-w-7xl mx-auto px-6 py-4 mt-4"
-          >
-            <div className="p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-4">
-              <AlertCircle size={24} className="text-amber-400 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <h4 className="text-white font-bold text-base mb-2">⚠️ Legacy Accounts Detected</h4>
-                <p className="text-amber-200 text-sm mb-4">
-                  Your accounts use the old "default" system. To enable multi-account features with real email addresses and colored avatars, please disconnect and reconnect your accounts.
-                </p>
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleDisconnectAll}
-                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold transition-all shadow-lg"
-                  >
-                    Disconnect All & Start Fresh
-                  </button>
-                  <a
-                    href={apiService.getGoogleAuthUrl()}
-                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-bold transition-all"
-                  >
-                    Reconnect First Account
-                  </a>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <main className="relative max-w-7xl mx-auto px-6 py-16">
-        <div className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-8">
-          <div className="text-center lg:text-left">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-black uppercase tracking-[0.2em] mb-6"
-            >
-              <Sparkles size={14} />
-              <span>Hardened Shell 1.0</span>
-            </motion.div>
-            <h2 className="text-5xl lg:text-6xl font-black text-white tracking-tighter mb-4">
-              {SUBTITLE}<span className="text-indigo-500">.</span>
-            </h2>
-            <p className="text-slate-400 text-lg max-w-xl font-medium leading-relaxed">
-              Executive-grade email distillation with integrated security monitoring.
-            </p>
-          </div>
-
-        </div>
-
-        {activeEmail && (
-          <div className="mb-8 max-w-[720px] mx-auto">
-            <div className="rounded-2xl bg-white/[0.02] border border-white/[0.06] p-4 md:p-5 shadow-lg shadow-black/10">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-1">
-                    AI Output Language
-                  </div>
-                  <div className="text-slate-200 font-semibold text-sm truncate">
-                    {activeEmail}
-                  </div>
-                  <p id="ai-output-language-help" className="text-slate-500 text-xs mt-1 leading-relaxed">
-                    Applies to new summaries, action items, and draft replies. Existing AI output is not changed retroactively.
-                  </p>
-                </div>
-
-                <div className="w-full md:w-auto md:min-w-[240px]">
-                  <p id="ai-output-language-label" className="block text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-2">
-                    Preferred Language
-                  </p>
-                  <div
-                    className={`flex rounded-xl bg-white/[0.03] border border-white/[0.08] p-1 gap-1 ${aiLanguageLoading || aiLanguageSaving ? 'opacity-60 pointer-events-none' : ''}`}
-                    role="radiogroup"
-                    aria-labelledby="ai-output-language-label"
-                    aria-describedby="ai-output-language-help"
-                  >
-                    {(supportedLanguages.length > 0 ? supportedLanguages : FALLBACK_LANGUAGE_OPTIONS).map((option) => {
-                      const isActive = aiLanguage === option.code;
-                      return (
-                        <button
-                          key={option.code}
-                          type="button"
-                          role="radio"
-                          aria-checked={isActive}
-                          onClick={() => handleAiLanguageChange(option.code)}
-                          className={`flex-1 rounded-lg py-2 px-3 text-sm font-semibold transition-all duration-150 border ${isActive
-                            ? 'bg-indigo-500/18 border-indigo-400/30 text-indigo-100 shadow-sm shadow-indigo-950/20'
-                            : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                            }`}
-                        >
-                          {option.native}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="mt-2 min-h-[18px]">
-                    {aiLanguageSaving ? (
-                      <p className="text-[11px] font-medium text-indigo-300">Saving preference…</p>
-                    ) : aiLanguageLoading ? (
-                      <p className="text-[11px] font-medium text-slate-500">Loading preference…</p>
-                    ) : aiLanguageError ? (
-                      <p className="text-[11px] font-medium text-rose-400">{aiLanguageError}</p>
-                    ) : aiLanguageSavedAccountId === activeEmail ? (
-                      <p className="text-[11px] font-medium text-emerald-400">Preference saved for this account.</p>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
+      <div className={connectedAccounts.length > 0 ? 'pt-32 sm:pt-24' : 'pt-24'}>
         <AnimatePresence>
-          {error && (
+          {hasLegacyAccounts && (
             <motion.div
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className={`mb-12 p-6 rounded-3xl flex items-center gap-4 shadow-2xl ${consecutiveFailures >= 5
-                ? 'bg-rose-500/10 border border-rose-500/20 text-rose-400 shadow-rose-900/10'
-                : 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 shadow-indigo-900/10'
-                }`}
+              className="max-w-7xl mx-auto px-6 py-4 mt-4"
             >
-              <AlertCircle size={22} className="flex-shrink-0" />
-              <div className="flex-grow">
-                <h4 className="font-bold text-base">
-                  {consecutiveFailures >= 5 ? 'Transmission Alert' : 'Connecting...'}
-                </h4>
-                <p className="text-sm opacity-90">{error}</p>
+              <div className="p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-4">
+                <AlertCircle size={24} className="text-amber-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <h4 className="text-white font-bold text-base mb-2">⚠️ Legacy Accounts Detected</h4>
+                  <p className="text-amber-200 text-sm mb-4">
+                    Your accounts use the old "default" system. To enable multi-account features with real email addresses and colored avatars, please disconnect and reconnect your accounts.
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleDisconnectAll}
+                      className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold transition-all shadow-lg"
+                    >
+                      Disconnect All & Start Fresh
+                    </button>
+                    <a
+                      href={apiService.getGoogleAuthUrl()}
+                      className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-bold transition-all"
+                    >
+                      Reconnect First Account
+                    </a>
+                  </div>
+                </div>
               </div>
-              {syncing && (
-                <RefreshCw size={18} className="animate-spin opacity-50" />
-              )}
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Feed toolbar — tabs + category chips, only when an account is active */}
-        {showFeedNavigation && (
-          <div className="flex items-center justify-between gap-3 mb-6 max-w-[720px] mx-auto flex-wrap">
-            {/* Left: Inbox / Sent tabs */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setActiveTab('inbox')}
-                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'inbox' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
-              >
-                <Mail size={13} />
-                Inbox
-                {unreadCount > 0 && (
-                  <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black leading-none">
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => setActiveTab('sent')}
-                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'sent' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
-              >
-                <Send size={13} />
-                Sent
-              </button>
+        <main className={`relative max-w-7xl mx-auto px-6 pb-16 ${connectedAccounts.length === 0 ? 'pt-16' : 'pt-8 sm:pt-10'}`}>
+          {connectedAccounts.length === 0 && (
+            <div className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-8">
+              <div className="text-center lg:text-left">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-black uppercase tracking-[0.2em] mb-6"
+                >
+                  <Sparkles size={14} />
+                  <span>Hardened Shell 1.0</span>
+                </motion.div>
+                <h2 className="text-5xl lg:text-6xl font-black text-white tracking-tighter mb-4">
+                  {SUBTITLE}<span className="text-indigo-500">.</span>
+                </h2>
+                <p className="text-slate-400 text-lg max-w-xl font-medium leading-relaxed">
+                  Executive-grade email distillation with integrated security monitoring.
+                </p>
+              </div>
+
             </div>
+          )}
 
-            {/* Right: category chips — inbox only */}
-            {activeTab === 'inbox' && (
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {(['All', 'Security', 'Financial', 'Work', 'Personal', 'Marketing', 'General'] as const).map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => { setFilterCategory(cat); setCurrentPage(1); }}
-                    className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterCategory === cat ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+          {activeEmail && (
+            <div className="mb-8 max-w-[720px] mx-auto">
+              <div className="rounded-2xl bg-white/[0.02] border border-white/[0.06] p-4 md:p-5 shadow-lg shadow-black/10">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-1">
+                      AI Output Language
+                    </div>
+                    <div className="text-slate-200 font-semibold text-sm truncate">
+                      {activeEmail}
+                    </div>
+                    <p id="ai-output-language-help" className="text-slate-500 text-xs mt-1 leading-relaxed">
+                      Applies to new summaries, action items, and draft replies. Existing AI output is not changed retroactively.
+                    </p>
+                  </div>
 
-        {/* Sent view */}
-        {activeTab === 'sent' && (
-          <div className="flex flex-col gap-4 mb-12 max-w-[720px] mx-auto">
-            <SentList
-              emails={currentSentItems}
-              loading={loadingSent}
-              onSelect={(se: SentEmail) => openEmailDetail(sentToBriefing(se), false, true)}
-            />
-            {!loadingSent && sentTotalPages > 1 && (
-              <div className="flex items-center justify-center gap-8 mt-4">
-                <button
-                  onClick={() => setSentCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={sentCurrentPage === 1}
-                  className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
-                >
-                  Previous
-                </button>
-                <div className="flex flex-col items-center min-w-[120px]">
-                  <span className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">Navigation</span>
-                  <span className="text-white font-black text-sm">{sentCurrentPage} of {sentTotalPages}</span>
+                  <div className="w-full md:w-auto md:min-w-[240px]">
+                    <p id="ai-output-language-label" className="block text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-2">
+                      Preferred Language
+                    </p>
+                    <div
+                      className={`flex rounded-xl bg-white/[0.03] border border-white/[0.08] p-1 gap-1 ${aiLanguageLoading || aiLanguageSaving ? 'opacity-60 pointer-events-none' : ''}`}
+                      role="radiogroup"
+                      aria-labelledby="ai-output-language-label"
+                      aria-describedby="ai-output-language-help"
+                    >
+                      {(supportedLanguages.length > 0 ? supportedLanguages : FALLBACK_LANGUAGE_OPTIONS).map((option) => {
+                        const isActive = aiLanguage === option.code;
+                        return (
+                          <button
+                            key={option.code}
+                            type="button"
+                            role="radio"
+                            aria-checked={isActive}
+                            onClick={() => handleAiLanguageChange(option.code)}
+                            className={`flex-1 rounded-lg py-2 px-3 text-sm font-semibold transition-all duration-150 border ${isActive
+                              ? 'bg-indigo-500/18 border-indigo-400/30 text-indigo-100 shadow-sm shadow-indigo-950/20'
+                              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                              }`}
+                          >
+                            {option.native}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-2 min-h-[18px]">
+                      {aiLanguageSaving ? (
+                        <p className="text-[11px] font-medium text-indigo-300">Saving preference…</p>
+                      ) : aiLanguageLoading ? (
+                        <p className="text-[11px] font-medium text-slate-500">Loading preference…</p>
+                      ) : aiLanguageError ? (
+                        <p className="text-[11px] font-medium text-rose-400">{aiLanguageError}</p>
+                      ) : aiLanguageSavedAccountId === activeEmail ? (
+                        <p className="text-[11px] font-medium text-emerald-400">Preference saved for this account.</p>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className={`mb-12 p-6 rounded-3xl flex items-center gap-4 shadow-2xl ${consecutiveFailures >= 5
+                  ? 'bg-rose-500/10 border border-rose-500/20 text-rose-400 shadow-rose-900/10'
+                  : 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 shadow-indigo-900/10'
+                  }`}
+              >
+                <AlertCircle size={22} className="flex-shrink-0" />
+                <div className="flex-grow">
+                  <h4 className="font-bold text-base">
+                    {consecutiveFailures >= 5 ? 'Transmission Alert' : 'Connecting...'}
+                  </h4>
+                  <p className="text-sm opacity-90">{error}</p>
+                </div>
+                {syncing && (
+                  <RefreshCw size={18} className="animate-spin opacity-50" />
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Feed toolbar — tabs + category chips, only when an account is active */}
+          {showFeedNavigation && (
+            <div className="flex items-center justify-between gap-3 mb-6 max-w-[720px] mx-auto flex-wrap">
+              {/* Left: Inbox / Sent tabs */}
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setSentCurrentPage(prev => Math.min(sentTotalPages, prev + 1))}
-                  disabled={sentCurrentPage === sentTotalPages}
-                  className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
+                  onClick={() => setActiveTab('inbox')}
+                  className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'inbox' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
                 >
-                  Next
+                  <Mail size={13} />
+                  Inbox
+                  {unreadCount > 0 && (
+                    <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black leading-none">
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setActiveTab('sent')}
+                  className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'sent' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
+                >
+                  <Send size={13} />
+                  Sent
                 </button>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Inbox view */}
-        {activeTab === 'inbox' && (
-          <div className="flex flex-col gap-4 mb-12 max-w-[720px] mx-auto">
-            <AnimatePresence mode="popLayout">
-              {loading ? (
-                [...Array(6)].map((_, i) => (
-                  <motion.div
-                    key={`skeleton-${i}`}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ duration: 0.3, delay: i * 0.05 }}
-                    className="skeleton-row rounded-2xl bg-white/[0.02] border border-white/5"
+              {/* Right: category chips — inbox only */}
+              {activeTab === 'inbox' && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {(['All', 'Security', 'Financial', 'Work', 'Personal', 'Marketing', 'General'] as const).map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => { setFilterCategory(cat); setCurrentPage(1); }}
+                      className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterCategory === cat ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Sent view */}
+          {activeTab === 'sent' && (
+            <div className="flex flex-col gap-4 mb-12 max-w-[720px] mx-auto">
+              <SentList
+                emails={currentSentItems}
+                loading={loadingSent}
+                onSelect={(se: SentEmail) => openEmailDetail(sentToBriefing(se), false, true)}
+              />
+              {!loadingSent && sentTotalPages > 1 && (
+                <div className="flex items-center justify-center gap-8 mt-4">
+                  <button
+                    onClick={() => setSentCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={sentCurrentPage === 1}
+                    className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
                   >
-                    <div className="skeleton-bar h-4" style={{ width: '60%' }} />
-                    <div className="skeleton-bar h-4" style={{ width: '85%' }} />
-                    <div className="skeleton-bar h-3" style={{ width: '30%' }} />
-                  </motion.div>
-                ))
-              ) : currentItems.length > 0 ? (
-                currentItems.map((item, index) => {
-                  const cardId = `${item.gmail_message_id || item.subject}-${index}`;
-                  const urgency = item.ai_summary_json?.urgency || 'medium';
+                    Previous
+                  </button>
+                  <div className="flex flex-col items-center min-w-[120px]">
+                    <span className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">Navigation</span>
+                    <span className="text-white font-black text-sm">{sentCurrentPage} of {sentTotalPages}</span>
+                  </div>
+                  <button
+                    onClick={() => setSentCurrentPage(prev => Math.min(sentTotalPages, prev + 1))}
+                    disabled={sentCurrentPage === sentTotalPages}
+                    className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
-                  const getPriorityBadgeStyle = () => {
-                    switch (urgency) {
-                      case 'high': return 'bg-[#FF3B5C] text-white border-[#FF3B5C] font-bold';
-                      case 'low': return 'bg-[#3D4A5C] text-[#94A3B8] border-[#3D4A5C]';
-                      default: return 'bg-[#FFB800] text-[#1a1a1a] border-[#FFB800] font-bold';
-                    }
-                  };
-
-                  return (
+          {/* Inbox view */}
+          {activeTab === 'inbox' && (
+            <div className="flex flex-col gap-4 mb-12 max-w-[720px] mx-auto">
+              <AnimatePresence mode="popLayout">
+                {loading ? (
+                  [...Array(6)].map((_, i) => (
                     <motion.div
-                      key={cardId}
-                      layout
+                      key={`skeleton-${i}`}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.3, delay: index * 0.03 }}
-                      className={`group relative flex flex-col p-6 rounded-2xl border hover:bg-white/[0.04] hover:border-white/10 transition-all duration-300 shadow-xl hover:shadow-indigo-500/5 ${item.is_read === false ? 'bg-white/[0.035] border-indigo-500/[0.15]' : 'bg-white/[0.02] border-white/5'}`}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.3, delay: i * 0.05 }}
+                      className="skeleton-row rounded-2xl bg-white/[0.02] border border-white/5"
                     >
-                      {/* Header row: badges + AI indicator */}
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getPriorityBadgeStyle()}`}>
-                            {urgency}
-                          </span>
-                          <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getCategoryStyles(item.category)}`}>
-                            {item.category}
-                          </span>
-                        </div>
-                        {item.ai_summary_text && (
-                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-500/15 border border-indigo-400/30">
-                            <Sparkles size={10} className={`text-indigo-300 ${summarizingIds.has(item.gmail_message_id || '') ? 'animate-pulse' : ''}`} />
-                            <span className="text-[8px] font-black text-indigo-300 uppercase tracking-wider">AI</span>
-                          </div>
-                        )}
-                        {!item.ai_summary_text && item.gmail_message_id && summarizingIds.has(item.gmail_message_id) && (
-                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-500/10 border border-indigo-400/20">
-                            <Sparkles size={10} className="text-indigo-400 animate-pulse" />
-                            <span className="text-[8px] font-black text-indigo-400 uppercase tracking-wider">Queued</span>
-                          </div>
-                        )}
-                      </div>
+                      <div className="skeleton-bar h-4" style={{ width: '60%' }} />
+                      <div className="skeleton-bar h-4" style={{ width: '85%' }} />
+                      <div className="skeleton-bar h-3" style={{ width: '30%' }} />
+                    </motion.div>
+                  ))
+                ) : currentItems.length > 0 ? (
+                  currentItems.map((item, index) => {
+                    const cardId = `${item.gmail_message_id || item.subject}-${index}`;
+                    const urgency = item.ai_summary_json?.urgency || 'medium';
 
-                      {/* Subject and sender */}
-                      <div className="mb-3">
-                        <div className="flex items-start gap-2 mb-1">
-                          {item.is_read === false
-                            ? <Mail size={14} className="mt-1 text-indigo-400 flex-shrink-0" aria-label="Unread" />
-                            : <MailOpen size={14} className="mt-1 text-slate-600 flex-shrink-0" aria-label="Read" />
-                          }
-                          <h3 className={`text-lg tracking-tight leading-tight group-hover:text-indigo-400 transition-colors duration-300 ${item.is_read === false ? 'font-black text-white' : 'font-bold text-slate-200'}`}>
-                            {item.subject}
-                          </h3>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-slate-500">
-                          <span className={`truncate mr-2 ${item.is_read === false ? 'font-bold text-slate-300' : 'font-semibold'}`}>{item.sender.split('<')[0].trim()}</span>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <Clock size={11} className="text-indigo-400/60" />
-                            <span className="text-[10px] font-medium">{item.date}</span>
-                          </div>
-                        </div>
-                      </div>
+                    const getPriorityBadgeStyle = () => {
+                      switch (urgency) {
+                        case 'high': return 'bg-[#FF3B5C] text-white border-[#FF3B5C] font-bold';
+                        case 'low': return 'bg-[#3D4A5C] text-[#94A3B8] border-[#3D4A5C]';
+                        default: return 'bg-[#FFB800] text-[#1a1a1a] border-[#FFB800] font-bold';
+                      }
+                    };
 
-                      {/* Summary - 3-line clamp with fade, 14px body */}
-                      <div className="mb-3 relative">
-                        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
-                          <p className="text-sm leading-[1.6] text-slate-200 line-clamp-3">
-                            {item.summary}
-                          </p>
-                          <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-[#0f172a]/80 to-transparent rounded-b-xl pointer-events-none" />
+                    return (
+                      <motion.div
+                        key={cardId}
+                        layout
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: index * 0.03 }}
+                        className={`group relative flex flex-col p-6 rounded-2xl border hover:bg-white/[0.04] hover:border-white/10 transition-all duration-300 shadow-xl hover:shadow-indigo-500/5 ${item.is_read === false ? 'bg-white/[0.035] border-indigo-500/[0.15]' : 'bg-white/[0.02] border-white/5'}`}
+                      >
+                        {/* Header row: badges + AI indicator */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getPriorityBadgeStyle()}`}>
+                              {urgency}
+                            </span>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getCategoryStyles(item.category)}`}>
+                              {item.category}
+                            </span>
+                          </div>
+                          {item.ai_summary_text && (
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-500/15 border border-indigo-400/30">
+                              <Sparkles size={10} className={`text-indigo-300 ${summarizingIds.has(item.gmail_message_id || '') ? 'animate-pulse' : ''}`} />
+                              <span className="text-[8px] font-black text-indigo-300 uppercase tracking-wider">AI</span>
+                            </div>
+                          )}
+                          {!item.ai_summary_text && item.gmail_message_id && summarizingIds.has(item.gmail_message_id) && (
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-500/10 border border-indigo-400/20">
+                              <Sparkles size={10} className="text-indigo-400 animate-pulse" />
+                              <span className="text-[8px] font-black text-indigo-400 uppercase tracking-wider">Queued</span>
+                            </div>
+                          )}
                         </div>
 
-                        {/* Action Items - Full text bullets */}
-                        {item.ai_summary_json?.action_items && item.ai_summary_json.action_items.length > 0 && (
-                          <div className="mt-2">
-                            <ul className="space-y-1 list-disc pl-4">
-                              {item.ai_summary_json.action_items.slice(0, 3).map((action: string, idx: number) => (
-                                <li key={idx} className="text-xs leading-relaxed text-slate-300">{action}</li>
-                              ))}
-                            </ul>
-                            {item.ai_summary_json.action_items.length > 3 && (
+                        {/* Subject and sender */}
+                        <div className="mb-3">
+                          <div className="flex items-start gap-2 mb-1">
+                            {item.is_read === false
+                              ? <Mail size={14} className="mt-1 text-indigo-400 flex-shrink-0" aria-label="Unread" />
+                              : <MailOpen size={14} className="mt-1 text-slate-600 flex-shrink-0" aria-label="Read" />
+                            }
+                            <h3 className={`text-lg tracking-tight leading-tight group-hover:text-indigo-400 transition-colors duration-300 ${item.is_read === false ? 'font-black text-white' : 'font-bold text-slate-200'}`}>
+                              {item.subject}
+                            </h3>
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-slate-500">
+                            <span className={`truncate mr-2 ${item.is_read === false ? 'font-bold text-slate-300' : 'font-semibold'}`}>{item.sender.split('<')[0].trim()}</span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Clock size={11} className="text-indigo-400/60" />
+                              <span className="text-[10px] font-medium">{item.date}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Summary - 3-line clamp with fade, 14px body */}
+                        <div className="mb-3 relative">
+                          <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
+                            <p className="text-sm leading-[1.6] text-slate-200 line-clamp-3">
+                              {item.summary}
+                            </p>
+                            <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-[#0f172a]/80 to-transparent rounded-b-xl pointer-events-none" />
+                          </div>
+
+                          {/* Action Items - Full text bullets */}
+                          {item.ai_summary_json?.action_items && item.ai_summary_json.action_items.length > 0 && (
+                            <div className="mt-2">
+                              <ul className="space-y-1 list-disc pl-4">
+                                {item.ai_summary_json.action_items.slice(0, 3).map((action: string, idx: number) => (
+                                  <li key={idx} className="text-xs leading-relaxed text-slate-300">{action}</li>
+                                ))}
+                              </ul>
+                              {item.ai_summary_json.action_items.length > 3 && (
+                                <button
+                                  onClick={() => openEmailDetail(item, true)}
+                                  className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 mt-1.5 transition-colors"
+                                >
+                                  View {item.ai_summary_json.action_items.length - 3} more action{item.ai_summary_json.action_items.length - 3 > 1 ? 's' : ''} &rarr;
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {/* Queued indicator for pending summaries */}
+                            {!item.ai_summary_text && item.gmail_message_id && summarizingIds.has(item.gmail_message_id) && (
+                              <span className="text-[9px] font-bold text-indigo-400 uppercase flex items-center gap-1">
+                                <Sparkles size={11} className="animate-pulse" />
+                                Queued...
+                              </span>
+                            )}
+                            {/* Re-summarize for cards that already have summaries */}
+                            {item.ai_summary_text && item.gmail_message_id && (
                               <button
-                                onClick={() => openEmailDetail(item, true)}
-                                className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 mt-1.5 transition-colors"
+                                onClick={async () => {
+                                  if (!activeEmail) return;
+                                  setSummarizingIds(prev => new Set(prev).add(item.gmail_message_id!));
+                                  await apiService.summarizeEmail(item.gmail_message_id!, activeEmail);
+                                  // Use the same coalesced bounded refresh — no duplicate timers
+                                  scheduleSummaryRefresh(activeEmail);
+                                }}
+                                className="text-[9px] font-bold text-slate-500 hover:text-indigo-400 uppercase flex items-center gap-1 transition-colors"
                               >
-                                View {item.ai_summary_json.action_items.length - 3} more action{item.ai_summary_json.action_items.length - 3 > 1 ? 's' : ''} &rarr;
+                                <Sparkles size={11} />
+                                Re-summarize
                               </button>
                             )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Footer */}
-                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {/* Queued indicator for pending summaries */}
-                          {!item.ai_summary_text && item.gmail_message_id && summarizingIds.has(item.gmail_message_id) && (
-                            <span className="text-[9px] font-bold text-indigo-400 uppercase flex items-center gap-1">
-                              <Sparkles size={11} className="animate-pulse" />
-                              Queued...
-                            </span>
-                          )}
-                          {/* Re-summarize for cards that already have summaries */}
-                          {item.ai_summary_text && item.gmail_message_id && (
                             <button
-                              onClick={async () => {
-                                if (!activeEmail) return;
-                                setSummarizingIds(prev => new Set(prev).add(item.gmail_message_id!));
-                                await apiService.summarizeEmail(item.gmail_message_id!, activeEmail);
-                                // Use the same coalesced bounded refresh — no duplicate timers
-                                scheduleSummaryRefresh(activeEmail);
-                              }}
-                              className="text-[9px] font-bold text-slate-500 hover:text-indigo-400 uppercase flex items-center gap-1 transition-colors"
+                              onClick={() => openEmailDetail(item)}
+                              className="text-[9px] font-bold text-slate-500 hover:text-slate-300 uppercase flex items-center gap-1 transition-colors"
                             >
-                              <Sparkles size={11} />
-                              Re-summarize
+                              Details <ChevronRight size={11} />
                             </button>
-                          )}
-                          <button
-                            onClick={() => openEmailDetail(item)}
-                            className="text-[9px] font-bold text-slate-500 hover:text-slate-300 uppercase flex items-center gap-1 transition-colors"
-                          >
-                            Details <ChevronRight size={11} />
-                          </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })
+                ) : null}
+
+                {/* BATCH LIMIT INDICATOR: Inform users about auto-summary limits */}
+                {currentItems.length > 30 && (
+                  <div className="w-full mt-8 mb-4 p-6 rounded-2xl bg-gradient-to-r from-indigo-500/10 to-violet-500/10 border border-indigo-500/20">
+                    <div className="flex items-start gap-4">
+                      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-indigo-600/20 flex items-center justify-center border border-indigo-500/30">
+                        <Sparkles size={20} className="text-indigo-400" />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-black text-indigo-300 mb-1 uppercase tracking-wide">
+                          Auto-Summary Batch Limit Reached
+                        </h4>
+                        <p className="text-xs text-slate-400 leading-relaxed mb-3">
+                          You have <span className="text-white font-bold">{currentItems.length} emails</span> in this account.
+                          Only the <span className="text-indigo-400 font-bold">first 30 emails</span> receive automatic AI summaries to optimize costs.
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          <strong className="text-indigo-400">💡 Tip:</strong> Use the <strong className="text-white">"Summarize Email"</strong> button
+                          to manually generate AI summaries for emails #{31} onwards.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {connectedAccounts.length === 0 && !error ? (
+                  /* ONBOARDING GUIDE: Professional zero-account state with step-by-step instructions */
+                  <div className="w-full py-10 flex flex-col items-center gap-6 text-center max-w-lg mx-auto">
+                    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-2xl">
+                      <Mail size={36} className="text-indigo-400" />
+                      <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-pulse" />
+                    </div>
+
+                    <div className="space-y-2">
+                      <h3 className="text-2xl font-black text-white">Welcome to {BRAND_NAME}</h3>
+                      <p className="text-slate-400 text-sm font-medium">
+                        Connect your Gmail account to start your intelligence feed.
+                      </p>
+                    </div>
+
+                    <div className="w-full bg-white/[0.02] border border-white/5 rounded-2xl p-5 text-left space-y-4">
+                      <div className="flex gap-3 items-start">
+                        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-xs">1</div>
+                        <div>
+                          <p className="text-slate-200 text-sm font-semibold">Connect your Gmail account</p>
+                          <p className="text-slate-500 text-xs mt-0.5">Click the button below to securely authorize access.</p>
                         </div>
                       </div>
-                    </motion.div>
-                  );
-                })
-              ) : null}
-
-              {/* BATCH LIMIT INDICATOR: Inform users about auto-summary limits */}
-              {currentItems.length > 30 && (
-                <div className="w-full mt-8 mb-4 p-6 rounded-2xl bg-gradient-to-r from-indigo-500/10 to-violet-500/10 border border-indigo-500/20">
-                  <div className="flex items-start gap-4">
-                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-indigo-600/20 flex items-center justify-center border border-indigo-500/30">
-                      <Sparkles size={20} className="text-indigo-400" />
+                      <div className="flex gap-3 items-start">
+                        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-xs">2</div>
+                        <div>
+                          <p className="text-slate-200 text-sm font-semibold">Select your account</p>
+                          <p className="text-slate-500 text-xs mt-0.5">Use the account switcher (top-right) to activate it. Up to {MAX_CONNECTED_ACCOUNTS} accounts.</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-3 items-start">
+                        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-xs">3</div>
+                        <div>
+                          <p className="text-slate-200 text-sm font-semibold">Your feed syncs automatically</p>
+                          <p className="text-slate-500 text-xs mt-0.5">Inbox emails appear and AI summaries generate in seconds.</p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <h4 className="text-sm font-black text-indigo-300 mb-1 uppercase tracking-wide">
-                        Auto-Summary Batch Limit Reached
-                      </h4>
-                      <p className="text-xs text-slate-400 leading-relaxed mb-3">
-                        You have <span className="text-white font-bold">{currentItems.length} emails</span> in this account.
-                        Only the <span className="text-indigo-400 font-bold">first 30 emails</span> receive automatic AI summaries to optimize costs.
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        <strong className="text-indigo-400">💡 Tip:</strong> Use the <strong className="text-white">"Summarize Email"</strong> button
-                        to manually generate AI summaries for emails #{31} onwards.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
 
-              {connectedAccounts.length === 0 && !error ? (
-                /* ONBOARDING GUIDE: Professional zero-account state with step-by-step instructions */
-                <div className="w-full py-10 flex flex-col items-center gap-6 text-center max-w-lg mx-auto">
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-2xl">
-                    <Mail size={36} className="text-indigo-400" />
-                    <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-pulse" />
-                  </div>
+                    <a
+                      href={apiService.getGoogleAuthUrl()}
+                      className="inline-flex items-center gap-3 px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold transition-all shadow-2xl shadow-indigo-600/30 active:scale-95 border border-indigo-400/20"
+                    >
+                      <Mail size={16} />
+                      <span>Connect Your First Account</span>
+                      <ChevronRight size={14} />
+                    </a>
 
-                  <div className="space-y-2">
-                    <h3 className="text-2xl font-black text-white">Welcome to {BRAND_NAME}</h3>
-                    <p className="text-slate-400 text-sm font-medium">
-                      Connect your Gmail account to start your intelligence feed.
+                    <p className="text-slate-600 text-xs max-w-xs">
+                      Read-only INBOX access. Encrypted credentials. Disconnect anytime.
                     </p>
                   </div>
-
-                  <div className="w-full bg-white/[0.02] border border-white/5 rounded-2xl p-5 text-left space-y-4">
-                    <div className="flex gap-3 items-start">
-                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-xs">1</div>
-                      <div>
-                        <p className="text-slate-200 text-sm font-semibold">Connect your Gmail account</p>
-                        <p className="text-slate-500 text-xs mt-0.5">Click the button below to securely authorize access.</p>
-                      </div>
+                ) : !activeEmail && connectedAccounts.length > 0 ? (
+                  /* CRITICAL: Show "Select Account" when accounts exist but none is active */
+                  <div className="w-full py-16 flex flex-col items-center gap-6 text-center">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-xl">
+                      <Mail size={28} className="text-indigo-400" />
+                      <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-pulse" />
                     </div>
-                    <div className="flex gap-3 items-start">
-                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-xs">2</div>
-                      <div>
-                        <p className="text-slate-200 text-sm font-semibold">Select your account</p>
-                        <p className="text-slate-500 text-xs mt-0.5">Use the account switcher (top-right) to activate it. Up to {MAX_CONNECTED_ACCOUNTS} accounts.</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-3 items-start">
-                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-xs">3</div>
-                      <div>
-                        <p className="text-slate-200 text-sm font-semibold">Your feed syncs automatically</p>
-                        <p className="text-slate-500 text-xs mt-0.5">Inbox emails appear and AI summaries generate in seconds.</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <a
-                    href={apiService.getGoogleAuthUrl()}
-                    className="inline-flex items-center gap-3 px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold transition-all shadow-2xl shadow-indigo-600/30 active:scale-95 border border-indigo-400/20"
-                  >
-                    <Mail size={16} />
-                    <span>Connect Your First Account</span>
-                    <ChevronRight size={14} />
-                  </a>
-
-                  <p className="text-slate-600 text-xs max-w-xs">
-                    Read-only INBOX access. Encrypted credentials. Disconnect anytime.
-                  </p>
-                </div>
-              ) : !activeEmail && connectedAccounts.length > 0 ? (
-                /* CRITICAL: Show "Select Account" when accounts exist but none is active */
-                <div className="w-full py-16 flex flex-col items-center gap-6 text-center">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-xl">
-                    <Mail size={28} className="text-indigo-400" />
-                    <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-pulse" />
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-black text-white mb-2">Select Account to Begin</h3>
-                    <p className="text-slate-400 max-w-md font-medium mb-6">
-                      You have {connectedAccounts.length} connected {connectedAccounts.length === 1 ? 'account' : 'accounts'}. Click the account switcher above to select which account to view.
-                    </p>
-                    <div className="flex flex-wrap gap-3 justify-center">
-                      {connectedAccounts.map((acc) => (
-                        acc.auth_required ? (
-                          <a
-                            key={acc.account_id}
-                            href={apiService.getGoogleAuthUrl()}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 hover:border-amber-400/50 transition-all group"
-                            title="Authentication expired — click to reconnect"
-                          >
-                            <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(acc.account_id)} text-[10px] font-black text-white shadow-md`}>
-                              {getEmailInitials(acc.account_id)}
-                            </span>
-                            <div className="text-left">
-                              <div className="text-xs font-bold text-amber-400 group-hover:text-amber-300 transition-colors">
-                                {acc.account_id.split('@')[0]}
+                    <div>
+                      <h3 className="text-2xl font-black text-white mb-2">Select Account to Begin</h3>
+                      <p className="text-slate-400 max-w-md font-medium mb-6">
+                        You have {connectedAccounts.length} connected {connectedAccounts.length === 1 ? 'account' : 'accounts'}. Click the account switcher above to select which account to view.
+                      </p>
+                      <div className="flex flex-wrap gap-3 justify-center">
+                        {connectedAccounts.map((acc) => (
+                          acc.auth_required ? (
+                            <a
+                              key={acc.account_id}
+                              href={apiService.getGoogleAuthUrl()}
+                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 hover:border-amber-400/50 transition-all group"
+                              title="Authentication expired — click to reconnect"
+                            >
+                              <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(acc.account_id)} text-[10px] font-black text-white shadow-md`}>
+                                {getEmailInitials(acc.account_id)}
+                              </span>
+                              <div className="text-left">
+                                <div className="text-xs font-bold text-amber-400 group-hover:text-amber-300 transition-colors">
+                                  {acc.account_id.split('@')[0]}
+                                </div>
+                                <div className="text-[9px] font-black text-amber-500 uppercase tracking-wider">Reconnect required</div>
                               </div>
-                              <div className="text-[9px] font-black text-amber-500 uppercase tracking-wider">Reconnect required</div>
-                            </div>
-                          </a>
-                        ) : (
-                          <button
-                            key={acc.account_id}
-                            onClick={() => handleSwitchAccount(acc.account_id)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/10 hover:bg-indigo-600/10 hover:border-indigo-500/30 transition-all group"
-                          >
-                            <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(acc.account_id)} text-[10px] font-black text-white shadow-md`}>
-                              {getEmailInitials(acc.account_id)}
-                            </span>
-                            <span className="text-xs font-bold text-slate-300 group-hover:text-indigo-300 transition-colors">
-                              {acc.account_id.split('@')[0]}
-                            </span>
-                          </button>
-                        )
-                      ))}
+                            </a>
+                          ) : (
+                            <button
+                              key={acc.account_id}
+                              onClick={() => handleSwitchAccount(acc.account_id)}
+                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/10 hover:bg-indigo-600/10 hover:border-indigo-500/30 transition-all group"
+                            >
+                              <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(acc.account_id)} text-[10px] font-black text-white shadow-md`}>
+                                {getEmailInitials(acc.account_id)}
+                              </span>
+                              <span className="text-xs font-bold text-slate-300 group-hover:text-indigo-300 transition-colors">
+                                {acc.account_id.split('@')[0]}
+                              </span>
+                            </button>
+                          )
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ) : !error && (
-                <div className="w-full py-32 flex flex-col items-center gap-6 text-center">
-                  <div className="w-24 h-24 rounded-full bg-white/[0.03] flex items-center justify-center text-slate-600 border border-white/5 relative shadow-inner">
-                    <Mail size={40} className="text-indigo-500/20" />
-                    <div className="absolute inset-0 rounded-full border border-indigo-500/10 animate-ping" />
+                ) : !error && (
+                  <div className="w-full py-32 flex flex-col items-center gap-6 text-center">
+                    <div className="w-24 h-24 rounded-full bg-white/[0.03] flex items-center justify-center text-slate-600 border border-white/5 relative shadow-inner">
+                      <Mail size={40} className="text-indigo-500/20" />
+                      <div className="absolute inset-0 rounded-full border border-indigo-500/10 animate-ping" />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-black text-white mb-2">{filterCategory} Channel Clear</h3>
+                      <p className="text-slate-500 max-w-xs font-medium">No fresh briefings caught in the {filterCategory} filter.</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-2xl font-black text-white mb-2">{filterCategory} Channel Clear</h3>
-                    <p className="text-slate-500 max-w-xs font-medium">No fresh briefings caught in the {filterCategory} filter.</p>
-                  </div>
-                </div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
-
-        {activeTab === 'inbox' && totalPages > 1 && !loading && (
-          <div className="flex items-center justify-center gap-8 mt-4">
-            <button
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              disabled={currentPage === 1}
-              className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
-            >
-              Previous
-            </button>
-            <div className="flex flex-col items-center min-w-[120px]">
-              <span className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">Navigation</span>
-              <span className="text-white font-black text-sm">{currentPage} of {totalPages}</span>
+                )}
+              </AnimatePresence>
             </div>
-            <button
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              disabled={currentPage === totalPages}
-              className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
-            >
-              Next
-            </button>
-          </div>
-        )}
-      </main>
+          )}
+
+          {activeTab === 'inbox' && totalPages > 1 && !loading && (
+            <div className="flex items-center justify-center gap-8 mt-4">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
+              >
+                Previous
+              </button>
+              <div className="flex flex-col items-center min-w-[120px]">
+                <span className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">Navigation</span>
+                <span className="text-white font-black text-sm">{currentPage} of {totalPages}</span>
+              </div>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </main>
+      </div>
 
       <footer className="max-w-7xl mx-auto px-6 pt-32 pb-16">
         <div className="flex flex-col md:flex-row items-center justify-between gap-8 border-t border-white/5 pt-12">
