@@ -279,7 +279,7 @@ export function ReplyComposeModal({
                     <div
                       role="radiogroup"
                       aria-labelledby="reply-tone-group-label"
-                      className="flex flex-wrap gap-2"
+                      className="grid grid-cols-2 gap-2"
                     >
                       {toneOptions.map((tone) => {
                         const isSelected = effectiveTone === tone.code;
@@ -292,7 +292,7 @@ export function ReplyComposeModal({
                             aria-checked={isSelected}
                             disabled={sending}
                             onClick={() => handleToneSelection(tone.code)}
-                            className={`min-h-[40px] px-3 py-2 rounded-xl text-xs font-bold transition-all border ${isSelected
+                            className={`w-full min-w-0 min-h-[40px] px-3 py-2 rounded-xl text-xs font-bold leading-tight text-center whitespace-normal break-words flex items-center justify-center transition-all border ${isSelected
                               ? 'bg-indigo-500/15 border-indigo-400/30 text-indigo-200'
                               : 'bg-white/[0.02] border-white/[0.08] text-slate-300 hover:text-white hover:bg-white/[0.05]'
                               } ${sending ? 'opacity-50 cursor-not-allowed' : ''}`}

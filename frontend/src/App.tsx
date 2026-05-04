@@ -1713,14 +1713,31 @@ export const App = () => {
 
             {/* Desktop-only controls */}
             <div className="hidden sm:flex items-center gap-3 flex-wrap justify-end min-w-0">
-              <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/5">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Sentinel Alerts</span>
-                <button
-                  onClick={() => notificationsEnabled ? setNotificationsEnabled(false) : requestNotificationPermission()}
-                  className={`w-10 h-5 rounded-full relative transition-colors duration-300 ${notificationsEnabled ? 'bg-indigo-600' : 'bg-slate-700'}`}
+              <div className="flex flex-col gap-1.5 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/5">
+                <div className="flex items-center gap-3">
+                  <span
+                    id="sentinel-alerts-label"
+                    className="text-[10px] font-black text-slate-500 uppercase tracking-widest"
+                  >
+                    Sentinel Alerts
+                  </span>
+                  <button
+                    type="button"
+                    aria-labelledby="sentinel-alerts-label"
+                    aria-describedby="sentinel-alerts-help"
+                    aria-pressed={notificationsEnabled}
+                    onClick={() => notificationsEnabled ? setNotificationsEnabled(false) : requestNotificationPermission()}
+                    className={`w-10 h-5 rounded-full relative transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f172a] ${notificationsEnabled ? 'bg-indigo-600' : 'bg-slate-700'}`}
+                  >
+                    <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 ${notificationsEnabled ? 'left-6' : 'left-1'}`} />
+                  </button>
+                </div>
+                <p
+                  id="sentinel-alerts-help"
+                  className="text-[11px] text-slate-500 leading-relaxed max-w-[240px]"
                 >
-                  <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 ${notificationsEnabled ? 'left-6' : 'left-1'}`} />
-                </button>
+                  Browser alerts for new high-urgency emails on this device. Requires notification permission.
+                </p>
               </div>
 
               <div className="relative">
@@ -1911,7 +1928,7 @@ export const App = () => {
                     {activeEmail}
                   </div>
                   <p id="ai-output-language-help" className="text-slate-500 text-xs mt-1 leading-relaxed">
-                    Applies to new summaries, action items, document analysis, and draft replies. Existing AI output is not changed retroactively.
+                    Applies to new summaries, action items, and draft replies. Existing AI output is not changed retroactively.
                   </p>
                 </div>
 
