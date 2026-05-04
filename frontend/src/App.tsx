@@ -1910,19 +1910,20 @@ export const App = () => {
                   <div className="text-slate-200 font-semibold text-sm truncate">
                     {activeEmail}
                   </div>
-                  <p className="text-slate-500 text-xs mt-1 leading-relaxed">
+                  <p id="ai-output-language-help" className="text-slate-500 text-xs mt-1 leading-relaxed">
                     Applies to new summaries, action items, document analysis, and draft replies. Existing AI output is not changed retroactively.
                   </p>
                 </div>
 
                 <div className="w-full md:w-auto md:min-w-[240px]">
-                  <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-2">
+                  <p id="ai-output-language-label" className="block text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-2">
                     Preferred Language
-                  </label>
+                  </p>
                   <div
                     className={`flex rounded-xl bg-white/[0.03] border border-white/[0.08] p-1 gap-1 ${aiLanguageLoading || aiLanguageSaving ? 'opacity-60 pointer-events-none' : ''}`}
                     role="radiogroup"
-                    aria-label="AI output language"
+                    aria-labelledby="ai-output-language-label"
+                    aria-describedby="ai-output-language-help"
                   >
                     {(supportedLanguages.length > 0 ? supportedLanguages : FALLBACK_LANGUAGE_OPTIONS).map((option) => {
                       const isActive = aiLanguage === option.code;
