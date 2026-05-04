@@ -238,17 +238,23 @@ export function ReplyComposeModal({
               )}
 
               <input
+                id="reply-subject-input"
+                name="replySubject"
                 type="text"
                 value={replySubject}
                 onChange={(e) => onReplySubjectChange(e.target.value)}
+                aria-label="Subject"
                 placeholder="Subject"
                 className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
               />
 
               <input
+                id="reply-cc-input"
+                name="replyCC"
                 type="text"
                 value={replyCC}
                 onChange={(e) => onReplyCCChange(e.target.value)}
+                aria-label="Cc"
                 placeholder="Cc (optional — comma or semicolon separated)"
                 className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
               />
@@ -266,13 +272,13 @@ export function ReplyComposeModal({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                    <p id="reply-tone-group-label" className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                       Tone
-                    </label>
+                    </p>
 
                     <div
                       role="radiogroup"
-                      aria-label="Reply tone"
+                      aria-labelledby="reply-tone-group-label"
                       className="flex flex-wrap gap-2"
                     >
                       {toneOptions.map((tone) => {
@@ -299,10 +305,12 @@ export function ReplyComposeModal({
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                    <label htmlFor="reply-template-select" className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                       Template
                     </label>
                     <select
+                      id="reply-template-select"
+                      name="selectedTemplateId"
                       value={selectedTemplateId}
                       onChange={(e) => setSelectedTemplateId(e.target.value)}
                       disabled={templatesLoading || templateOptions.length === 0}
@@ -380,11 +388,13 @@ export function ReplyComposeModal({
 
                 {showSaveTemplateForm && (
                   <div className="space-y-2 rounded-xl border border-white/[0.06] bg-black/5 px-3 py-2.5">
-                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                    <label htmlFor="reply-template-name-input" className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                       Template Name
                     </label>
                     <div className="flex flex-col sm:flex-row gap-2">
                       <input
+                        id="reply-template-name-input"
+                        name="templateName"
                         type="text"
                         value={templateName}
                         onChange={(e) => setTemplateName(e.target.value)}
@@ -417,7 +427,7 @@ export function ReplyComposeModal({
 
               <div className="rounded-2xl border border-indigo-500/[0.14] bg-white/[0.035] px-3 py-3 sm:px-4 sm:py-4 space-y-2 shadow-lg shadow-black/10 transition-colors duration-150 focus-within:border-indigo-500/[0.26] focus-within:bg-white/[0.05]">
                 <div className="space-y-1">
-                  <p className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.2em]">
+                  <p id="reply-body-label" className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.2em]">
                     Reply Body
                   </p>
                   <p className="text-xs text-slate-400 leading-relaxed">
@@ -426,6 +436,9 @@ export function ReplyComposeModal({
                 </div>
 
                 <textarea
+                  id="reply-body-textarea"
+                  name="replyBody"
+                  aria-labelledby="reply-body-label"
                   ref={replyTextareaRef}
                   value={replyBody}
                   onChange={(e) => onReplyBodyChange(e.target.value)}
