@@ -96,8 +96,10 @@ export const App = () => {
     selectedEmailDetail?.gmail_message_id ??
     selectedEmailDetail?.thread_id ??
     null;
-  const aiLanguageRef = useRef<string>('en');
+  const aiLanguageRef = useRef<AILanguage>('en');
   const aiLanguageResolvedAccountRef = useRef<string | null>(null);
+  const resolvedLanguageOptions =
+    supportedLanguages.length > 0 ? supportedLanguages : FALLBACK_LANGUAGE_OPTIONS;
 
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) return;
@@ -1317,7 +1319,7 @@ export const App = () => {
     // setLoading(false) handled by fetchEmails' finally (or pending switch path)
   };
 
-  const handleAiLanguageChange = async (nextLanguage: string) => {
+  const handleAiLanguageChange = async (nextLanguage: AILanguage) => {
     if (!activeEmail || aiLanguageSaving) return;
 
     const accountId = activeEmail;
@@ -1327,7 +1329,7 @@ export const App = () => {
     setAiLanguageResolvedAccountId(null);
 
     aiLanguageRef.current = nextLanguage;
-    setAiLanguage(nextLanguage as AILanguage);
+    setAiLanguage(nextLanguage);
     setAiLanguageSaving(true);
     setAiLanguageError(null);
     setAiLanguageSavedAccountId(null);
@@ -1764,6 +1766,14 @@ export const App = () => {
                       authUrl={apiService.getGoogleAuthUrl()}
                       onSwitchAccount={handleSwitchAccount}
                       onRequestDisconnect={(id) => setConfirmDisconnect(id)}
+                      aiLanguage={aiLanguage}
+                      aiLanguageLoading={aiLanguageLoading}
+                      aiLanguageSaving={aiLanguageSaving}
+                      aiLanguageError={aiLanguageError}
+                      aiLanguageSavedAccountId={aiLanguageSavedAccountId}
+                      languageOptions={resolvedLanguageOptions}
+                      onAiLanguageChange={handleAiLanguageChange}
+                      languageAriaIdPrefix="desktop"
                     />
                   )}
                 </div>
@@ -1799,6 +1809,14 @@ export const App = () => {
                 authUrl={apiService.getGoogleAuthUrl()}
                 onSwitchAccount={handleSwitchAccount}
                 onRequestDisconnect={(id) => setConfirmDisconnect(id)}
+                aiLanguage={aiLanguage}
+                aiLanguageLoading={aiLanguageLoading}
+                aiLanguageSaving={aiLanguageSaving}
+                aiLanguageError={aiLanguageError}
+                aiLanguageSavedAccountId={aiLanguageSavedAccountId}
+                languageOptions={resolvedLanguageOptions}
+                onAiLanguageChange={handleAiLanguageChange}
+                languageAriaIdPrefix="mobile"
               />
               {canShowSyncControl && (
                 <button
@@ -1923,69 +1941,6 @@ export const App = () => {
                 </p>
               </div>
 
-            </div>
-          )}
-
-          {activeEmail && (
-            <div className="mb-8 max-w-[720px] mx-auto">
-              <div className="rounded-2xl bg-white/[0.02] border border-white/[0.06] p-4 md:p-5 shadow-lg shadow-black/10">
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-1">
-                      AI Output Language
-                    </div>
-                    <div className="text-slate-200 font-semibold text-sm truncate">
-                      {activeEmail}
-                    </div>
-                    <p id="ai-output-language-help" className="text-slate-500 text-xs mt-1 leading-relaxed">
-                      Applies to new summaries, action items, and draft replies. Existing AI output is not changed retroactively.
-                    </p>
-                  </div>
-
-                  <div className="w-full md:w-auto md:min-w-[240px]">
-                    <p id="ai-output-language-label" className="block text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-2">
-                      Preferred Language
-                    </p>
-                    <div
-                      className={`flex rounded-xl bg-white/[0.03] border border-white/[0.08] p-1 gap-1 ${aiLanguageLoading || aiLanguageSaving ? 'opacity-60 pointer-events-none' : ''}`}
-                      role="radiogroup"
-                      aria-labelledby="ai-output-language-label"
-                      aria-describedby="ai-output-language-help"
-                    >
-                      {(supportedLanguages.length > 0 ? supportedLanguages : FALLBACK_LANGUAGE_OPTIONS).map((option) => {
-                        const isActive = aiLanguage === option.code;
-                        return (
-                          <button
-                            key={option.code}
-                            type="button"
-                            role="radio"
-                            aria-checked={isActive}
-                            onClick={() => handleAiLanguageChange(option.code)}
-                            className={`flex-1 rounded-lg py-2 px-3 text-sm font-semibold transition-all duration-150 border ${isActive
-                              ? 'bg-indigo-500/18 border-indigo-400/30 text-indigo-100 shadow-sm shadow-indigo-950/20'
-                              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                              }`}
-                          >
-                            {option.native}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="mt-2 min-h-[18px]">
-                      {aiLanguageSaving ? (
-                        <p className="text-[11px] font-medium text-indigo-300">Saving preference…</p>
-                      ) : aiLanguageLoading ? (
-                        <p className="text-[11px] font-medium text-slate-500">Loading preference…</p>
-                      ) : aiLanguageError ? (
-                        <p className="text-[11px] font-medium text-rose-400">{aiLanguageError}</p>
-                      ) : aiLanguageSavedAccountId === activeEmail ? (
-                        <p className="text-[11px] font-medium text-emerald-400">Preference saved for this account.</p>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 

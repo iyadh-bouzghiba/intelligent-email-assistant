@@ -2,10 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, User } from 'lucide-react';
 import { AccountInfo } from '@types';
-import { AccountSwitcherList } from './AccountSwitcherList';
+import { AccountSwitcherList, type AccountSwitcherLanguageProps } from './AccountSwitcherList';
 import { getAccountColor, getEmailInitials } from './accountSwitcherHelpers';
 
-interface Props {
+interface Props extends AccountSwitcherLanguageProps {
   connectedAccounts: AccountInfo[];
   activeEmail: string | null;
   offlineAccounts: Set<string>;
@@ -37,6 +37,14 @@ export function AccountSwitcherMobile({
   authUrl,
   onSwitchAccount,
   onRequestDisconnect,
+  aiLanguage,
+  aiLanguageLoading,
+  aiLanguageSaving,
+  aiLanguageError,
+  aiLanguageSavedAccountId,
+  languageOptions,
+  onAiLanguageChange,
+  languageAriaIdPrefix,
 }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [showMaxMsg, setShowMaxMsg] = useState(false);
@@ -88,7 +96,8 @@ export function AccountSwitcherMobile({
         aria-label={activeEmail ? 'Switch account' : 'Select account'}
         title={activeEmail ? 'Switch account' : 'Select account'}
         aria-expanded={isOpen}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
+        aria-controls="account-switcher-mobile-popover"
         className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-slate-200 active:scale-95 transition-all min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:ring-offset-0 ${isOpen
           ? 'bg-white/[0.05] border-indigo-500/40 ring-1 ring-indigo-500/20'
           : 'bg-white/[0.03] border-white/10 hover:bg-white/[0.05]'
@@ -131,13 +140,14 @@ export function AccountSwitcherMobile({
       <AnimatePresence>
         {isOpen && (
           <motion.div
+            id="account-switcher-mobile-popover"
             ref={popoverRef}
             onPointerDown={(e) => e.stopPropagation()}
             initial={{ opacity: 0, y: -4, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.97 }}
             transition={{ duration: 0.13, ease: 'easeOut' }}
-            className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-[#0f172a] border border-white/10 shadow-2xl z-[100] overflow-hidden"
+            className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-[#0f172a] border border-white/10 shadow-2xl z-[100] overflow-hidden max-h-[70vh] overflow-y-auto custom-scrollbar"
           >
             <AccountSwitcherList
               connectedAccounts={connectedAccounts}
@@ -156,6 +166,14 @@ export function AccountSwitcherMobile({
               }}
               onMaxAccountsAttempt={() => setShowMaxMsg(true)}
               onClose={close}
+              aiLanguage={aiLanguage}
+              aiLanguageLoading={aiLanguageLoading}
+              aiLanguageSaving={aiLanguageSaving}
+              aiLanguageError={aiLanguageError}
+              aiLanguageSavedAccountId={aiLanguageSavedAccountId}
+              languageOptions={languageOptions}
+              onAiLanguageChange={onAiLanguageChange}
+              languageAriaIdPrefix={languageAriaIdPrefix}
             />
           </motion.div>
         )}

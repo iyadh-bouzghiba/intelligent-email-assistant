@@ -2,10 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { AccountInfo } from '@types';
-import { AccountSwitcherList } from './AccountSwitcherList';
+import { AccountSwitcherList, type AccountSwitcherLanguageProps } from './AccountSwitcherList';
 import { getAccountColor, getEmailInitials } from './accountSwitcherHelpers';
 
-interface Props {
+interface Props extends AccountSwitcherLanguageProps {
   connectedAccounts: AccountInfo[];
   activeEmail: string | null;
   offlineAccounts: Set<string>;
@@ -34,6 +34,14 @@ export function AccountSwitcherDesktop({
   authUrl,
   onSwitchAccount,
   onRequestDisconnect,
+  aiLanguage,
+  aiLanguageLoading,
+  aiLanguageSaving,
+  aiLanguageError,
+  aiLanguageSavedAccountId,
+  languageOptions,
+  onAiLanguageChange,
+  languageAriaIdPrefix,
 }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [showMaxMsg, setShowMaxMsg] = useState(false);
@@ -70,7 +78,8 @@ export function AccountSwitcherDesktop({
           setIsOpen((v) => !v);
         }}
         aria-expanded={isOpen}
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
+        aria-controls="account-switcher-desktop-popover"
         className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/10 text-slate-200 hover:bg-white/[0.05] transition-all min-w-0"
       >
         {activeEmail ? (
@@ -108,6 +117,7 @@ export function AccountSwitcherDesktop({
       <AnimatePresence>
         {isOpen && (
           <motion.div
+            id="account-switcher-desktop-popover"
             ref={menuRef}
             onMouseDown={(e) => e.stopPropagation()}
             initial={{ opacity: 0, y: -6 }}
@@ -133,6 +143,14 @@ export function AccountSwitcherDesktop({
               }}
               onMaxAccountsAttempt={() => setShowMaxMsg(true)}
               onClose={close}
+              aiLanguage={aiLanguage}
+              aiLanguageLoading={aiLanguageLoading}
+              aiLanguageSaving={aiLanguageSaving}
+              aiLanguageError={aiLanguageError}
+              aiLanguageSavedAccountId={aiLanguageSavedAccountId}
+              languageOptions={languageOptions}
+              onAiLanguageChange={onAiLanguageChange}
+              languageAriaIdPrefix={languageAriaIdPrefix}
             />
           </motion.div>
         )}
