@@ -1,8 +1,20 @@
 import { AlertCircle, LogOut } from 'lucide-react';
-import { AccountInfo } from '@types';
+import type { AILanguage } from '@services';
+import type { AccountInfo, SupportedLanguage } from '@types';
 import { getAccountColor, getEmailInitials } from './accountSwitcherHelpers';
 
-interface Props {
+export interface AccountSwitcherLanguageProps {
+  aiLanguage: AILanguage;
+  aiLanguageLoading: boolean;
+  aiLanguageSaving: boolean;
+  aiLanguageError: string | null;
+  aiLanguageSavedAccountId: string | null;
+  languageOptions: SupportedLanguage[];
+  onAiLanguageChange: (language: AILanguage) => void;
+  languageAriaIdPrefix: 'desktop' | 'mobile';
+}
+
+interface Props extends AccountSwitcherLanguageProps {
   connectedAccounts: AccountInfo[];
   activeEmail: string | null;
   offlineAccounts: Set<string>;
@@ -15,14 +27,14 @@ interface Props {
   onRequestDisconnect: (accountId: string) => void;
   /** Called when the user clicks "+ Add account" while already at max capacity. */
   onMaxAccountsAttempt: () => void;
-  /** Called when auth_required account link is clicked — used to close the panel. */
+  /** Called when auth_required account link is clicked - used to close the panel. */
   onClose: () => void;
 }
 
 /**
- * Shared account-list content used by both mobile (bottom-sheet) and desktop (dropdown).
- * Pure presentation — no switching logic, no open/close state.
- * All callbacks come from the parent surface component.
+ * Shared account switcher content used by both mobile and desktop surfaces.
+ * Presentation-only: renders account rows, account-context preference controls,
+ * and footer actions. All callbacks and state come from parent surfaces.
  */
 export function AccountSwitcherList({
   connectedAccounts,
@@ -35,12 +47,23 @@ export function AccountSwitcherList({
   onRequestDisconnect,
   onMaxAccountsAttempt,
   onClose,
+  aiLanguage,
+  aiLanguageLoading,
+  aiLanguageSaving,
+  aiLanguageError,
+  aiLanguageSavedAccountId,
+  languageOptions,
+  onAiLanguageChange,
+  languageAriaIdPrefix,
 }: Props) {
   const sorted = [...connectedAccounts].sort((a, b) => {
     if (a.account_id === activeEmail) return -1;
     if (b.account_id === activeEmail) return 1;
     return 0;
   });
+
+  const languageLabelId = `ai-output-language-label-${languageAriaIdPrefix}`;
+  const languageHelpId = `ai-output-language-help-${languageAriaIdPrefix}`;
 
   return (
     <>
@@ -119,6 +142,65 @@ export function AccountSwitcherList({
           </div>
         );
       })}
+
+      {activeEmail && (
+        <div className="border-t border-white/5 px-4 py-3 space-y-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-1">
+              AI Output Language
+            </div>
+            <div className="text-slate-200 font-semibold text-xs truncate">
+              {activeEmail}
+            </div>
+            <p id={languageHelpId} className="text-slate-500 text-[11px] mt-1 leading-relaxed">
+              Applies to new summaries, action items, and draft replies. Existing AI output is not changed retroactively.
+            </p>
+          </div>
+
+          <div>
+            <p id={languageLabelId} className="block text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-2">
+              Preferred Language
+            </p>
+            <div
+              className={`flex rounded-xl bg-white/[0.03] border border-white/[0.08] p-1 gap-1 ${aiLanguageLoading || aiLanguageSaving ? 'opacity-60 pointer-events-none' : ''}`}
+              role="radiogroup"
+              aria-labelledby={languageLabelId}
+              aria-describedby={languageHelpId}
+            >
+              {languageOptions.map((option) => {
+                const isActive = aiLanguage === option.code;
+                return (
+                  <button
+                    key={option.code}
+                    type="button"
+                    role="radio"
+                    aria-checked={isActive}
+                    onClick={() => onAiLanguageChange(option.code)}
+                    className={`flex-1 rounded-lg py-2 px-3 text-xs font-semibold transition-all duration-150 border ${isActive
+                      ? 'bg-indigo-500/18 border-indigo-400/30 text-indigo-100 shadow-sm shadow-indigo-950/20'
+                      : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                      }`}
+                  >
+                    {option.native}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-2 min-h-[18px]">
+              {aiLanguageSaving ? (
+                <p className="text-[11px] font-medium text-indigo-300">Saving preference...</p>
+              ) : aiLanguageLoading ? (
+                <p className="text-[11px] font-medium text-slate-500">Loading preference...</p>
+              ) : aiLanguageError ? (
+                <p className="text-[11px] font-medium text-rose-400">{aiLanguageError}</p>
+              ) : aiLanguageSavedAccountId === activeEmail ? (
+                <p className="text-[11px] font-medium text-emerald-400">Preference saved for this account.</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add account footer */}
       <div className="border-t border-white/5 px-4 py-3 space-y-2.5">
