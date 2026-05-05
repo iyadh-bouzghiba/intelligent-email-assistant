@@ -147,19 +147,19 @@ export function AccountSwitcherList({
         <div className="border-t border-white/5 px-4 py-3 space-y-3">
           <div className="min-w-0">
             <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-1">
-              AI Output Language
+              AI Language for This Account
             </div>
             <div className="text-slate-200 font-semibold text-xs truncate">
               {activeEmail}
             </div>
             <p id={languageHelpId} className="text-slate-500 text-[11px] mt-1 leading-relaxed">
-              Applies to new summaries, action items, and draft replies. Existing AI output is not changed retroactively.
+              Used for new summaries, action items, and draft replies on this account. Existing AI results stay unchanged.
             </p>
           </div>
 
           <div>
             <p id={languageLabelId} className="block text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-2">
-              Preferred Language
+              Use This Language for New AI Results
             </p>
             <div
               className={`flex rounded-xl bg-white/[0.03] border border-white/[0.08] p-1 gap-1 ${aiLanguageLoading || aiLanguageSaving ? 'opacity-60 pointer-events-none' : ''}`}
@@ -189,13 +189,13 @@ export function AccountSwitcherList({
 
             <div className="mt-2 min-h-[18px]">
               {aiLanguageSaving ? (
-                <p className="text-[11px] font-medium text-indigo-300">Saving preference...</p>
+                <p className="text-[11px] font-medium text-indigo-300">Saving AI language...</p>
               ) : aiLanguageLoading ? (
-                <p className="text-[11px] font-medium text-slate-500">Loading preference...</p>
+                <p className="text-[11px] font-medium text-slate-500">Loading AI language...</p>
               ) : aiLanguageError ? (
                 <p className="text-[11px] font-medium text-rose-400">{aiLanguageError}</p>
               ) : aiLanguageSavedAccountId === activeEmail ? (
-                <p className="text-[11px] font-medium text-emerald-400">Preference saved for this account.</p>
+                <p className="text-[11px] font-medium text-emerald-400">AI language saved for this account.</p>
               ) : null}
             </div>
           </div>
