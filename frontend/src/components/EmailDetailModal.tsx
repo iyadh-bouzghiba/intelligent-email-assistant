@@ -231,68 +231,70 @@ export function EmailDetailModal({
               )}
             </div>
 
-            {/* ── Footer: action bar ────────────────────────────────────────── */}
-            <div className="flex-shrink-0 border-t border-white/[0.12] bg-[#0f172a] px-4 py-3 sm:px-6 sm:py-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-              {/* Left: Close + Summarize + read/unread toggle */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={onClose}
-                  className="inline-flex items-center justify-center min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
-                >
-                  Close
-                </button>
-                {showSummarizeButton && (
+            {/* Footer: action bar */}
+            <div className="flex-shrink-0 border-t border-white/[0.12] bg-[#0f172a] px-4 py-3 sm:px-6 sm:py-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                {/* Secondary controls: Close stays desktop-only so mobile relies on the header X */}
+                <div className="flex w-full flex-wrap items-center gap-2 md:w-auto">
                   <button
-                    onClick={summarizeButtonHandler}
-                    className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
+                    onClick={onClose}
+                    className="hidden md:inline-flex items-center justify-center min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
                   >
-                    <Sparkles size={12} />
-                    {summarizeButtonLabel}
+                    Close
                   </button>
-                )}
-                {modifyScope && !detailIsSent && (
-                  isRead ? (
+                  {showSummarizeButton && (
                     <button
-                      onClick={onMarkUnread}
-                      disabled={readStatePending}
-                      className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Mark as unread"
+                      onClick={summarizeButtonHandler}
+                      className="inline-flex flex-1 md:flex-none items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
                     >
-                      {readStatePending ? <RefreshCw size={12} className="animate-spin" /> : <Mail size={12} />}
-                      Mark Unread
+                      <Sparkles size={12} />
+                      {summarizeButtonLabel}
                     </button>
-                  ) : (
-                    <button
-                      onClick={onMarkRead}
-                      disabled={readStatePending}
-                      className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Mark as read"
-                    >
-                      {readStatePending ? <RefreshCw size={12} className="animate-spin" /> : <MailOpen size={12} />}
-                      Mark Read
-                    </button>
-                  )
-                )}
-              </div>
+                  )}
+                  {modifyScope && !detailIsSent && (
+                    isRead ? (
+                      <button
+                        onClick={onMarkUnread}
+                        disabled={readStatePending}
+                        className="inline-flex flex-1 md:flex-none items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Mark as unread"
+                      >
+                        {readStatePending ? <RefreshCw size={12} className="animate-spin" /> : <Mail size={12} />}
+                        Mark Unread
+                      </button>
+                    ) : (
+                      <button
+                        onClick={onMarkRead}
+                        disabled={readStatePending}
+                        className="inline-flex flex-1 md:flex-none items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Mark as read"
+                      >
+                        {readStatePending ? <RefreshCw size={12} className="animate-spin" /> : <MailOpen size={12} />}
+                        Mark Read
+                      </button>
+                    )
+                  )}
+                </div>
 
-              {/* Right: view switch / Draft Reply */}
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {panelView === 'quick' ? (
-                  <button
-                    onClick={() => onSwitchView('full')}
-                    className="inline-flex items-center justify-center min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-white/[0.06] border border-white/10 text-slate-300 hover:text-white hover:bg-white/10 text-xs font-bold transition-all"
-                  >
-                    Read full email
-                  </button>
-                ) : !detailIsSent ? (
-                  <button
-                    onClick={onOpenReply}
-                    className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20"
-                  >
-                    <Mail size={12} />
-                    Draft Reply
-                  </button>
-                ) : null}
+                {/* Primary / tertiary action zone */}
+                <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center md:gap-2 md:flex-shrink-0">
+                  {panelView === 'quick' ? (
+                    <button
+                      onClick={() => onSwitchView('full')}
+                      className="inline-flex w-full md:w-auto items-center justify-center min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl border border-transparent bg-transparent text-slate-300 hover:text-white hover:bg-white/5 text-xs font-bold transition-all md:bg-white/[0.06] md:border-white/10 md:hover:bg-white/10"
+                    >
+                      Read full email
+                    </button>
+                  ) : !detailIsSent ? (
+                    <button
+                      onClick={onOpenReply}
+                      className="inline-flex w-full md:w-auto items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20"
+                    >
+                      <Mail size={12} />
+                      Draft Reply
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
           </motion.div>
