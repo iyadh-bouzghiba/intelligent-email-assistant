@@ -1349,8 +1349,13 @@ export const App = () => {
       // Re-fetch emails with new language preference so summaries reflect the saved language
       fetchEmails(accountId, { reason: 'language-change' });
 
-      // Explicitly refresh templates for the new saved language
-      await refreshTemplatesForContext(accountId, savedLanguage as AILanguage);
+      // Explicitly refresh templates for the new saved language.
+      // A template refresh miss must not roll back a successfully saved language preference.
+      try {
+        await refreshTemplatesForContext(accountId, savedLanguage as AILanguage);
+      } catch {
+        // Best-effort reconciliation only. Keep the saved language authoritative.
+      }
     } catch (error) {
       if (activeEmailRef.current !== accountId) return;
 
@@ -1388,13 +1393,13 @@ export const App = () => {
     setTemplatesError(null);
   };
 
-  const handleSaveTemplate = async (name: string) => {
-    if (!activeEmail) return;
+  const handleSaveTemplate = async (name: string): Promise<boolean> => {
+    if (!activeEmail) return false;
 
     const trimmedName = name.trim();
     const trimmedBody = replyBody.trim();
 
-    if (!trimmedName || !trimmedBody) return;
+    if (!trimmedName || !trimmedBody) return false;
 
     const accountId = activeEmail;
     const language = aiLanguage;
@@ -1403,7 +1408,7 @@ export const App = () => {
     setTemplatesError(null);
 
     try {
-      await apiService.createTemplate({
+      const createdTemplate = await apiService.createTemplate({
         account_id: accountId,
         name: trimmedName,
         tone: selectedTone,
@@ -1411,11 +1416,31 @@ export const App = () => {
         body: trimmedBody,
       });
 
-      if (activeEmailRef.current !== accountId) return;
-      await refreshTemplatesForContext(accountId, language);
+      if (activeEmailRef.current === accountId) {
+        setTemplates((prev) => {
+          if (createdTemplate.id) {
+            const withoutCreatedTemplate = prev.filter(
+              (template) => template.id !== createdTemplate.id
+            );
+            return [createdTemplate, ...withoutCreatedTemplate];
+          }
+
+          return [createdTemplate, ...prev];
+        });
+
+        try {
+          await refreshTemplatesForContext(accountId, language);
+        } catch {
+          // Best-effort reconciliation only. The template is already saved.
+        }
+      }
+
+      return true;
     } catch (error) {
-      if (activeEmailRef.current !== accountId) return;
-      setTemplatesError('Could not save template. Please try again.');
+      if (activeEmailRef.current !== accountId) return false;
+
+      setTemplatesError('Template save failed. Please try again.');
+      return false;
     } finally {
       if (activeEmailRef.current === accountId) {
         setTemplateSaving(false);
@@ -1435,8 +1460,15 @@ export const App = () => {
     try {
       await apiService.deleteTemplate(templateId, accountId);
 
-      if (activeEmailRef.current !== accountId) return;
-      await refreshTemplatesForContext(accountId, language);
+      if (activeEmailRef.current === accountId) {
+        setTemplates((prev) => prev.filter((template) => template.id !== templateId));
+
+        try {
+          await refreshTemplatesForContext(accountId, language);
+        } catch {
+          // Best-effort reconciliation only. The template is already deleted.
+        }
+      }
     } catch (error) {
       if (activeEmailRef.current !== accountId) return;
       setTemplatesError('Could not delete template. Please try again.');
