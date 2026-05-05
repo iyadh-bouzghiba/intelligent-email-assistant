@@ -1632,8 +1632,10 @@ export const App = () => {
     : collapsedInbox.filter(b => b.category === filterCategory))
     .filter(b => !isSelfGeneratedAlert(b)); // Remove self-generated alerts
 
-  const currentItems = filteredBriefings.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
   const totalPages = Math.ceil(filteredBriefings.length / ITEMS_PER_PAGE);
+  const effectiveInboxPage = totalPages > 0 ? Math.min(currentPage, totalPages) : 1;
+  const currentItems = filteredBriefings.slice((effectiveInboxPage - 1) * ITEMS_PER_PAGE, effectiveInboxPage * ITEMS_PER_PAGE);
+  const hasFilteredBriefings = filteredBriefings.length > 0;
 
   // Unread count: thread-level collapsed rows (not raw per-message count)
   const unreadCount = collapsedInbox.filter(b => b.is_read === false).length;
@@ -1668,14 +1670,25 @@ export const App = () => {
   });
 
   // Show feed toolbar only when an account is active AND the feed has either
-  // already loaded data or finished its initial load — prevents toolbar flashing
+  // already loaded data or finished its initial load - prevents toolbar flashing
   // during the "Analyzing..." skeleton state on first account selection.
   const showFeedNavigation = Boolean(activeEmail) && (!loading || briefings.length > 0);
+  const showInboxEmptyState = activeTab === 'inbox' && !loading && !error && !hasFilteredBriefings;
+  const showInboxPagination = activeTab === 'inbox' && !loading && hasFilteredBriefings && totalPages > 1;
   const showWakingOverlay = startupPhase === 'waking';
   const canShowSyncControl =
     startupPhase === 'ready' &&
     Boolean(activeEmail) &&
     connectedAccounts.length > 0;
+
+  // Clamp inbox page when the filtered result set shrinks so the page indicator,
+  // list slice, and empty state all stay aligned.
+  useEffect(() => {
+    const nextPage = totalPages === 0 ? 1 : Math.min(currentPage, totalPages);
+    if (currentPage !== nextPage) {
+      setCurrentPage(nextPage);
+    }
+  }, [currentPage, totalPages]);
 
   if (startupPhase !== 'ready') {
     return (
@@ -2323,7 +2336,7 @@ export const App = () => {
                       </div>
                     </div>
                   </div>
-                ) : !error && (
+                ) : showInboxEmptyState && (
                   <div className="w-full py-32 flex flex-col items-center gap-6 text-center">
                     <div className="w-24 h-24 rounded-full bg-white/[0.03] flex items-center justify-center text-slate-600 border border-white/5 relative shadow-inner">
                       <Mail size={40} className="text-indigo-500/20" />
@@ -2339,22 +2352,22 @@ export const App = () => {
             </div>
           )}
 
-          {activeTab === 'inbox' && totalPages > 1 && !loading && (
+          {showInboxPagination && (
             <div className="flex items-center justify-center gap-8 mt-4">
               <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(Math.max(1, effectiveInboxPage - 1))}
+                disabled={effectiveInboxPage === 1}
                 className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
               >
                 Previous
               </button>
               <div className="flex flex-col items-center min-w-[120px]">
                 <span className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">Navigation</span>
-                <span className="text-white font-black text-sm">{currentPage} of {totalPages}</span>
+                <span className="text-white font-black text-sm">{effectiveInboxPage} of {totalPages}</span>
               </div>
               <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(Math.min(totalPages, effectiveInboxPage + 1))}
+                disabled={effectiveInboxPage === totalPages}
                 className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
               >
                 Next
