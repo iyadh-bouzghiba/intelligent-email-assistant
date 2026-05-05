@@ -32,7 +32,7 @@ interface Props {
   templateSaving?: boolean;
   templateDeletingId?: string | null;
   onApplyTemplate?: (template: EmailTemplate) => void;
-  onSaveTemplate?: (name: string) => Promise<void> | void;
+  onSaveTemplate?: (name: string) => Promise<boolean> | boolean;
   onDeleteTemplate?: (templateId: string) => Promise<void> | void;
 
   /**
@@ -153,7 +153,9 @@ export function ReplyComposeModal({
     const trimmed = templateName.trim();
     if (!trimmed) return;
 
-    await saveTemplate(trimmed);
+    const didSave = await saveTemplate(trimmed);
+    if (!didSave) return;
+
     setTemplateName('');
     setShowSaveTemplateForm(false);
   };

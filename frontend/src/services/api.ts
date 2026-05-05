@@ -317,15 +317,10 @@ export const apiService = {
         account_id: string,
         language: TemplateLanguage
     ): Promise<EmailTemplate[]> => {
-        try {
-            const response = await api.get(`${API_ROOT}/templates`, {
-                params: { account_id, language },
-            });
-            return response.data ?? [];
-        } catch (error) {
-            console.warn('📡 API: listTemplates failed, returning empty list', error);
-            return [];
-        }
+        const response = await api.get(`${API_ROOT}/templates`, {
+            params: { account_id, language },
+        });
+        return response.data ?? [];
     },
 
     createTemplate: async (
