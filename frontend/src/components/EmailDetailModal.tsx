@@ -121,10 +121,10 @@ export function EmailDetailModal({
             aria-modal="true"
             aria-labelledby={TITLE_ID}
             aria-describedby={DESC_ID}
-            className="pointer-events-auto w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-2xl bg-[#0f172a] border-0 sm:border sm:border-white/10 rounded-none sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            className="pointer-events-auto w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-2xl bg-brand-surface border-0 sm:border sm:border-brand-border rounded-none sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
           >
             {/* ── Header ───────────────────────────────────────────────────── */}
-            <div className="flex-shrink-0 bg-[#0f172a] border-b border-white/5 px-4 py-4 sm:px-6 sm:py-5">
+            <div className="flex-shrink-0 bg-brand-surface border-b border-white/5 px-4 py-4 sm:px-6 sm:py-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <h2 id={TITLE_ID} className="text-xl font-black text-white mb-2 leading-tight">
@@ -178,7 +178,7 @@ export function EmailDetailModal({
                         </span>
                         <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${isRead
                           ? 'bg-slate-500/10 text-slate-500 border-slate-500/20'
-                          : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                          : 'bg-primary-500/10 text-primary-400 border-primary-500/20'
                           }`}>
                           {isRead ? 'Read' : 'Unread'}
                         </span>
@@ -232,7 +232,7 @@ export function EmailDetailModal({
             </div>
 
             {/* Footer: action bar */}
-            <div className="flex-shrink-0 border-t border-white/[0.12] bg-[#0f172a] px-4 py-3 sm:px-6 sm:py-4">
+            <div className="flex-shrink-0 border-t border-white/[0.12] bg-brand-surface px-4 py-3 sm:px-6 sm:py-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 {/* Secondary controls: Close stays desktop-only so mobile relies on the header X */}
                 <div className="flex w-full flex-wrap items-center gap-2 md:w-auto">
@@ -288,7 +288,7 @@ export function EmailDetailModal({
                   ) : !detailIsSent ? (
                     <button
                       onClick={onOpenReply}
-                      className="inline-flex w-full md:w-auto items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20"
+                      className="inline-flex w-full md:w-auto items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-white text-xs font-bold transition-all shadow-lg shadow-primary-600/20"
                     >
                       <Mail size={12} />
                       Draft Reply

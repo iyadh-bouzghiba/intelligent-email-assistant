@@ -1724,7 +1724,7 @@ export const App = () => {
 
   if (startupPhase !== 'ready') {
     return (
-      <div className="min-h-screen bg-[#0f172a]">
+      <div className="min-h-screen bg-brand-bg">
         <AnimatePresence>
           {showWakingOverlay && <WakingUp />}
         </AnimatePresence>
@@ -1733,18 +1733,18 @@ export const App = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-slate-300 font-sans selection:bg-indigo-500/30 overflow-x-hidden">
+    <div className="min-h-screen bg-brand-bg text-slate-300 font-sans selection:bg-primary-500/25 overflow-x-hidden">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-500/[0.03] blur-[120px] rounded-full animate-pulse" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-500/[0.03] blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '2s' }} />
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary-500/[0.03] blur-[120px] rounded-full animate-pulse" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-primary-400/[0.03] blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '2s' }} />
       </div>
 
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-[#0f172a]/80 backdrop-blur-xl">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-brand-bg/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 py-4">
           {/* Primary row — brand + desktop controls */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <div className="w-10 h-10 bg-gradient-to-br from-primary-600 to-primary-500 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20">
                 <Brain className="text-white" size={20} />
               </div>
               <div>
@@ -1766,7 +1766,7 @@ export const App = () => {
                   <Shield
                     size={14}
                     aria-hidden="true"
-                    className={`${notificationsEnabled ? 'text-indigo-300' : 'text-slate-500'}`}
+                    className={`${notificationsEnabled ? 'text-primary-300' : 'text-slate-500'}`}
                   />
                   <span
                     id="sentinel-alerts-label"
@@ -1781,7 +1781,7 @@ export const App = () => {
                     aria-pressed={notificationsEnabled}
                     title="Browser alerts for new high-urgency emails on this device. Requires notification permission."
                     onClick={() => notificationsEnabled ? setNotificationsEnabled(false) : requestNotificationPermission()}
-                    className={`w-10 h-5 rounded-full relative transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f172a] ${notificationsEnabled ? 'bg-indigo-600' : 'bg-slate-700'}`}
+                    className={`w-10 h-5 rounded-full relative transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg ${notificationsEnabled ? 'bg-primary-600' : 'bg-slate-700'}`}
                   >
                     <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 ${notificationsEnabled ? 'left-6' : 'left-1'}`} />
                   </button>
@@ -1797,7 +1797,7 @@ export const App = () => {
                   {connectedAccounts.length === 0 ? (
                     <a
                       href={apiService.getGoogleAuthUrl()}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 border border-indigo-500/50 text-white text-sm font-bold transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 border border-primary-500/50 text-white text-sm font-bold transition-all shadow-lg shadow-primary-600/20 active:scale-95"
                     >
                       <Mail size={16} />
                       <span>Connect Account</span>
@@ -1833,7 +1833,7 @@ export const App = () => {
                       // setLoading(false) handled by fetchEmails' finally
                     }}
                     disabled={loading || syncing}
-                    className="group flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-bold transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
+                    className="group flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white text-sm font-bold transition-all shadow-xl shadow-primary-600/20 active:scale-95"
                   >
                     <RefreshCw size={18} className={`${syncing ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-700`} />
                     {syncing ? 'Syncing...' : 'Sync'}
@@ -1873,7 +1873,7 @@ export const App = () => {
                   disabled={loading || syncing}
                   aria-label={syncing ? 'Syncing...' : 'Sync'}
                   title={syncing ? 'Syncing...' : 'Sync'}
-                  className="flex-shrink-0 w-11 h-11 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+                  className="flex-shrink-0 w-11 h-11 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white transition-all shadow-lg shadow-primary-600/20 active:scale-95"
                 >
                   <RefreshCw size={16} className={`${syncing ? 'animate-spin' : ''} transition-transform duration-700`} />
                 </button>
@@ -1889,7 +1889,7 @@ export const App = () => {
             initial={{ opacity: 0, y: 50, x: '-50%' }}
             animate={{ opacity: 1, y: 0, x: '-50%' }}
             exit={{ opacity: 0, y: 50, x: '-50%' }}
-            className="fixed bottom-10 left-1/2 z-[100] px-6 py-3 rounded-2xl bg-indigo-600 text-white font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-indigo-500/40 border border-white/10 flex items-center gap-3"
+            className="fixed bottom-10 left-1/2 z-[100] px-6 py-3 rounded-2xl bg-primary-600 text-white font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-primary-500/40 border border-white/10 flex items-center gap-3"
           >
             <Shield size={16} />
             Urgency Alerts enabled
@@ -1909,7 +1909,7 @@ export const App = () => {
             <Mail size={16} />
             <span>
               {sentToAddress ? `Sent to ${sentToAddress}` : 'Email sent successfully'}
-              {sentCCAddress && <span className="font-normal opacity-70"> · cc: {sentCCAddress}</span>}
+              {sentCCAddress && <span className="font-normal opacity-70"> - cc: {sentCCAddress}</span>}
             </span>
           </motion.div>
         )}
@@ -1922,7 +1922,7 @@ export const App = () => {
             initial={{ opacity: 0, y: 50, x: '-50%' }}
             animate={{ opacity: 1, y: 0, x: '-50%' }}
             exit={{ opacity: 0, y: 50, x: '-50%' }}
-            className="fixed bottom-10 left-1/2 z-[320] px-6 py-3 rounded-2xl bg-indigo-600 text-white font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-indigo-500/40 border border-white/10 flex items-center gap-3"
+            className="fixed bottom-10 left-1/2 z-[320] px-6 py-3 rounded-2xl bg-primary-600 text-white font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-primary-500/40 border border-white/10 flex items-center gap-3"
           >
             <Brain size={16} />
             Ready
@@ -1973,13 +1973,13 @@ export const App = () => {
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-black uppercase tracking-[0.2em] mb-6"
+                  className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-500/10 border border-primary-500/20 text-primary-400 text-xs font-black uppercase tracking-[0.2em] mb-6"
                 >
                   <Sparkles size={14} />
                   <span>Hardened Shell 1.0</span>
                 </motion.div>
                 <h2 className="text-5xl lg:text-6xl font-black text-white tracking-tighter mb-4">
-                  {SUBTITLE}<span className="text-indigo-500">.</span>
+                  {SUBTITLE}<span className="text-primary-500">.</span>
                 </h2>
                 <p className="text-slate-400 text-lg max-w-xl font-medium leading-relaxed">
                   Executive-grade email distillation with integrated security monitoring.
@@ -1997,7 +1997,7 @@ export const App = () => {
                 exit={{ opacity: 0, y: -20 }}
                 className={`mb-12 p-6 rounded-3xl flex items-center gap-4 shadow-2xl ${consecutiveFailures >= 5
                   ? 'bg-rose-500/10 border border-rose-500/20 text-rose-400 shadow-rose-900/10'
-                  : 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 shadow-indigo-900/10'
+                  : 'bg-primary-500/10 border border-primary-500/20 text-primary-400 shadow-primary-900/10'
                   }`}
               >
                 <AlertCircle size={22} className="flex-shrink-0" />
@@ -2021,7 +2021,7 @@ export const App = () => {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setActiveTab('inbox')}
-                  className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'inbox' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
+                  className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'inbox' ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
                 >
                   <Mail size={13} />
                   Inbox
@@ -2033,7 +2033,7 @@ export const App = () => {
                 </button>
                 <button
                   onClick={() => setActiveTab('sent')}
-                  className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'sent' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
+                  className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'sent' ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
                 >
                   <Send size={13} />
                   Sent
@@ -2047,7 +2047,7 @@ export const App = () => {
                     <button
                       key={cat}
                       onClick={() => { setFilterCategory(cat); setCurrentPage(1); }}
-                      className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterCategory === cat ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
+                      className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterCategory === cat ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
                     >
                       {cat}
                     </button>
@@ -2075,7 +2075,7 @@ export const App = () => {
                     Previous
                   </button>
                   <div className="flex flex-col items-center min-w-[120px]">
-                    <span className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">Navigation</span>
+                    <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em] mb-1">Navigation</span>
                     <span className="text-white font-black text-sm">{sentCurrentPage} of {sentTotalPages}</span>
                   </div>
                   <button
@@ -2129,7 +2129,7 @@ export const App = () => {
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.3, delay: index * 0.03 }}
-                        className={`group relative flex flex-col p-6 rounded-2xl border hover:bg-white/[0.04] hover:border-white/10 transition-all duration-300 shadow-xl hover:shadow-indigo-500/5 ${item.is_read === false ? 'bg-white/[0.035] border-indigo-500/[0.15]' : 'bg-white/[0.02] border-white/5'}`}
+                        className={`group relative flex flex-col p-6 rounded-2xl border hover:bg-white/[0.04] hover:border-white/10 transition-all duration-300 shadow-xl hover:shadow-primary-500/5 ${item.is_read === false ? 'bg-white/[0.035] border-primary-500/[0.15]' : 'bg-white/[0.02] border-white/5'}`}
                       >
                         {/* Header row: badges + AI indicator */}
                         <div className="flex items-center justify-between mb-3">
@@ -2142,15 +2142,15 @@ export const App = () => {
                             </span>
                           </div>
                           {item.ai_summary_text && (
-                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-500/15 border border-indigo-400/30">
-                              <Sparkles size={10} className={`text-indigo-300 ${summarizingIds.has(item.gmail_message_id || '') ? 'animate-pulse' : ''}`} />
-                              <span className="text-[8px] font-black text-indigo-300 uppercase tracking-wider">AI</span>
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-primary-500/15 border border-primary-400/30">
+                              <Sparkles size={10} className={`text-primary-300 ${summarizingIds.has(item.gmail_message_id || '') ? 'animate-pulse' : ''}`} />
+                              <span className="text-[8px] font-black text-primary-300 uppercase tracking-wider">AI</span>
                             </div>
                           )}
                           {!item.ai_summary_text && item.gmail_message_id && summarizingIds.has(item.gmail_message_id) && (
-                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-500/10 border border-indigo-400/20">
-                              <Sparkles size={10} className="text-indigo-400 animate-pulse" />
-                              <span className="text-[8px] font-black text-indigo-400 uppercase tracking-wider">Queued</span>
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-primary-500/10 border border-primary-400/20">
+                              <Sparkles size={10} className="text-primary-400 animate-pulse" />
+                              <span className="text-[8px] font-black text-primary-400 uppercase tracking-wider">Queued</span>
                             </div>
                           )}
                         </div>
@@ -2159,17 +2159,17 @@ export const App = () => {
                         <div className="mb-3">
                           <div className="flex items-start gap-2 mb-1">
                             {item.is_read === false
-                              ? <Mail size={14} className="mt-1 text-indigo-400 flex-shrink-0" aria-label="Unread" />
+                              ? <Mail size={14} className="mt-1 text-primary-400 flex-shrink-0" aria-label="Unread" />
                               : <MailOpen size={14} className="mt-1 text-slate-600 flex-shrink-0" aria-label="Read" />
                             }
-                            <h3 className={`text-lg tracking-tight leading-tight group-hover:text-indigo-400 transition-colors duration-300 ${item.is_read === false ? 'font-black text-white' : 'font-bold text-slate-200'}`}>
+                            <h3 className={`text-lg tracking-tight leading-tight group-hover:text-primary-400 transition-colors duration-300 ${item.is_read === false ? 'font-black text-white' : 'font-bold text-slate-200'}`}>
                               {item.subject}
                             </h3>
                           </div>
                           <div className="flex items-center justify-between text-xs text-slate-500">
                             <span className={`truncate mr-2 ${item.is_read === false ? 'font-bold text-slate-300' : 'font-semibold'}`}>{item.sender.split('<')[0].trim()}</span>
                             <div className="flex items-center gap-1 shrink-0">
-                              <Clock size={11} className="text-indigo-400/60" />
+                              <Clock size={11} className="text-primary-400/60" />
                               <span className="text-[10px] font-medium">{item.date}</span>
                             </div>
                           </div>
@@ -2181,7 +2181,7 @@ export const App = () => {
                             <p className="text-sm leading-[1.6] text-slate-200 line-clamp-3">
                               {item.summary}
                             </p>
-                            <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-[#0f172a]/80 to-transparent rounded-b-xl pointer-events-none" />
+                            <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-brand-bg/80 to-transparent rounded-b-xl pointer-events-none" />
                           </div>
 
                           {/* Action Items - Full text bullets */}
@@ -2195,7 +2195,7 @@ export const App = () => {
                               {item.ai_summary_json.action_items.length > 3 && (
                                 <button
                                   onClick={() => openEmailDetail(item, true)}
-                                  className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 mt-1.5 transition-colors"
+                                  className="text-[10px] font-bold text-primary-400 hover:text-primary-300 mt-1.5 transition-colors"
                                 >
                                   View {item.ai_summary_json.action_items.length - 3} more action{item.ai_summary_json.action_items.length - 3 > 1 ? 's' : ''} &rarr;
                                 </button>
@@ -2209,7 +2209,7 @@ export const App = () => {
                           <div className="flex items-center gap-2">
                             {/* Queued indicator for pending summaries */}
                             {!item.ai_summary_text && item.gmail_message_id && summarizingIds.has(item.gmail_message_id) && (
-                              <span className="text-[9px] font-bold text-indigo-400 uppercase flex items-center gap-1">
+                              <span className="text-[9px] font-bold text-primary-400 uppercase flex items-center gap-1">
                                 <Sparkles size={11} className="animate-pulse" />
                                 Queued...
                               </span>
@@ -2224,7 +2224,7 @@ export const App = () => {
                                   // Use the same coalesced bounded refresh — no duplicate timers
                                   scheduleSummaryRefresh(activeEmail);
                                 }}
-                                className="text-[9px] font-bold text-slate-500 hover:text-indigo-400 uppercase flex items-center gap-1 transition-colors"
+                                className="text-[9px] font-bold text-slate-500 hover:text-primary-400 uppercase flex items-center gap-1 transition-colors"
                               >
                                 <Sparkles size={11} />
                                 Re-summarize
@@ -2245,21 +2245,21 @@ export const App = () => {
 
                 {/* BATCH LIMIT INDICATOR: Inform users about auto-summary limits */}
                 {currentItems.length > 30 && (
-                  <div className="w-full mt-8 mb-4 p-6 rounded-2xl bg-gradient-to-r from-indigo-500/10 to-violet-500/10 border border-indigo-500/20">
+                  <div className="w-full mt-8 mb-4 p-6 rounded-2xl bg-gradient-to-r from-primary-500/10 to-primary-400/10 border border-primary-500/20">
                     <div className="flex items-start gap-4">
-                      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-indigo-600/20 flex items-center justify-center border border-indigo-500/30">
-                        <Sparkles size={20} className="text-indigo-400" />
+                      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center border border-primary-500/30">
+                        <Sparkles size={20} className="text-primary-400" />
                       </div>
                       <div className="flex-1">
-                        <h4 className="text-sm font-black text-indigo-300 mb-1 uppercase tracking-wide">
+                        <h4 className="text-sm font-black text-primary-300 mb-1 uppercase tracking-wide">
                           Auto-Summary Batch Limit Reached
                         </h4>
                         <p className="text-xs text-slate-400 leading-relaxed mb-3">
                           You have <span className="text-white font-bold">{currentItems.length} emails</span> in this account.
-                          Only the <span className="text-indigo-400 font-bold">first 30 emails</span> receive automatic AI summaries to optimize costs.
+                          Only the <span className="text-primary-400 font-bold">first 30 emails</span> receive automatic AI summaries to optimize costs.
                         </p>
                         <p className="text-xs text-slate-500">
-                          <strong className="text-indigo-400">💡 Tip:</strong> Use the <strong className="text-white">"Summarize Email"</strong> button
+                          <strong className="text-primary-400">💡 Tip:</strong> Use the <strong className="text-white">"Summarize Email"</strong> button
                           to manually generate AI summaries for emails #{31} onwards.
                         </p>
                       </div>
@@ -2270,9 +2270,9 @@ export const App = () => {
                 {connectedAccounts.length === 0 && !error ? (
                   /* ONBOARDING GUIDE: Professional zero-account state with step-by-step instructions */
                   <div className="w-full py-10 flex flex-col items-center gap-6 text-center max-w-lg mx-auto">
-                    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-2xl">
-                      <Mail size={36} className="text-indigo-400" />
-                      <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-pulse" />
+                    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary-500/20 to-primary-400/20 flex items-center justify-center border border-primary-500/30 relative shadow-2xl">
+                      <Mail size={36} className="text-primary-400" />
+                      <div className="absolute inset-0 rounded-full border border-primary-500/20 animate-pulse" />
                     </div>
 
                     <div className="space-y-2">
@@ -2284,21 +2284,21 @@ export const App = () => {
 
                     <div className="w-full bg-white/[0.02] border border-white/5 rounded-2xl p-5 text-left space-y-4">
                       <div className="flex gap-3 items-start">
-                        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-xs">1</div>
+                        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary-600 flex items-center justify-center text-white font-black text-xs">1</div>
                         <div>
                           <p className="text-slate-200 text-sm font-semibold">Connect your Gmail account</p>
                           <p className="text-slate-500 text-xs mt-0.5">Click the button below to securely authorize access.</p>
                         </div>
                       </div>
                       <div className="flex gap-3 items-start">
-                        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-xs">2</div>
+                        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary-600 flex items-center justify-center text-white font-black text-xs">2</div>
                         <div>
                           <p className="text-slate-200 text-sm font-semibold">Select your account</p>
                           <p className="text-slate-500 text-xs mt-0.5">Use the account switcher (top-right) to activate it. Up to {MAX_CONNECTED_ACCOUNTS} accounts.</p>
                         </div>
                       </div>
                       <div className="flex gap-3 items-start">
-                        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black text-xs">3</div>
+                        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary-600 flex items-center justify-center text-white font-black text-xs">3</div>
                         <div>
                           <p className="text-slate-200 text-sm font-semibold">Your feed syncs automatically</p>
                           <p className="text-slate-500 text-xs mt-0.5">Inbox emails appear and AI summaries generate in seconds.</p>
@@ -2308,7 +2308,7 @@ export const App = () => {
 
                     <a
                       href={apiService.getGoogleAuthUrl()}
-                      className="inline-flex items-center gap-3 px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold transition-all shadow-2xl shadow-indigo-600/30 active:scale-95 border border-indigo-400/20"
+                      className="inline-flex items-center gap-3 px-6 py-3 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-white text-sm font-bold transition-all shadow-2xl shadow-primary-600/30 active:scale-95 border border-primary-400/20"
                     >
                       <Mail size={16} />
                       <span>Connect Your First Account</span>
@@ -2322,9 +2322,9 @@ export const App = () => {
                 ) : !activeEmail && connectedAccounts.length > 0 ? (
                   /* CRITICAL: Show "Select Account" when accounts exist but none is active */
                   <div className="w-full py-16 flex flex-col items-center gap-6 text-center">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center border border-indigo-500/30 relative shadow-xl">
-                      <Mail size={28} className="text-indigo-400" />
-                      <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-pulse" />
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary-500/20 to-primary-400/20 flex items-center justify-center border border-primary-500/30 relative shadow-xl">
+                      <Mail size={28} className="text-primary-400" />
+                      <div className="absolute inset-0 rounded-full border border-primary-500/20 animate-pulse" />
                     </div>
                     <div>
                       <h3 className="text-2xl font-black text-white mb-2">Select Account to Begin</h3>
@@ -2354,12 +2354,12 @@ export const App = () => {
                             <button
                               key={acc.account_id}
                               onClick={() => handleSwitchAccount(acc.account_id)}
-                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/10 hover:bg-indigo-600/10 hover:border-indigo-500/30 transition-all group"
+                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/10 hover:bg-primary-600/10 hover:border-primary-500/30 transition-all group"
                             >
                               <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(acc.account_id)} text-[10px] font-black text-white shadow-md`}>
                                 {getEmailInitials(acc.account_id)}
                               </span>
-                              <span className="text-xs font-bold text-slate-300 group-hover:text-indigo-300 transition-colors">
+                              <span className="text-xs font-bold text-slate-300 group-hover:text-primary-300 transition-colors">
                                 {acc.account_id.split('@')[0]}
                               </span>
                             </button>
@@ -2371,8 +2371,8 @@ export const App = () => {
                 ) : showInboxEmptyState && (
                   <div className="w-full py-32 flex flex-col items-center gap-6 text-center">
                     <div className="w-24 h-24 rounded-full bg-white/[0.03] flex items-center justify-center text-slate-600 border border-white/5 relative shadow-inner">
-                      <Mail size={40} className="text-indigo-500/20" />
-                      <div className="absolute inset-0 rounded-full border border-indigo-500/10 animate-ping" />
+                      <Mail size={40} className="text-primary-500/20" />
+                      <div className="absolute inset-0 rounded-full border border-primary-500/10 animate-ping" />
                     </div>
                     <div>
                       <h3 className="text-2xl font-black text-white mb-2">{filterCategory} Channel Clear</h3>
@@ -2394,7 +2394,7 @@ export const App = () => {
                 Previous
               </button>
               <div className="flex flex-col items-center min-w-[120px]">
-                <span className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">Navigation</span>
+                <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em] mb-1">Navigation</span>
                 <span className="text-white font-black text-sm">{effectiveInboxPage} of {totalPages}</span>
               </div>
               <button
@@ -2412,7 +2412,7 @@ export const App = () => {
       <footer className="max-w-7xl mx-auto px-6 pt-32 pb-16">
         <div className="flex flex-col md:flex-row items-center justify-between gap-8 border-t border-white/5 pt-12">
           <div className="flex items-center gap-2 text-slate-600">
-            <Shield size={18} className="text-indigo-500/50" />
+            <Shield size={18} className="text-primary-500/50" />
             <span className="text-[10px] font-black uppercase tracking-[0.3em]">Hardware Aligned Intelligence</span>
           </div>
           <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest opacity-50">© 2026 Executive Brain Ecosystem</p>
@@ -2433,7 +2433,7 @@ export const App = () => {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-[#0f172a] border border-white/10 rounded-3xl p-8 max-w-sm w-full mx-4 shadow-2xl"
+              className="bg-brand-surface border border-brand-border rounded-3xl p-8 max-w-sm w-full mx-4 shadow-2xl"
             >
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-2xl bg-rose-500/10 flex items-center justify-center">
@@ -2553,7 +2553,7 @@ export const App = () => {
             transition={{ duration: 0.2, ease: 'easeOut' }}
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             aria-label="Scroll to top"
-            className="fixed bottom-6 right-6 z-50 w-11 h-11 flex items-center justify-center rounded-full bg-[#1e293b] border border-white/10 text-slate-400 hover:text-white hover:border-indigo-500/40 hover:bg-indigo-600/20 shadow-xl transition-all duration-200 hover:scale-105"
+            className="fixed bottom-6 right-6 z-50 w-11 h-11 flex items-center justify-center rounded-full bg-brand-surface border border-brand-border text-slate-400 hover:text-white hover:border-primary-500/40 hover:bg-primary-600/20 shadow-xl transition-all duration-200 hover:scale-105"
           >
             <svg
               className="w-4 h-4 sm:w-[18px] sm:h-[18px]"

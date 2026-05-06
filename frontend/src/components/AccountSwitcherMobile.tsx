@@ -98,8 +98,8 @@ export function AccountSwitcherMobile({
         aria-expanded={isOpen}
         aria-haspopup="dialog"
         aria-controls="account-switcher-mobile-popover"
-        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-slate-200 active:scale-95 transition-all min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:ring-offset-0 ${isOpen
-          ? 'bg-white/[0.05] border-indigo-500/40 ring-1 ring-indigo-500/20'
+        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-slate-200 active:scale-95 transition-all min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 focus-visible:ring-offset-0 ${isOpen
+          ? 'bg-white/[0.05] border-primary-500/40 ring-1 ring-primary-500/20'
           : 'bg-white/[0.03] border-white/10 hover:bg-white/[0.05]'
           }`}
       >
@@ -110,7 +110,7 @@ export function AccountSwitcherMobile({
             >
               {getEmailInitials(activeEmail)}
               <span
-                className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full ring-[1.5px] ring-[#0f172a] ${isReconnectRequired
+                className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full ring-[1.5px] ring-brand-surface ${isReconnectRequired
                   ? 'bg-[#F59E0B]'
                   : isOffline
                     ? 'bg-[#EF4444]'
@@ -142,12 +142,11 @@ export function AccountSwitcherMobile({
           <motion.div
             id="account-switcher-mobile-popover"
             ref={popoverRef}
-            onPointerDown={(e) => e.stopPropagation()}
             initial={{ opacity: 0, y: -4, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.97 }}
             transition={{ duration: 0.13, ease: 'easeOut' }}
-            className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-[#0f172a] border border-white/10 shadow-2xl z-[100] overflow-hidden max-h-[70vh] overflow-y-auto custom-scrollbar"
+            className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-brand-surface border border-brand-border shadow-2xl z-[100] overflow-hidden max-h-[70vh] overflow-y-auto custom-scrollbar"
           >
             <AccountSwitcherList
               connectedAccounts={connectedAccounts}

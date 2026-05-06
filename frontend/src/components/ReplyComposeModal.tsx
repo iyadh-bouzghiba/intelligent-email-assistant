@@ -200,13 +200,13 @@ export function ReplyComposeModal({
             role="dialog"
             aria-modal="true"
             aria-labelledby={TITLE_ID}
-            className="pointer-events-auto w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-2xl bg-[#0f172a] border-0 sm:border sm:border-white/10 rounded-none sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            className="pointer-events-auto w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-2xl bg-brand-surface border-0 sm:border sm:border-brand-border rounded-none sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="flex-shrink-0 bg-[#0f172a] border-b border-white/5 px-4 py-4 sm:px-6">
+            <div className="flex-shrink-0 bg-brand-surface border-b border-white/5 px-4 py-4 sm:px-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
-                  <h2 id={TITLE_ID} className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">
+                  <h2 id={TITLE_ID} className="text-xs font-semibold text-primary-400 uppercase tracking-wider">
                     Reply
                   </h2>
                   <p className="text-sm font-semibold text-slate-300 mt-0.5 truncate">{email.subject}</p>
@@ -247,7 +247,7 @@ export function ReplyComposeModal({
                 onChange={(e) => onReplySubjectChange(e.target.value)}
                 aria-label="Subject"
                 placeholder="Subject"
-                className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
+                className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
               />
 
               <input
@@ -258,7 +258,7 @@ export function ReplyComposeModal({
                 onChange={(e) => onReplyCCChange(e.target.value)}
                 aria-label="Cc"
                 placeholder="Cc (optional — comma or semicolon separated)"
-                className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
+                className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
               />
 
               {/* Draft tools */}
@@ -295,7 +295,7 @@ export function ReplyComposeModal({
                             disabled={sending}
                             onClick={() => handleToneSelection(tone.code)}
                             className={`w-full min-w-0 min-h-[40px] px-3 py-2 rounded-xl text-xs font-bold leading-tight text-center whitespace-normal break-words flex items-center justify-center transition-all border ${isSelected
-                              ? 'bg-indigo-500/15 border-indigo-400/30 text-indigo-200'
+                              ? 'bg-primary-500/15 border-primary-400/30 text-primary-200'
                               : 'bg-white/[0.02] border-white/[0.08] text-slate-300 hover:text-white hover:bg-white/[0.05]'
                               } ${sending ? 'opacity-50 cursor-not-allowed' : ''}`}
                           >
@@ -316,7 +316,7 @@ export function ReplyComposeModal({
                       value={selectedTemplateId}
                       onChange={(e) => setSelectedTemplateId(e.target.value)}
                       disabled={templatesLoading || templateOptions.length === 0}
-                      className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/40 disabled:opacity-50 transition-all"
+                      className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500/40 disabled:opacity-50 transition-all"
                     >
                       <option value="" className="bg-slate-900 text-slate-200">
                         {templatesLoading
@@ -402,13 +402,12 @@ export function ReplyComposeModal({
                         onChange={(e) => setTemplateName(e.target.value)}
                         placeholder="e.g. Security acknowledgment"
                         disabled={templateSaving}
-                        className="flex-1 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 disabled:opacity-50 transition-all"
+                        className="flex-1 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 disabled:opacity-50 transition-all"
                       />
                       <button
-                        type="button"
                         onClick={handleSaveTemplate}
                         disabled={!canSubmitTemplateSave}
-                        className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all"
+                        className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all"
                       >
                         {templateSaving ? (
                           <>
@@ -427,9 +426,9 @@ export function ReplyComposeModal({
                 )}
               </div>
 
-              <div className="rounded-2xl border border-indigo-500/[0.14] bg-white/[0.035] px-3 py-3 sm:px-4 sm:py-4 space-y-2 shadow-lg shadow-black/10 transition-colors duration-150 focus-within:border-indigo-500/[0.26] focus-within:bg-white/[0.05]">
+              <div className="rounded-2xl border border-primary-500/[0.14] bg-white/[0.035] px-3 py-3 sm:px-4 sm:py-4 space-y-2 shadow-lg shadow-black/10 transition-colors duration-150 focus-within:border-primary-500/[0.26] focus-within:bg-white/[0.05]">
                 <div className="space-y-1">
-                  <p id="reply-body-label" className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.2em]">
+                  <p id="reply-body-label" className="text-[10px] font-black text-primary-300 uppercase tracking-[0.2em]">
                     Reply Body
                   </p>
                   <p className="text-xs text-slate-400 leading-relaxed">
@@ -466,7 +465,7 @@ export function ReplyComposeModal({
                   {hasAiSummary && (
                     <div className="space-y-2">
                       <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-white/[0.025] border border-white/[0.06]">
-                        <Sparkles size={10} className="text-indigo-300 mt-0.5 flex-shrink-0" />
+                        <Sparkles size={10} className="text-primary-300 mt-0.5 flex-shrink-0" />
                         <p className="text-xs text-slate-300/85 leading-relaxed">
                           {email.ai_summary_text}
                         </p>
@@ -545,7 +544,7 @@ export function ReplyComposeModal({
             {/* Footer — action bar
                 Mobile: flex-col-reverse stacks Send on top (full-width) and Discard below.
                 sm+: flex-row with Discard left, Send right — standard desktop pattern. */}
-            <div className="flex-shrink-0 border-t border-white/[0.12] bg-[#0f172a] px-4 py-3 sm:px-6 sm:py-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3">
+            <div className="flex-shrink-0 border-t border-white/[0.12] bg-brand-surface px-4 py-3 sm:px-6 sm:py-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3">
               <button
                 onClick={onDiscard}
                 disabled={sending}
@@ -556,7 +555,7 @@ export function ReplyComposeModal({
               <button
                 onClick={onSend}
                 disabled={sending || !replyBody.trim() || !email.thread_id}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-lg shadow-indigo-600/20"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-lg shadow-primary-600/20"
               >
                 {sending ? (
                   <>

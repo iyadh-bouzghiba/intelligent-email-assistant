@@ -1,11 +1,8 @@
 export const getAccountColor = (email: string): string => {
     const colors = [
-        'from-blue-500 to-indigo-600',
-        'from-purple-500 to-pink-600',
-        'from-emerald-500 to-teal-600',
-        'from-amber-500 to-orange-600',
-        'from-rose-500 to-red-600',
-        'from-cyan-500 to-blue-600',
+        'from-brand-surface-2 to-brand-surface',
+        'from-slate-700 to-brand-surface-2',
+        'from-slate-800 to-brand-surface',
     ];
     const hash = email.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
     return colors[hash % colors.length];

@@ -85,12 +85,11 @@ export function AccountSwitcherDesktop({
         {activeEmail ? (
           <>
             <span
-              className={`relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(activeEmail)} text-[10px] font-black text-white flex-shrink-0 shadow-lg ring-2 ring-indigo-500/40`}
+              className={`relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(activeEmail)} text-[10px] font-black text-white flex-shrink-0 shadow-lg ring-2 ring-primary-500/35`}
             >
               {getEmailInitials(activeEmail)}
               <span
-                className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0f172a] ${isOffline ? 'bg-[#EF4444]' : 'bg-[#22C55E]'
-                  }`}
+                className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-brand-surface ${isOffline ? 'bg-[#EF4444]' : 'bg-[#22C55E]'}`}
               />
             </span>
             <span className="text-[11px] font-bold text-slate-300 truncate max-w-[120px]">
@@ -124,7 +123,7 @@ export function AccountSwitcherDesktop({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-[#0f172a] border border-white/10 shadow-2xl z-[100] overflow-hidden max-h-[70vh] overflow-y-auto custom-scrollbar"
+            className="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-brand-surface border border-brand-border shadow-2xl z-[100] overflow-hidden max-h-[70vh] overflow-y-auto custom-scrollbar"
           >
             <AccountSwitcherList
               connectedAccounts={connectedAccounts}

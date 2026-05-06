@@ -124,12 +124,12 @@ function AttachmentCard({ attachment, onOpenImage }: CardProps) {
                     </span>
                 ) : (
                     <>
-                        {/* Image: View in lightbox */}
+                        {/* Image: View in Lightbox */}
                         {category === 'image' && hasPreview && (
                             <button
                                 type="button"
                                 onClick={() => onOpenImage(attachment)}
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-400 hover:text-primary-300 transition-colors"
                             >
                                 <Eye size={11} />
                                 View
@@ -144,10 +144,10 @@ function AttachmentCard({ attachment, onOpenImage }: CardProps) {
                         {/* PDF: View in browser tab (served inline) */}
                         {category === 'pdf' && canDownload && (
                             <a
-                                href={attachment.download_url!}
+                                href={attachment.download_url ?? undefined}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-400 hover:text-primary-300 transition-colors"
                             >
                                 <Eye size={11} />
                                 View

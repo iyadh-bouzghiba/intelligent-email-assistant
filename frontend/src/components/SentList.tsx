@@ -55,8 +55,8 @@ export function SentList({ emails, loading, onSelect }: Props) {
   if (emails.length === 0) {
     return (
       <div className="w-full py-28 sm:py-32 flex flex-col items-center gap-6 text-center">
-        <div className="w-24 h-24 rounded-full bg-indigo-500/[0.06] flex items-center justify-center text-indigo-300 border border-indigo-400/10 relative shadow-inner">
-          <Send size={38} className="text-indigo-300/45" />
+        <div className="w-24 h-24 rounded-full bg-primary-500/[0.08] flex items-center justify-center text-primary-300 border border-primary-400/15 relative shadow-inner">
+          <Send size={38} className="text-primary-300/45" />
         </div>
         <div className="max-w-sm">
           <h3 className="text-xl font-black text-white mb-2">No Sent Emails</h3>
@@ -81,16 +81,15 @@ export function SentList({ emails, loading, onSelect }: Props) {
 
         return (
           <button
-            key={email.id}
             type="button"
             aria-label={cardLabel(email)}
             onClick={() => onSelect(email)}
-            className="group text-left w-full rounded-2xl bg-white/[0.025] border border-white/[0.07] hover:bg-white/[0.045] hover:border-indigo-400/20 transition-all duration-200 shadow-xl overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70"
+            className="group text-left w-full rounded-2xl bg-white/[0.025] border border-white/[0.07] hover:bg-white/[0.045] hover:border-primary-400/25 transition-all duration-200 shadow-xl overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70"
           >
             <div className="p-4 sm:p-5 flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3 min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border bg-indigo-500/10 text-indigo-300 border-indigo-400/20 flex-shrink-0">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border bg-primary-500/10 text-primary-300 border-primary-400/20 flex-shrink-0">
                     <Send size={10} />
                     Sent
                   </span>
@@ -103,7 +102,7 @@ export function SentList({ emails, loading, onSelect }: Props) {
                 </div>
 
                 <div className="flex items-center gap-1.5 text-[10px] text-slate-600 flex-shrink-0 pt-0.5">
-                  <Clock size={11} className="text-indigo-400/55" />
+                  <Clock size={11} className="text-primary-400/55" />
                   <span>{formatSentAt(email.sent_at)}</span>
                 </div>
               </div>
@@ -117,7 +116,7 @@ export function SentList({ emails, loading, onSelect }: Props) {
               )}
 
               <div className="min-w-0">
-                <h3 className="text-base sm:text-[17px] font-black text-white group-hover:text-indigo-300 transition-colors leading-snug truncate">
+                <h3 className="text-base sm:text-[17px] font-black text-white group-hover:text-primary-300 transition-colors leading-snug truncate">
                   {subject}
                 </h3>
 
@@ -137,7 +136,7 @@ export function SentList({ emails, loading, onSelect }: Props) {
                   <Mail size={11} className="text-slate-600" />
                   Outbound message
                 </span>
-                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-indigo-500/80 opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-primary-500/80 opacity-0 group-hover:opacity-100 transition-opacity">
                   Open
                 </span>
               </div>

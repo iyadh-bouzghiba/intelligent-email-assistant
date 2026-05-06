@@ -318,8 +318,8 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
       {!isSent && email.ai_summary_text && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <Sparkles size={16} className="text-indigo-400" />
-            <h3 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider">AI Analysis</h3>
+            <Sparkles size={16} className="text-primary-400" />
+            <h3 className="text-sm font-semibold text-primary-400 uppercase tracking-wider">AI Analysis</h3>
             {email.ai_summary_model && (
               <span className="text-[9px] text-slate-600 font-bold">{email.ai_summary_model}</span>
             )}
@@ -331,7 +331,7 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
 
           {email.ai_summary_json?.action_items && email.ai_summary_json.action_items.length > 0 && (
             <div ref={actionItemsRef} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-              <p className="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-3">Action Items</p>
+              <p className="text-xs font-semibold text-primary-400 uppercase tracking-wider mb-3">Action Items</p>
               <ol className="space-y-2 list-decimal list-inside">
                 {email.ai_summary_json.action_items.map((action: string, idx: number) => (
                   <li key={idx} className="text-sm leading-relaxed text-slate-300">{action}</li>

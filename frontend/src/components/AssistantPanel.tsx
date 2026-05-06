@@ -209,8 +209,8 @@ export function AssistantPanel({
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/[0.08]">
         <div className="flex items-center gap-2">
-          <Bot size={15} className="text-indigo-400" />
-          <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">
+          <Bot size={15} className="text-primary-400" />
+          <span className="text-xs font-bold text-primary-400 uppercase tracking-wider">
             AI Assistant
           </span>
         </div>
@@ -245,10 +245,10 @@ export function AssistantPanel({
         {/* Consent required */}
         {state === 'consent_required' && (
           <div className="space-y-3">
-            <div className="p-4 rounded-2xl bg-indigo-500/[0.07] border border-indigo-500/20 space-y-3">
+            <div className="p-4 rounded-2xl bg-primary-500/[0.08] border border-primary-500/20 space-y-3">
               <div className="flex items-center gap-2">
-                <Sparkles size={13} className="text-indigo-400" />
-                <p className="text-xs font-bold text-indigo-300">Enable AI Assistant</p>
+                <Sparkles size={13} className="text-primary-400" />
+                <p className="text-xs font-bold text-primary-300">Enable AI Assistant</p>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
                 The AI assistant drafts replies for your review. It will never send email on
@@ -263,7 +263,7 @@ export function AssistantPanel({
             <button
               onClick={handleConsent}
               disabled={consenting}
-              className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold transition-colors"
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white text-xs font-bold transition-colors"
             >
               {consenting
                 ? <><RefreshCw size={12} className="animate-spin" /> Enabling...</>
@@ -296,7 +296,7 @@ export function AssistantPanel({
                 value={effectiveTone}
                 onChange={(e) => handleToneSelection(e.target.value as DraftTone)}
                 disabled={state === 'generating'}
-                className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 disabled:opacity-50 transition-all"
+                className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 disabled:opacity-50 transition-all"
               >
                 {toneOptions.map((tone) => (
                   <option key={tone.code} value={tone.code} className="bg-slate-900 text-slate-200">
@@ -311,19 +311,12 @@ export function AssistantPanel({
                 Instruction
               </label>
               <textarea
-                ref={textareaRef}
                 value={instruction}
                 onChange={(e) => setInstruction(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && canGenerate) {
-                    e.preventDefault();
-                    handleGenerate();
-                  }
-                }}
                 placeholder="e.g. Acknowledge receipt and say I'll respond by Friday"
-              rows={4}
+                rows={4}
                 disabled={state === 'generating'}
-                className="w-full p-3 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 disabled:opacity-50 transition-all"
+                className="w-full p-3 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 disabled:opacity-50 transition-all"
               />
             </div>
 
@@ -346,7 +339,7 @@ export function AssistantPanel({
               <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                 Tone
               </p>
-              <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wide">
+              <span className="text-[10px] font-bold text-primary-300 uppercase tracking-wide">
                 {toneOptions.find((tone) => tone.code === effectiveTone)?.label ?? effectiveTone}
               </span>
             </div>
@@ -369,7 +362,7 @@ export function AssistantPanel({
           <button
             onClick={handleGenerate}
             disabled={!canGenerate || state === 'generating'}
-            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors"
           >
             {state === 'generating'
               ? <><RefreshCw size={12} className="animate-spin" /> Generating...</>
@@ -381,7 +374,7 @@ export function AssistantPanel({
           <div className="flex flex-col gap-2">
             <button
               onClick={handleUseDraft}
-              className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-colors"
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold transition-colors"
             >
               <Send size={12} />
               Use this draft
