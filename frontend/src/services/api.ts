@@ -38,6 +38,12 @@ const BASE_URL: string = import.meta.env.PROD
 // Dedicated API root
 const API_ROOT = `${BASE_URL}/api`;
 
+const devLog = (...args: unknown[]) => {
+    if (import.meta.env.DEV) {
+        console.log(...args);
+    }
+};
+
 const api = axios.create({
     baseURL: BASE_URL,
     headers: {
@@ -216,7 +222,7 @@ export const apiService = {
 
         try {
             const response = await api.get(`${API_ROOT}/emails-with-summaries`, { params });
-            console.log(`📡 API: Fetched ${response.data?.length || 0} emails with summaries`);
+            devLog(`📡 API: Fetched ${response.data?.length || 0} emails with summaries`);
             return response.data;
         } catch (error) {
             console.warn("📡 API: emails-with-summaries unreachable, falling back to listEmails", error);
@@ -381,7 +387,7 @@ export const apiService = {
                 null,
                 { params: { account_id } }
             );
-            console.log(`📡 API: Email summarization queued for ${gmail_message_id}`);
+            devLog(`📡 API: Email summarization queued for ${gmail_message_id}`);
             return response.data;
         } catch (error) {
             console.warn(`📡 API: Email summarization failed for ${gmail_message_id}`, error);
