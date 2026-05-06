@@ -74,7 +74,7 @@ export const DraftReply: React.FC = () => {
                         value={threadId}
                         onChange={(e) => setThreadId(e.target.value)}
                         placeholder="Enter Thread ID…"
-                        className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all shadow-sm"
+                        className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm transition-all shadow-sm"
                     />
                 </div>
 
@@ -83,7 +83,7 @@ export const DraftReply: React.FC = () => {
                     value={accountId}
                     onChange={(e) => setAccountId(e.target.value)}
                     placeholder="Enter Account ID (email)…"
-                    className="block w-full px-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all shadow-sm"
+                    className="block w-full px-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm transition-all shadow-sm"
                 />
 
                 <textarea
@@ -91,13 +91,13 @@ export const DraftReply: React.FC = () => {
                     onChange={(e) => setInstruction(e.target.value)}
                     placeholder="Enter reply instruction…"
                     rows={4}
-                    className="block w-full px-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all shadow-sm resize-none"
+                    className="block w-full px-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm transition-all shadow-sm resize-none"
                 />
 
                 <button
                     type="submit"
                     disabled={loading || !canSubmit}
-                    className="w-full px-6 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-md shadow-indigo-200"
+                    className="w-full px-6 py-3 bg-primary-600 text-white font-semibold rounded-xl hover:bg-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-md shadow-primary-200"
                 >
                     {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Generate Draft'}
                 </button>
@@ -116,7 +116,7 @@ export const DraftReply: React.FC = () => {
                         <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">Suggested Response</h3>
                         <button
                             onClick={copyToClipboard}
-                            className="flex items-center gap-2 text-xs font-medium text-slate-500 hover:text-indigo-600 transition-colors"
+                            className="flex items-center gap-2 text-xs font-medium text-slate-500 hover:text-primary-600 transition-colors"
                         >
                             {copied ? (
                                 <>

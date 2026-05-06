@@ -46,13 +46,13 @@ export const EmailAnalyzer: React.FC = () => {
                             value={threadId}
                             onChange={(e) => setThreadId(e.target.value)}
                             placeholder="Enter Thread ID to analyze..."
-                            className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-all shadow-sm"
+                            className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm transition-all shadow-sm"
                         />
                     </div>
                     <button
                         type="submit"
                         disabled={loading || !threadId.trim()}
-                        className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-md shadow-blue-200"
+                        className="px-6 py-3 bg-primary-600 text-white font-semibold rounded-xl hover:bg-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-md shadow-primary-200"
                     >
                         {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Analyze'}
                     </button>

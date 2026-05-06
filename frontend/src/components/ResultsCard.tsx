@@ -21,7 +21,7 @@ export const ResultsCard: React.FC<ResultsCardProps> = ({ summary }) => {
                     <ul className="space-y-2">
                         {summary.key_points.map((point, index) => (
                             <li key={index} className="flex items-start">
-                                <span className="text-blue-500 mr-2">•</span>
+                                <span className="text-primary-500 mr-2">•</span>
                                 <span className="text-slate-700">{point}</span>
                             </li>
                         ))}
@@ -60,7 +60,7 @@ export const ResultsCard: React.FC<ResultsCardProps> = ({ summary }) => {
                             <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">Key Participants</h3>
                             <div className="flex flex-wrap gap-2">
                                 {summary.key_participants.map((person, index) => (
-                                    <span key={index} className="bg-indigo-50 text-indigo-700 text-xs font-medium px-2.5 py-0.5 rounded-full border border-indigo-100">
+                                    <span key={index} className="bg-primary-50 text-primary-700 text-xs font-medium px-2.5 py-0.5 rounded-full border border-primary-100">
                                         {person}
                                     </span>
                                 ))}

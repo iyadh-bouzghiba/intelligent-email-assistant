@@ -73,7 +73,7 @@ export function AccountSwitcherList({
         return (
           <div
             key={info.account_id}
-            className={`flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] transition-colors ${isActive ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'border-l-2 border-transparent'
+            className={`flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] transition-colors ${isActive ? 'bg-primary-500/10 border-l-2 border-primary-500' : 'border-l-2 border-transparent'
               }`}
           >
             {/* Avatar + 4-state status dot */}
@@ -85,7 +85,7 @@ export function AccountSwitcherList({
               </div>
               {/* 4-state indicator: RECONNECT(amber) / CURRENT(green) / READY(blue) / OFFLINE(red) */}
               <span
-                className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#0f172a] ${info.auth_required
+                className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-brand-surface ${info.auth_required
                   ? 'bg-[#F59E0B]'
                   : offlineAccounts.has(info.account_id)
                     ? 'bg-[#EF4444]'
@@ -119,7 +119,7 @@ export function AccountSwitcherList({
             ) : (
               <button
                 onClick={() => onSwitchAccount(info.account_id)}
-                className={`flex-1 min-w-0 text-left rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 ${isActive ? 'text-indigo-400' : 'text-slate-300'}`}
+                className={`flex-1 min-w-0 text-left rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 ${isActive ? 'text-primary-400' : 'text-slate-300'}`}
               >
                 <div className="truncate text-xs font-bold">{info.account_id}</div>
                 {offlineAccounts.has(info.account_id) ? (
@@ -177,7 +177,7 @@ export function AccountSwitcherList({
                     aria-checked={isActive}
                     onClick={() => onAiLanguageChange(option.code)}
                     className={`flex-1 rounded-lg py-2 px-3 text-xs font-semibold transition-all duration-150 border ${isActive
-                      ? 'bg-indigo-500/18 border-indigo-400/30 text-indigo-100 shadow-sm shadow-indigo-950/20'
+                      ? 'bg-primary-500/16 border-primary-400/30 text-primary-100 shadow-sm shadow-primary-950/20'
                       : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
                       }`}
                   >
@@ -189,7 +189,7 @@ export function AccountSwitcherList({
 
             <div className="mt-2 min-h-[18px]">
               {aiLanguageSaving ? (
-                <p className="text-[11px] font-medium text-indigo-300">Saving AI language...</p>
+                <p className="text-[11px] font-medium text-primary-300">Saving AI language...</p>
               ) : aiLanguageLoading ? (
                 <p className="text-[11px] font-medium text-slate-500">Loading AI language...</p>
               ) : aiLanguageError ? (
@@ -215,14 +215,14 @@ export function AccountSwitcherList({
         {connectedAccounts.length >= maxAccounts ? (
           <button
             onClick={onMaxAccountsAttempt}
-            className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 rounded"
+            className="text-[10px] font-bold text-primary-400 hover:text-primary-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 rounded"
           >
             + Add account
           </button>
         ) : (
           <a
             href={authUrl}
-            className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 rounded"
+            className="text-[10px] font-bold text-primary-400 hover:text-primary-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 rounded"
           >
             + Add account
           </a>

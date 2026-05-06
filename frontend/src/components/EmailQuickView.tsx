@@ -75,8 +75,8 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
         /* Skeleton — summarization actively in progress */
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <Sparkles size={16} className="text-indigo-400 animate-pulse" />
-            <h3 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider">AI Analysis</h3>
+            <Sparkles size={16} className="text-primary-400 animate-pulse" />
+            <h3 className="text-sm font-semibold text-primary-400 uppercase tracking-wider">AI Analysis</h3>
           </div>
           <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 space-y-2.5">
             <div className="skeleton-bar h-3.5" style={{ width: '90%' }} />
@@ -103,8 +103,8 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
       {!isSent && email.ai_summary_text && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <Sparkles size={16} className="text-indigo-400" />
-            <h3 className="text-sm font-semibold text-indigo-400 uppercase tracking-wider">AI Analysis</h3>
+            <Sparkles size={16} className="text-primary-400" />
+            <h3 className="text-sm font-semibold text-primary-400 uppercase tracking-wider">AI Analysis</h3>
             {email.ai_summary_model && (
               <span className="text-[9px] text-slate-600 font-bold">{email.ai_summary_model}</span>
             )}
@@ -125,7 +125,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
 
           {email.ai_summary_json?.action_items && email.ai_summary_json.action_items.length > 0 && (
             <div ref={actionItemsRef} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-              <p className="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-3">Action Items</p>
+              <p className="text-xs font-semibold text-primary-400 uppercase tracking-wider mb-3">Action Items</p>
               <ol className="space-y-2 list-decimal list-inside">
                 {email.ai_summary_json.action_items.map((action: string, idx: number) => (
                   <li key={idx} className="text-sm leading-relaxed text-slate-300">{action}</li>
@@ -155,7 +155,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
           {bodyText.length > 320 && (
             <button
               onClick={onReadFull}
-              className="mt-3 text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
+              className="mt-3 text-xs font-bold text-primary-400 hover:text-primary-300 transition-colors"
             >
               Read full email →
             </button>
@@ -167,7 +167,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
       {!isSent && onAskAssistant && (
         <button
           onClick={onAskAssistant}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] hover:bg-indigo-500/[0.08] hover:border-indigo-500/30 text-slate-400 hover:text-indigo-300 text-xs font-semibold transition-all"
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] hover:bg-primary-500/[0.08] hover:border-primary-500/30 text-slate-400 hover:text-primary-300 text-xs font-semibold transition-all"
         >
           <Bot size={13} />
           Ask AI Assistant
