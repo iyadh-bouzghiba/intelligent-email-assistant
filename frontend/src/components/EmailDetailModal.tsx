@@ -76,9 +76,15 @@ export function EmailDetailModal({
     !email.ai_preferred_language_available
   );
 
-  const summarizeButtonLabel = showPreferredLanguageMismatch
+  const summarizeButtonQueued = Boolean(isSummarizing);
+
+  const summarizeButtonIdleLabel = showPreferredLanguageMismatch
     ? `Generate ${languageLabel(effectivePreferredLanguage)} version`
-    : 'Re-summarize';
+    : 'Refresh AI Summary';
+
+  const summarizeButtonLabel = summarizeButtonQueued
+    ? 'Queued...'
+    : summarizeButtonIdleLabel;
 
   const summarizeButtonHandler = showPreferredLanguageMismatch
     ? onGeneratePreferred
@@ -245,9 +251,16 @@ export function EmailDetailModal({
                   {showSummarizeButton && (
                     <button
                       onClick={summarizeButtonHandler}
-                      className="inline-flex flex-1 md:flex-none items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
+                      disabled={summarizeButtonQueued}
+                      aria-busy={summarizeButtonQueued}
+                      title={summarizeButtonQueued ? 'Summary request queued' : summarizeButtonIdleLabel}
+                      className="inline-flex flex-1 md:flex-none items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <Sparkles size={12} />
+                      {summarizeButtonQueued ? (
+                        <RefreshCw size={12} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={12} />
+                      )}
                       {summarizeButtonLabel}
                     </button>
                   )}

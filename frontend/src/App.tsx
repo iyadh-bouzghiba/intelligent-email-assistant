@@ -13,6 +13,12 @@ import { AccountSwitcherDesktop } from './components/AccountSwitcherDesktop';
 import { WakingUp } from './components/WakingUp';
 import { getAccountColor, getEmailInitials } from './components/accountSwitcherHelpers';
 
+const devLog = (...args: unknown[]) => {
+  if (import.meta.env.DEV) {
+    console.log(...args);
+  }
+};
+
 const AUTH_REQUIRED_EVENT = 'iea:auth-required';
 const BRAND_NAME = "EXECUTIVE BRAIN";
 const SUBTITLE = "Strategic Intelligence Feed";
@@ -379,14 +385,14 @@ export const App = () => {
 
     // ── Single-flight guard with coalesced rerun ────────────────────────────
     if (fetchingRef.current) {
-      console.log(`[FETCH] In-flight — coalescing (reason: ${reason}, account: ${accountIdToUse ?? 'all'})`);
+      devLog(`[FETCH] In-flight — coalescing (reason: ${reason}, account: ${accountIdToUse ?? 'all'})`);
       fetchPendingRef.current = true;
       lastFetchRequestedAccountRef.current = accountIdToUse;
       lastFetchReasonRef.current = `coalesced:${reason}`;
       return;
     }
     fetchingRef.current = true;
-    console.log(`[FETCH] Start (reason: ${reason}, account: ${accountIdToUse ?? 'all'})`);
+    devLog(`[FETCH] Start (reason: ${reason}, account: ${accountIdToUse ?? 'all'})`);
     // ───────────────────────────────────────────────────────────────────────
 
     try {
@@ -425,7 +431,7 @@ export const App = () => {
       // Only guard when we were fetching for a specific account (non-null).
       // The coalesced rerun in finally will carry the latest account automatically.
       if (accountIdToUse != null && activeEmailRef.current !== accountIdToUse) {
-        console.log(
+        devLog(
           `[FETCH] Stale — fetched: ${accountIdToUse}, active: ${activeEmailRef.current ?? 'none'} (reason: ${reason}). Discarding.`
         );
         return; // exits try → finally; coalesced rerun will handle new account if pending
@@ -501,7 +507,7 @@ export const App = () => {
       setBriefings(mapped);
       setError(null);
       setConsecutiveFailures(0);
-      console.log(`[FETCH] Committed (reason: ${reason}, account: ${accountIdToUse ?? 'all'}, count: ${mapped.length})`);
+      devLog(`[FETCH] Committed (reason: ${reason}, account: ${accountIdToUse ?? 'all'}, count: ${mapped.length})`);
 
       // Clear queuedSummarizeIdsRef for emails whose summaries have arrived
       mapped.forEach(e => {
@@ -546,7 +552,7 @@ export const App = () => {
         const pendingReason = lastFetchReasonRef.current ?? 'coalesced';
         lastFetchRequestedAccountRef.current = null;
         lastFetchReasonRef.current = null;
-        console.log(`[FETCH] Running coalesced follow-up (reason: ${pendingReason}, account: ${pendingAccount ?? 'all'})`);
+        devLog(`[FETCH] Running coalesced follow-up (reason: ${pendingReason}, account: ${pendingAccount ?? 'all'})`);
         // setTimeout(0) lets React flush state from the current fetch before the next one starts
         setTimeout(() => fetchEmails(pendingAccount, { reason: pendingReason }), 0);
       }
@@ -567,20 +573,20 @@ export const App = () => {
       summaryRefreshTimerRef.current = null;
       // If a full sync is already running, defer 5s to avoid concurrent fetch interference
       if (syncingRef.current) {
-        console.log('[SUMMARY-REFRESH] Sync active — deferring 5s');
+        devLog('[SUMMARY-REFRESH] Sync active — deferring 5s');
         summaryRefreshTimerRef.current = setTimeout(async () => {
           summaryRefreshTimerRef.current = null;
           // Re-check: if still syncing after deferral, runSync's fetchEmails will carry the result
           if (syncingRef.current) {
-            console.log('[SUMMARY-REFRESH] Still syncing after deferral — skipping to avoid race');
+            devLog('[SUMMARY-REFRESH] Still syncing after deferral — skipping to avoid race');
             return;
           }
-          console.log('[SUMMARY-REFRESH] Deferred fetch running');
+          devLog('[SUMMARY-REFRESH] Deferred fetch running');
           await fetchEmails(accountId, { reason: 'summary-refresh:deferred' });
         }, 5000);
         return;
       }
-      console.log('[SUMMARY-REFRESH] Fetching updated summaries for account:', accountId);
+      devLog('[SUMMARY-REFRESH] Fetching updated summaries for account:', accountId);
       await fetchEmails(accountId, { reason: 'summary-refresh' });
     }, SUMMARY_REFRESH_DELAY_MS);
   };
@@ -592,7 +598,7 @@ export const App = () => {
     );
     if (toQueue.length === 0) return;
 
-    console.log('[AUTO-SUMMARIZE] Queuing', toQueue.length, 'new emails (already tracked:', queuedSummarizeIdsRef.current.size, ')');
+    devLog('[AUTO-SUMMARIZE] Queuing', toQueue.length, 'new emails (already tracked:', queuedSummarizeIdsRef.current.size, ')');
 
     // Register all new IDs in persistent ref BEFORE firing requests — prevents re-queuing
     toQueue.forEach(e => queuedSummarizeIdsRef.current.add(e.gmail_message_id!));
@@ -609,7 +615,7 @@ export const App = () => {
             apiService.summarizeEmail(email.gmail_message_id!, accountId)
           )
         );
-        console.log(`[AUTO-SUMMARIZE] Batch ${Math.floor(i / BATCH_SIZE) + 1} queued (${batch.length} emails)`);
+        devLog(`[AUTO-SUMMARIZE] Batch ${Math.floor(i / BATCH_SIZE) + 1} queued (${batch.length} emails)`);
       } catch (err) {
         console.warn('[AUTO-SUMMARIZE] Batch failed:', err);
       }
@@ -622,7 +628,7 @@ export const App = () => {
     // Schedule a single bounded follow-up fetch to reveal completed summaries.
     // scheduleSummaryRefresh coalesces multiple calls — safe against double-queuing.
     // queuedSummarizeIdsRef entries are cleared in fetchEmails when ai_summary_text arrives.
-    console.log('[AUTO-SUMMARIZE] All jobs queued. Scheduling bounded summary refresh.');
+    devLog('[AUTO-SUMMARIZE] All jobs queued. Scheduling bounded summary refresh.');
     scheduleSummaryRefresh(accountId);
   };
 
@@ -634,7 +640,7 @@ export const App = () => {
       // Do NOT call setLoading(false) — if the caller set loading=true expecting a handoff,
       // loading must stay true until the queued switch executes and fetchEmails completes.
       pendingSwitchAccountRef.current = accountId;
-      console.log(`[SWITCH] Sync busy; queued pending switch for account: ${accountId}`);
+      devLog(`[SWITCH] Sync busy; queued pending switch for account: ${accountId}`);
       return;
     }
     syncingRef.current = true;
@@ -643,7 +649,7 @@ export const App = () => {
 
     try {
       const syncResult = await apiService.syncNow(accountId);
-      console.log('[SYNC] Result:', syncResult);
+      devLog('[SYNC] Result:', syncResult);
       if (syncResult.status === 'auth_required') {
         setOfflineAccounts(prev => new Set(prev).add(accountId));
       } else {
@@ -676,12 +682,12 @@ export const App = () => {
         pendingSwitchAccountRef.current = null;
         if (pendingAccount !== accountId) {
           // Different target account — launch its sync cycle immediately
-          console.log(`[SWITCH] Applying queued pending switch for account: ${pendingAccount}`);
+          devLog(`[SWITCH] Applying queued pending switch for account: ${pendingAccount}`);
           runSync(pendingAccount); // Non-awaited: let it claim the lock and drive fetch/loading
         } else {
           // Same account already synced — no re-run needed, ensure loading is cleared
           setLoading(false);
-          console.log(`[SWITCH] Queued switch resolved by completed sync for: ${pendingAccount}`);
+          devLog(`[SWITCH] Queued switch resolved by completed sync for: ${pendingAccount}`);
         }
       }
       // ───────────────────────────────────────────────────────────────────────
@@ -717,9 +723,9 @@ export const App = () => {
         const connectedList = loadedAccounts.filter(a => a.connected);
 
         if (connectedList.length === 0) {
-          console.log('[INIT] No connected accounts -> showing onboarding');
+          devLog('[INIT] No connected accounts -> showing onboarding');
         } else {
-          console.log(`[INIT] ${connectedList.length} connected account(s) -> showing selection screen`);
+          devLog(`[INIT] ${connectedList.length} connected account(s) -> showing selection screen`);
         }
 
         setLoading(false);
@@ -788,17 +794,17 @@ export const App = () => {
 
     // Realtime updates via WebSocket
     const handleEmailsUpdated = (data: EmailsUpdatedData) => {
-      console.log("[STRATEGY] Realtime update received:", data);
+      devLog("[STRATEGY] Realtime update received:", data);
       // Skip if runSync is already active — its fetchEmails completion will carry the update
       if (syncingRef.current) {
-        console.log('[FETCH] ws:emails_updated — sync active, skipping redundant fetch');
+        devLog('[FETCH] ws:emails_updated — sync active, skipping redundant fetch');
         return;
       }
       fetchEmails(activeEmailRef.current, { reason: 'ws:emails_updated' });
     };
 
     const handleSummaryReady = (data: SummaryReadyData) => {
-      console.log("[STRATEGY] Summaries ready:", data);
+      devLog("[STRATEGY] Summaries ready:", data);
       // Could refetch thread data if needed
     };
 
@@ -995,7 +1001,7 @@ export const App = () => {
 
     if (!authSuccess) return;
 
-    console.log(`[OAUTH-CALLBACK] Detected - target account: ${newAccountId || 'MISSING'}`);
+    devLog(`[OAUTH-CALLBACK] Detected - target account: ${newAccountId || 'MISSING'}`);
 
     // Clean up URL immediately to prevent re-triggering
     window.history.replaceState({}, document.title, window.location.pathname);
@@ -1015,14 +1021,14 @@ export const App = () => {
       retryCount++;
       const delay = INITIAL_DELAY * Math.pow(1.5, retryCount - 1); // Exponential backoff
 
-      console.log(`[OAUTH-CALLBACK] Attempt ${retryCount}/${MAX_RETRIES} - checking for account: ${newAccountId}`);
+      devLog(`[OAUTH-CALLBACK] Attempt ${retryCount}/${MAX_RETRIES} - checking for account: ${newAccountId}`);
 
       try {
         // Reload accounts from backend
         const accountsData = await apiService.listAccounts();
         const loadedAccounts: AccountInfo[] = accountsData.accounts || [];
 
-        console.log(`[OAUTH-CALLBACK] Found ${loadedAccounts.length} accounts:`, loadedAccounts.map(a => a.account_id));
+        devLog(`[OAUTH-CALLBACK] Found ${loadedAccounts.length} accounts:`, loadedAccounts.map(a => a.account_id));
 
         setAccounts(loadedAccounts);
 
@@ -1030,7 +1036,7 @@ export const App = () => {
         const targetAccount = loadedAccounts.find(a => a.account_id === newAccountId);
 
         if (targetAccount) {
-          console.log(`[OAUTH-CALLBACK] ✅ SUCCESS - Activating: ${newAccountId}`);
+          devLog(`[OAUTH-CALLBACK] ✅ SUCCESS - Activating: ${newAccountId}`);
           setActiveEmail(newAccountId);
           localStorage.setItem('last_selected_account', newAccountId);
           setOfflineAccounts(prev => { const next = new Set(prev); next.delete(newAccountId); return next; });
@@ -1040,7 +1046,7 @@ export const App = () => {
 
         // Account not found yet - retry if attempts remaining
         if (retryCount < MAX_RETRIES) {
-          console.log(`[OAUTH-CALLBACK] ⏳ Account not found yet - retrying in ${delay}ms...`);
+          devLog(`[OAUTH-CALLBACK] ⏳ Account not found yet - retrying in ${delay}ms...`);
           setTimeout(attemptActivation, delay);
         } else {
           // Max retries exceeded - show error
@@ -1076,16 +1082,16 @@ export const App = () => {
 
   const handleDisconnect = async (account_id: string) => {
     setConfirmDisconnect(null);
-    console.log(`[DISCONNECT] Disconnecting account: ${account_id}`);
+    devLog(`[DISCONNECT] Disconnecting account: ${account_id}`);
     try {
       await apiService.disconnectAccount(account_id);
-      console.log(`[DISCONNECT] Successfully disconnected: ${account_id}`);
+      devLog(`[DISCONNECT] Successfully disconnected: ${account_id}`);
 
       // CRITICAL: Reload accounts list from backend to reflect disconnect
       const accountsData = await apiService.listAccounts();
       const loadedAccounts: AccountInfo[] = accountsData.accounts || [];
       setAccounts(loadedAccounts);
-      console.log(`[DISCONNECT] Reloaded ${loadedAccounts.length} accounts`);
+      devLog(`[DISCONNECT] Reloaded ${loadedAccounts.length} accounts`);
 
       // If disconnected account was active, clear active email and all scoped UI state
       if (activeEmail === account_id) {
@@ -1093,7 +1099,7 @@ export const App = () => {
         localStorage.removeItem('last_selected_account');
         setBriefings([]); // Clear emails since no account is active
         resetAccountScopedState();
-        console.log(`[DISCONNECT] Cleared active account (was ${account_id})`);
+        devLog(`[DISCONNECT] Cleared active account (was ${account_id})`);
       }
     } catch (err) {
       console.error('[DISCONNECT] Failed to disconnect account:', account_id, err);
@@ -1199,7 +1205,7 @@ export const App = () => {
       );
 
       if (result.success) {
-        console.log('[SEND] Email sent successfully:', result.message_id);
+        devLog('[SEND] Email sent successfully:', result.message_id);
         setSentToAddress(result.sent_to || '');
         setSentCCAddress(result.sent_cc || '');
         setSendSuccess(true);
@@ -1225,7 +1231,7 @@ export const App = () => {
   // Reset all account-scoped UI state immediately on account switch.
   // CRITICAL: clears the feed to prevent old-account cards remaining visible under new account label.
   const resetAccountScopedState = () => {
-    console.log('[SWITCH] Resetting account-scoped UI state');
+    devLog('[SWITCH] Resetting account-scoped UI state');
     // Feed — must be cleared immediately so old account cards are not visible under new account label
     setBriefings([]);
     setSummarizingIds(new Set());
@@ -1310,11 +1316,11 @@ export const App = () => {
 
   // Extracted: account-switch handler — called by AccountSwitcherMobile / AccountSwitcherDesktop
   const handleSwitchAccount = async (accountId: string) => {
-    console.log(`[SWITCH] Requested account: ${accountId}`);
+    devLog(`[SWITCH] Requested account: ${accountId}`);
     resetAccountScopedState(); // immediately clears feed + summarize state
     setActiveEmail(accountId);
     setLoading(true);
-    console.log(`[SWITCH] Target account handoff started: ${accountId}`);
+    devLog(`[SWITCH] Target account handoff started: ${accountId}`);
     await runSync(accountId);
     // setLoading(false) handled by fetchEmails' finally (or pending switch path)
   };
@@ -1576,7 +1582,7 @@ export const App = () => {
     const id = selectedEmailDetail.gmail_message_id;
     setSummarizingIds(prev => new Set(prev).add(id));
     await apiService.summarizeEmail(id, activeEmail);
-    console.log('[MODAL] Summarization queued for', id);
+    devLog('[MODAL] Summarization queued for', id);
     scheduleSummaryRefresh(activeEmail);
   };
 
@@ -1827,7 +1833,7 @@ export const App = () => {
                   <button
                     onClick={async () => {
                       if (!activeEmail || syncingRef.current) return;
-                      console.log('[REFRESH] Manual refresh for account:', activeEmail);
+                      devLog('[REFRESH] Manual refresh for account:', activeEmail);
                       setLoading(true);
                       await runSync(activeEmail);
                       // setLoading(false) handled by fetchEmails' finally
@@ -2214,7 +2220,7 @@ export const App = () => {
                                 Queued...
                               </span>
                             )}
-                            {/* Re-summarize for cards that already have summaries */}
+                            {/* Refresh AI Summary for cards that already have summaries */}
                             {item.ai_summary_text && item.gmail_message_id && (
                               <button
                                 onClick={async () => {
@@ -2224,10 +2230,17 @@ export const App = () => {
                                   // Use the same coalesced bounded refresh — no duplicate timers
                                   scheduleSummaryRefresh(activeEmail);
                                 }}
-                                className="text-[9px] font-bold text-slate-500 hover:text-primary-400 uppercase flex items-center gap-1 transition-colors"
+                                disabled={summarizingIds.has(item.gmail_message_id!)}
+                                aria-busy={summarizingIds.has(item.gmail_message_id!)}
+                                title={summarizingIds.has(item.gmail_message_id!) ? 'Summary request queued' : 'Refresh AI Summary'}
+                                className="text-[9px] font-bold text-slate-500 hover:text-primary-400 uppercase flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                <Sparkles size={11} />
-                                Re-summarize
+                                {summarizingIds.has(item.gmail_message_id!) ? (
+                                  <RefreshCw size={11} className="animate-spin" />
+                                ) : (
+                                  <Sparkles size={11} />
+                                )}
+                                {summarizingIds.has(item.gmail_message_id!) ? 'Queued...' : 'Refresh AI Summary'}
                               </button>
                             )}
                             <button
