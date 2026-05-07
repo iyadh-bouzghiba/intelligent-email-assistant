@@ -2,6 +2,11 @@ import { io, Socket } from "socket.io-client";
 
 const IS_DEV = import.meta.env.DEV;
 const DEV_SOCKET_ENABLED = import.meta.env.VITE_ENABLE_SOCKET_DEV === "1";
+const devLog = (...args: unknown[]) => {
+    if (IS_DEV) {
+        console.log(...args);
+    }
+};
 let lastDevErrAt = 0;
 let devSocketNoticeShown = false;
 
@@ -62,7 +67,7 @@ class WebSocketService {
         }
 
         if (this.socket?.connected) {
-            console.log("[WebSocket] Already connected");
+            devLog("[WebSocket] Already connected");
             return;
         }
 
@@ -89,7 +94,7 @@ class WebSocketService {
         this.socket = io(SOCKET_URL, socketOptions);
 
         this.socket.on("connect", () => {
-            console.log("[WebSocket] Connected:", this.socket?.id);
+            devLog("[WebSocket] Connected:", this.socket?.id);
         });
 
         this.socket.on("disconnect", (reason) => {
@@ -106,21 +111,21 @@ class WebSocketService {
         });
 
         this.socket.on("connection_established", (data) => {
-            console.log("[WebSocket] Server handshake:", data);
+            devLog("[WebSocket] Server handshake:", data);
         });
 
         this.socket.on("thread_analyzed", (data: ThreadAnalyzedData) => {
-            console.log("[WebSocket] Thread analyzed:", data);
+            devLog("[WebSocket] Thread analyzed:", data);
             this.emit("thread_analyzed", data);
         });
 
         this.socket.on("emails_updated", (data: EmailsUpdatedData) => {
-            console.log("[WebSocket] Emails updated:", data);
+            devLog("[WebSocket] Emails updated:", data);
             this.emit("emails_updated", data);
         });
 
         this.socket.on("summary_ready", (data: SummaryReadyData) => {
-            console.log("[WebSocket] Summary ready:", data);
+            devLog("[WebSocket] Summary ready:", data);
             this.emit("summary_ready", data);
         });
     }

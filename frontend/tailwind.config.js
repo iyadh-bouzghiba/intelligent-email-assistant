@@ -29,7 +29,7 @@ export default {
         'brand-accent': '#F0A500',
       },
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
+        sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
       },
     },
   },

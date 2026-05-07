@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -8,8 +6,31 @@
   --bg-color: #080C14;
   --card-bg: rgba(15, 21, 32, 0.88);
   --glass-border: rgba(26, 32, 53, 0.9);
+  --font-sans: 'Inter', 'IBM Plex Sans Arabic';
 }
 
+html:lang(ar) {
+  --font-sans: 'Inter', 'IBM Plex Sans Arabic';
+}
+
+html:lang(ja) {
+  --font-sans: 'Inter', 'Noto Sans JP';
+}
+
+html:lang(ko) {
+  --font-sans: 'Inter', 'Noto Sans KR';
+}
+
+html:lang(zh-CN),
+html:lang(zh-SG) {
+  --font-sans: 'Inter', 'Noto Sans SC';
+}
+
+html:lang(zh-TW),
+html:lang(zh-HK),
+html:lang(zh-MO) {
+  --font-sans: 'Inter', 'Noto Sans TC';
+}
 
 @layer base {
   body {
