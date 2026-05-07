@@ -39,6 +39,7 @@ from backend.infrastructure.supabase_store import SupabaseStore
 from backend.languages import normalize_language, SUPPORTED_LANGUAGES
 from backend.tones import SUPPORTED_TONES, normalize_tone, list_supported_tones
 from backend.summary_versions import EMAIL_SUMMARY_PROMPT_VERSION
+from backend.engine.nlp_engine import MistralEngine
 
 # CRITICAL: Configure logging with immediate flush for production visibility
 logging.basicConfig(
@@ -2641,9 +2642,30 @@ class TemplateCreateRequest(BaseModel):
     body: str
 
 
+class TranslateEmailRequest(BaseModel):
+    body: str
+    target_language: str
+
+
 def _get_preferences_store() -> SupabaseStore:
     """Create a Supabase store for preference reads/writes."""
     return SupabaseStore()
+
+
+def _build_translation_system_prompt(target_language: str) -> str:
+    target_label = SUPPORTED_LANGUAGES[target_language]["label"]
+    return (
+        "You are a professional email translator.\n\n"
+        f"Translate the provided email body into {target_label}.\n\n"
+        "Rules:\n"
+        "- Return only the translated email body text.\n"
+        "- Do not add commentary, notes, explanations, titles, or quotation marks.\n"
+        "- Preserve paragraph breaks, bullet points, numbering, and blank lines.\n"
+        "- Preserve names, email addresses, URLs, phone numbers, dates, times, codes, "
+        "and reference numbers exactly unless ordinary surrounding prose requires inflection.\n"
+        "- Preserve the professional tone and intent faithfully.\n"
+        "- Translate body content only."
+    )
 
 
 @app.get("/api/preferences/languages")
@@ -2860,6 +2882,74 @@ async def update_preferences(request: PreferencesUpdateRequest):
             status_code=500,
             detail="Failed to persist preferences",
         )
+
+
+@api_router.post("/translate")
+async def translate_email_body(request: TranslateEmailRequest):
+    """
+    Translate an email body into the active account's preferred AI language.
+
+    Contract:
+      input  -> {"body": string, "target_language": "en|fr|ar"}
+      output -> {"translated_body": string}
+
+    Constraints:
+      - body only; never headers
+      - no persistence
+      - authenticated route
+    """
+    body = (request.body or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Email body is required")
+
+    requested_language = (request.target_language or "").strip().lower()
+    normalized_language = normalize_language(requested_language)
+    if normalized_language != requested_language or normalized_language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(
+            status_code=400,
+            detail="target_language must be one of: en, fr, ar",
+        )
+
+    api_key = os.getenv("MISTRAL_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Translation service unavailable")
+
+    engine = MistralEngine(api_key=api_key)
+    estimated_output_tokens = max(512, min(4096, engine.count_tokens(body) + 256))
+
+    try:
+        translated_body = await engine.generate_text_async(
+            prompt=(
+                f"Target language: {normalized_language}\n\n"
+                f"Email body:\n{body}"
+            ),
+            max_tokens=estimated_output_tokens,
+            temperature=0.2,
+            system_prompt=_build_translation_system_prompt(normalized_language),
+        )
+    except ValueError:
+        raise HTTPException(status_code=503, detail="Translation service unavailable")
+    except TimeoutError:
+        logger.warning(
+            "[TRANSLATE] Timed out for language=%s body_chars=%s",
+            normalized_language,
+            len(body),
+        )
+        raise HTTPException(status_code=502, detail="Translation timed out")
+    except Exception as e:
+        logger.error(
+            "[TRANSLATE] Failed (language=%s, type=%s)",
+            normalized_language,
+            type(e).__name__,
+        )
+        raise HTTPException(status_code=502, detail="Translation failed")
+
+    translated_body = (translated_body or "").strip()
+    if not translated_body:
+        raise HTTPException(status_code=502, detail="Translation returned empty content")
+
+    return {"translated_body": translated_body}
+
 
 @api_router.post("/emails/{gmail_message_id}/summarize")
 async def summarize_email_by_id(

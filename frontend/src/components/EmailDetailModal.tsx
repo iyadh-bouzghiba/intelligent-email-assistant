@@ -1,10 +1,11 @@
 import { motion } from 'framer-motion';
 import { X, Sparkles, MailOpen, Mail, RefreshCw } from 'lucide-react';
-import { Briefing } from '@types';
+import { AILanguage, Briefing } from '@types';
+import { apiService } from '../services/api';
 import { FocusTrap } from './FocusTrap';
 import { EmailQuickView } from './EmailQuickView';
 import { EmailFullView } from './EmailFullView';
-import { RefObject } from 'react';
+import { RefObject, useEffect, useState } from 'react';
 
 interface Props {
   email: Briefing;
@@ -25,6 +26,10 @@ interface Props {
   onAskAssistant?: () => void;
   getCategoryStyles: (cat: string) => string;
   preferredLanguage: string;
+}
+
+interface RenderedEmailTextPayload {
+  body_text?: string | null;
 }
 
 const TITLE_ID = 'email-detail-title';
@@ -103,6 +108,130 @@ export function EmailDetailModal({
 
   const showPreferredLanguageBanner = !detailIsSent && showPreferredLanguageMismatch;
   const showSummarizeButton = !detailIsSent && Boolean(email.ai_summary_text && email.gmail_message_id);
+
+  const emailIdentity = email.gmail_message_id ?? email.thread_id ?? `${email.subject}|${email.date}`;
+  const fallbackTranslationBody = detailIsSent
+    ? (sentMeta?.bodyPreview || email.body || email.summary || '')
+    : (email.body || email.summary || '');
+  const normalizedTranslationLanguage: AILanguage =
+    effectivePreferredLanguage === 'fr' || effectivePreferredLanguage === 'ar'
+      ? effectivePreferredLanguage
+      : 'en';
+  const showTranslateButton = Boolean((fallbackTranslationBody || '').trim() || email.gmail_message_id);
+
+  const [translationPending, setTranslationPending] = useState(false);
+  const [translationActive, setTranslationActive] = useState(false);
+  const [translatedBody, setTranslatedBody] = useState<string | null>(null);
+  const [translationError, setTranslationError] = useState<string | null>(null);
+  const [translationTargetLanguage, setTranslationTargetLanguage] = useState<AILanguage | null>(null);
+
+  useEffect(() => {
+    setTranslationPending(false);
+    setTranslationActive(false);
+    setTranslatedBody(null);
+    setTranslationError(null);
+    setTranslationTargetLanguage(null);
+  }, [emailIdentity, normalizedTranslationLanguage]);
+
+  const translateButtonLabel = translationPending
+    ? 'Translating...'
+    : translationActive
+      ? 'Show original'
+      : 'Translate';
+
+  const translateButtonTitle = translationPending
+    ? 'Translation in progress'
+    : translationActive
+      ? 'Restore the original email body'
+      : `Translate body to ${languageLabel(normalizedTranslationLanguage)}`;
+
+  const resolveTranslationSourceBody = async (): Promise<string> => {
+    if (email.gmail_message_id) {
+      try {
+        const response = await fetch(`/api/emails/${encodeURIComponent(email.gmail_message_id)}/rendered`, {
+          credentials: 'include',
+        });
+
+        if (response.ok) {
+          const payload = (await response.json()) as RenderedEmailTextPayload;
+          const renderedBodyText = (payload.body_text || '').trim();
+          if (renderedBodyText) {
+            return renderedBodyText;
+          }
+        }
+      } catch {
+        // Fall through to local body fallback.
+      }
+    }
+
+    return fallbackTranslationBody;
+  };
+
+  const handleTranslateToggle = async () => {
+    if (translationPending) return;
+
+    if (translationActive) {
+      setTranslationActive(false);
+      setTranslationError(null);
+      return;
+    }
+
+    if (translatedBody && translationTargetLanguage === normalizedTranslationLanguage) {
+      if (panelView === 'quick') {
+        onSwitchView('full');
+      }
+      setTranslationError(null);
+      setTranslationActive(true);
+      return;
+    }
+
+    if (panelView === 'quick') {
+      onSwitchView('full');
+    }
+
+    setTranslationPending(true);
+    setTranslationError(null);
+
+    try {
+      const sourceBody = await resolveTranslationSourceBody();
+      if (!sourceBody.trim()) {
+        setTranslatedBody(null);
+        setTranslationTargetLanguage(null);
+        setTranslationActive(false);
+        setTranslationError('No translatable body available for this email.');
+        return;
+      }
+
+      const result = await apiService.translateEmailBody(sourceBody, normalizedTranslationLanguage);
+      if (result.error) {
+        setTranslatedBody(null);
+        setTranslationTargetLanguage(null);
+        setTranslationActive(false);
+        setTranslationError(result.error);
+        return;
+      }
+
+      const translated = (result.translated_body || '').trim();
+      if (!translated) {
+        setTranslatedBody(null);
+        setTranslationTargetLanguage(null);
+        setTranslationActive(false);
+        setTranslationError('Translation returned empty content.');
+        return;
+      }
+
+      setTranslatedBody(translated);
+      setTranslationTargetLanguage(normalizedTranslationLanguage);
+      setTranslationActive(true);
+    } catch {
+      setTranslatedBody(null);
+      setTranslationTargetLanguage(null);
+      setTranslationActive(false);
+      setTranslationError('Translation failed. Please try again.');
+    } finally {
+      setTranslationPending(false);
+    }
+  };
 
   return (
     <>
@@ -233,6 +362,10 @@ export function EmailDetailModal({
                   email={email}
                   actionItemsRef={actionItemsRef}
                   onBackToSummary={() => onSwitchView('quick')}
+                  translationActive={translationActive}
+                  translatedBody={translatedBody}
+                  translationTargetLanguage={translationTargetLanguage}
+                  translationError={translationError}
                 />
               )}
             </div>
@@ -262,6 +395,22 @@ export function EmailDetailModal({
                         <Sparkles size={12} />
                       )}
                       {summarizeButtonLabel}
+                    </button>
+                  )}
+                  {showTranslateButton && (
+                    <button
+                      onClick={handleTranslateToggle}
+                      disabled={translationPending}
+                      aria-busy={translationPending}
+                      title={translateButtonTitle}
+                      className="inline-flex flex-1 md:flex-none items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {translationPending ? (
+                        <RefreshCw size={12} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={12} />
+                      )}
+                      {translateButtonLabel}
                     </button>
                   )}
                   {modifyScope && !detailIsSent && (
