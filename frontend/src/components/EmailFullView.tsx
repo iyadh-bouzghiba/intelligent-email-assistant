@@ -9,6 +9,10 @@ interface Props {
   email: Briefing;
   actionItemsRef: RefObject<HTMLDivElement>;
   onBackToSummary: () => void;
+  translationActive?: boolean;
+  translatedBody?: string | null;
+  translationTargetLanguage?: string | null;
+  translationError?: string | null;
 }
 
 interface LinkedFileItem {
@@ -186,7 +190,15 @@ function buildSanitizedHtml(htmlInput: string): string {
  *
  * All action buttons live in EmailDetailModal's footer.
  */
-export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props) {
+export function EmailFullView({
+  email,
+  actionItemsRef,
+  onBackToSummary,
+  translationActive = false,
+  translatedBody = null,
+  translationTargetLanguage = null,
+  translationError = null,
+}: Props) {
   const [renderedEmail, setRenderedEmail] = useState<RenderedEmailPayload | null>(null);
   const [renderLoading, setRenderLoading] = useState(false);
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -247,6 +259,12 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
   const rawText = renderedEmail?.body_text || email.body || email.summary || '';
   const bodyText = normalizeBodyText(rawText);
   const paragraphs = bodyText ? bodyText.split('\n\n').filter((p) => p.trim().length > 0) : [];
+
+  const translatedText = normalizeBodyText(translatedBody || '');
+  const translatedParagraphs = translatedText
+    ? translatedText.split('\n\n').filter((p) => p.trim().length > 0)
+    : [];
+  const translatedDirection = translationTargetLanguage === 'ar' ? 'rtl' : 'ltr';
 
   const sectionTitle = isSent ? 'Sent Message' : 'Full Message';
   const backLabel = isSent ? '← Outbound Preview' : '← Summary';
@@ -361,7 +379,18 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
         </div>
 
         <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-          {renderLoading ? (
+          {translationActive && translatedParagraphs.length > 0 ? (
+            <div dir={translatedDirection} className="space-y-3">
+              {translatedParagraphs.map((para, i) => (
+                <p
+                  key={i}
+                  className="text-sm leading-relaxed text-slate-200 whitespace-pre-wrap break-words"
+                >
+                  {para}
+                </p>
+              ))}
+            </div>
+          ) : renderLoading ? (
             <p className="text-sm leading-relaxed text-slate-400">{loadingLabel}</p>
           ) : sanitizedHtml ? (
             <div
@@ -384,6 +413,12 @@ export function EmailFullView({ email, actionItemsRef, onBackToSummary }: Props)
             <p className="text-sm leading-relaxed text-slate-500 italic">{emptyBodyLabel}</p>
           )}
         </div>
+
+        {translationError && (
+          <p className="text-xs leading-relaxed text-amber-400">
+            {translationError}
+          </p>
+        )}
 
         {renderError && (
           <p className="text-xs leading-relaxed text-amber-400">

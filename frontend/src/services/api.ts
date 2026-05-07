@@ -27,6 +27,11 @@ export interface PreferencesResponse {
     ai_language: AILanguage;
 }
 
+export interface TranslateEmailResponse {
+    translated_body?: string;
+    error?: string;
+}
+
 const AUTH_REQUIRED_EVENT = "iea:auth-required";
 
 // Production: same-origin (frontend served by backend, no env var needed).
@@ -193,6 +198,33 @@ export const apiService = {
             ai_language,
         });
         return response.data;
+    },
+
+    translateEmailBody: async (
+        body: string,
+        target_language: AILanguage
+    ): Promise<TranslateEmailResponse> => {
+        try {
+            const response = await api.post(`${API_ROOT}/translate`, {
+                body,
+                target_language,
+            });
+            return response.data;
+        } catch (error: unknown) {
+            console.warn('[API] translateEmailBody failed:', error);
+
+            const apiError =
+                isAxiosError(error) && typeof error.response?.data?.detail === 'string'
+                    ? error.response.data.detail
+                    : undefined;
+
+            const message =
+                error instanceof Error ? error.message : 'Network error';
+
+            return {
+                error: apiError || message,
+            };
+        }
     },
 
     // REST Emails — primary source for polling
