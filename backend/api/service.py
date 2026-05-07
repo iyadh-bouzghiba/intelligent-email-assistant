@@ -255,6 +255,16 @@ async def healthz():
     now = time.time()
     api_timestamp = datetime.now(timezone.utc).isoformat()
 
+    commit_sha_candidate = (os.getenv("COMMIT_SHA") or "").strip()
+    render_commit_sha_candidate = (os.getenv("RENDER_GIT_COMMIT") or "").strip()
+
+    if re.fullmatch(r"[0-9a-fA-F]{7,40}", commit_sha_candidate):
+        commit_sha = commit_sha_candidate
+    elif re.fullmatch(r"[0-9a-fA-F]{7,40}", render_commit_sha_candidate):
+        commit_sha = render_commit_sha_candidate
+    else:
+        commit_sha = "unknown"
+
     # ── worker_sync section ───────────────────────────────────────────────
     ws = _get_worker_heartbeat()
     lcs = ws.get("last_cycle_started_at")
@@ -294,7 +304,7 @@ async def healthz():
         "status": "ok",
         "schema": ControlPlane.schema_state,
         "api_timestamp": api_timestamp,
-        "commit_sha": os.getenv("COMMIT_SHA", "unknown"),
+        "commit_sha": commit_sha,
         "deployed_at": os.getenv("DEPLOYED_AT") or api_timestamp,
         "worker_sync": worker_sync,
         "ai_summarizer": ai_summarizer,
