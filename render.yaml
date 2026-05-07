@@ -5,9 +5,9 @@
 
 services:
   # -------------------------------------------------------------------------
-  # BACKEND — Web Service (FastAPI + Socket.IO + Python 3.11)
-  # Frontend is built inside the Docker image and served same-origin.
-  # The separate static site service has been removed (BL-07 consolidation).
+  # BACKEND - Web Service (FastAPI + Socket.IO + Python 3.11)
+  # Production serves the frontend from this same canonical origin.
+  # The separate frontend static-site deployment path is no longer active.
   # -------------------------------------------------------------------------
   - type: web
     name: intelligent-email-assistant
@@ -107,56 +107,59 @@ services:
 # ============================================================================
 # DEPLOYMENT NOTES:
 #
-# 1. Current Service URLs:
-#    - Backend: https://intelligent-email-assistant-3e1a.onrender.com
-#    - Frontend: https://intelligent-email-frontend.onrender.com
+# 1. Canonical Service URL:
+#    - Application (same-origin frontend + backend):
+#      https://intelligent-email-assistant-3e1a.onrender.com
 #
-# 2. Required Environment Variables in Render Dashboard (Backend):
+# 2. Health and Deploy Truth:
+#    - Render health check path is /healthz
+#    - /healthz is the authoritative runtime and deploy-fingerprint endpoint
+#    - Production validation should confirm:
+#      * HTTP 200 from /healthz
+#      * commit_sha matches the deployed main SHA
+#
+# 3. Required Environment Variables in Render Dashboard (Backend):
 #    - GOOGLE_CLIENT_ID = (from Google Cloud Console)
 #    - GOOGLE_CLIENT_SECRET = (from Google Cloud Console)
-#    - GOOGLE_REDIRECT_URI = https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google
+#    - GOOGLE_REDIRECT_URI =
+#      https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google
 #    - BASE_URL = https://intelligent-email-assistant-3e1a.onrender.com
-#    - FRONTEND_URL = https://intelligent-email-frontend.onrender.com
-#    - FERNET_KEY = (generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
-#    - JWT_SECRET_KEY = (generate random secure key)
-#    - MISTRAL_API_KEY = (from Mistral AI - REQUIRED for AI summaries)
+#    - FRONTEND_URL = current canonical origin if still used for allowlist compatibility
+#    - FERNET_KEY = (generate securely)
+#    - JWT_SECRET_KEY = (generate securely)
+#    - MISTRAL_API_KEY = (from Mistral AI - required for AI summaries)
 #    - SUPABASE_URL = (from Supabase)
 #    - SUPABASE_ANON_KEY = (from Supabase)
 #    - SUPABASE_SERVICE_KEY = (from Supabase)
 #    - DATABASE_URL = (PostgreSQL connection string)
+#    - COMMIT_SHA = $RENDER_GIT_COMMIT
 #    - ENVIRONMENT = production
 #
-# 3. Required Environment Variables in Render Dashboard (Frontend):
-#    - VITE_API_BASE = https://intelligent-email-assistant-3e1a.onrender.com
-#    - VITE_SOCKET_URL = https://intelligent-email-assistant-3e1a.onrender.com
-#
 # 4. Google Cloud Console Configuration:
-#    - Authorized JavaScript Origins:
-#      * https://intelligent-email-frontend.onrender.com
 #    - Authorized Redirect URIs:
 #      * https://intelligent-email-assistant-3e1a.onrender.com/auth/callback/google
+#    - Authorized JavaScript Origins:
+#      * use the current canonical origin only if required by the active OAuth posture
 #
-# 5. Health check endpoint /health must return {"status": "ok"}
-#
-# 6. Package Structure:
+# 5. Package Structure:
 #    - Backend root directory: backend/
 #    - Start command runs from backend/ with proper Python module imports
 #    - All imports use: from backend.module import ...
 #
-# 7. Worker Architecture (Hybrid Mode):
-#    WORKER_MODE=true enables email sync worker (Gmail ingestion)
-#    AI_SUMM_ENABLED=true enables AI summarization worker (Mistral-powered)
-#    Both workers run as daemon threads in single Render web service
+# 6. Worker Architecture (Hybrid Mode):
+#    - WORKER_MODE=true enables email sync worker (Gmail ingestion)
+#    - AI_SUMM_ENABLED=true enables AI summarization worker (Mistral-powered)
+#    - Both workers run as daemon threads in the single Render web service
 #
 #    Worker Lifecycle:
-#    - Email Worker: Syncs Gmail → writes to emails table
-#    - AI Worker: Claims ai_jobs → calls Mistral → writes to email_ai_summaries
+#    - Email Worker: syncs Gmail -> writes to emails table
+#    - AI Worker: claims ai_jobs -> calls Mistral -> writes to email_ai_summaries
 #
 #    Queue Safety:
 #    - Atomic job claiming via ai_claim_jobs RPC (FOR UPDATE SKIP LOCKED)
 #    - Idempotent enqueue: UNIQUE (job_type, account_id, gmail_message_id)
 #    - Idempotent results: UNIQUE (account_id, gmail_message_id, prompt_version)
-#    - Retry cap: 5 attempts with exponential backoff → dead-letter queue
+#    - Retry cap: 5 attempts with exponential backoff -> dead-letter queue
 #
 #    Monitoring:
 #    - Check ai_jobs table for status='dead' (failed after 5 attempts)
