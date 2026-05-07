@@ -1,4 +1,4 @@
-﻿"""
+"""
 Intelligent Email Assistant - API Service
 
 FastAPI application providing:
@@ -253,6 +253,7 @@ async def healthz():
     which is still a truthful response.
     """
     now = time.time()
+    api_timestamp = datetime.now(timezone.utc).isoformat()
 
     # ── worker_sync section ───────────────────────────────────────────────
     ws = _get_worker_heartbeat()
@@ -292,7 +293,9 @@ async def healthz():
     return {
         "status": "ok",
         "schema": ControlPlane.schema_state,
-        "api_timestamp": datetime.now(timezone.utc).isoformat(),
+        "api_timestamp": api_timestamp,
+        "commit_sha": os.getenv("COMMIT_SHA", "unknown"),
+        "deployed_at": os.getenv("DEPLOYED_AT") or api_timestamp,
         "worker_sync": worker_sync,
         "ai_summarizer": ai_summarizer,
     }
