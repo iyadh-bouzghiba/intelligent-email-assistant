@@ -20,8 +20,8 @@ interface Props extends AccountSwitcherLanguageProps {
  *
  * Trigger: compact pill button — avatar + truncated username + chevron.
  *          Visually matches the header chrome (same bg/border as desktop trigger).
- * Panel:   small anchored popover below the trigger, right-aligned.
- *          NOT a full-width bottom-sheet — appropriate for a max-3-account surface.
+ * Panel:   in-flow expansion panel rendered directly below the trigger.
+ *          This avoids covering tabs and feed content on narrow mobile viewports.
  *
  * Outside-tap close uses a document-level `pointerdown` capture listener, which
  * fires immediately on touch without the ~300ms simulated-mouse delay.
@@ -81,7 +81,7 @@ export function AccountSwitcherMobile({
   };
 
   return (
-    <div className="sm:hidden relative flex-1 min-w-0">
+    <div className="sm:hidden flex flex-1 min-w-0 flex-col">
       {/* Expanding pill trigger — fills mobile action row width */}
       <button
         ref={buttonRef}
@@ -136,17 +136,17 @@ export function AccountSwitcherMobile({
         />
       </button>
 
-      {/* Compact anchored popover — right-aligned below the trigger */}
+      {/* In-flow expansion panel — pushes content down instead of covering it */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
             id="account-switcher-mobile-popover"
             ref={popoverRef}
-            initial={{ opacity: 0, y: -4, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.97 }}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.13, ease: 'easeOut' }}
-            className="absolute right-0 top-full mt-3 z-[100] w-[16rem] max-w-[calc(100vw-1rem)] origin-top-right rounded-2xl bg-brand-surface border border-brand-border shadow-2xl overflow-hidden overflow-x-hidden max-h-[70vh] overflow-y-auto custom-scrollbar"
+            className="mt-3 w-full rounded-2xl bg-brand-surface border border-brand-border shadow-2xl overflow-hidden overflow-x-hidden max-h-[60vh] overflow-y-auto custom-scrollbar"
           >
             <AccountSwitcherList
               connectedAccounts={connectedAccounts}

@@ -30,7 +30,9 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
     : (email.body || email.summary || '');
 
   const bodyText = normalizeBodyText(rawText);
-  const preview = bodyText.length > 320 ? bodyText.slice(0, 320) + '…' : bodyText;
+  const preview = bodyText.length > 320 ? `${bodyText.slice(0, 320)}...` : bodyText;
+  const showInlineReadFullCta = isSent;
+  const showCardReadFullCta = !isSent && bodyText.length > 320;
 
   const urgencyRaw = email.ai_summary_json?.urgency;
   const normalizedUrgency = typeof urgencyRaw === 'string' ? urgencyRaw.trim().toLowerCase() : '';
@@ -137,13 +139,26 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
       )}
 
       <div className="space-y-3">
-        <div className="space-y-1">
-          <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-            {isSent ? 'Outbound Preview' : 'Preview'}
-          </h3>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+              {isSent ? 'Outbound Preview' : 'Preview'}
+            </h3>
+
+            {showInlineReadFullCta && (
+              <button
+                type="button"
+                onClick={onReadFull}
+                className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] font-bold text-primary-400 hover:text-primary-300 hover:border-primary-500/30 hover:bg-primary-500/[0.08] transition-all"
+              >
+                Read full email
+              </button>
+            )}
+          </div>
+
           {isSent && (
             <p className="text-xs leading-relaxed text-slate-500">
-              Preview only — use Read full email to view the complete sent message.
+              Preview only. Open the full sent message to access the complete body and translation controls.
             </p>
           )}
         </div>
@@ -152,12 +167,13 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
           <p className="text-sm leading-relaxed text-slate-300 whitespace-pre-wrap break-words">
             {preview || (isSent ? 'No outbound preview available.' : 'No preview available.')}
           </p>
-          {bodyText.length > 320 && (
+          {showCardReadFullCta && (
             <button
+              type="button"
               onClick={onReadFull}
               className="mt-3 text-xs font-bold text-primary-400 hover:text-primary-300 transition-colors"
             >
-              Read full email →
+              Read full email
             </button>
           )}
         </div>
