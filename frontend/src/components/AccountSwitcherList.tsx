@@ -1,4 +1,5 @@
 import { AlertCircle, LogOut } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { AILanguage } from '@services';
 import type { AccountInfo, SupportedLanguage } from '@types';
 import { getAccountColor, getEmailInitials } from './accountSwitcherHelpers';
@@ -56,6 +57,8 @@ export function AccountSwitcherList({
   onAiLanguageChange,
   languageAriaIdPrefix,
 }: Props) {
+  const { t } = useTranslation();
+
   const sorted = [...connectedAccounts].sort((a, b) => {
     if (a.account_id === activeEmail) return -1;
     if (b.account_id === activeEmail) return 1;
@@ -95,12 +98,12 @@ export function AccountSwitcherList({
                   }`}
                 title={
                   info.auth_required
-                    ? 'Reconnect required'
+                    ? t('settings.reconnect_required')
                     : offlineAccounts.has(info.account_id)
-                      ? 'Offline'
+                      ? t('settings.offline')
                       : isActive
-                        ? 'Current'
-                        : 'Ready'
+                        ? t('settings.current')
+                        : t('settings.ready_status')
                 }
               />
             </div>
@@ -111,10 +114,10 @@ export function AccountSwitcherList({
                 href={authUrl}
                 onClick={onClose}
                 className="flex-1 min-w-0 text-left rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
-                title="Authentication expired — click to reconnect"
+                title={t('auth.authentication_expired_click_to_reconnect')}
               >
                 <div className="truncate text-xs font-bold text-amber-400">{info.account_id}</div>
-                <div className="text-[9px] font-black text-[#F59E0B] uppercase tracking-wider mt-0.5">● Reconnect required</div>
+                <div className="text-[9px] font-black text-[#F59E0B] uppercase tracking-wider mt-0.5">• {t('settings.reconnect_required')}</div>
               </a>
             ) : (
               <button
@@ -123,18 +126,18 @@ export function AccountSwitcherList({
               >
                 <div className="truncate text-xs font-bold">{info.account_id}</div>
                 {offlineAccounts.has(info.account_id) ? (
-                  <div className="text-[9px] font-black text-[#EF4444] uppercase tracking-wider mt-0.5">● Offline</div>
+                  <div className="text-[9px] font-black text-[#EF4444] uppercase tracking-wider mt-0.5">• {t('settings.offline')}</div>
                 ) : isActive ? (
-                  <div className="text-[9px] font-black text-[#22C55E] uppercase tracking-wider mt-0.5">● Current</div>
+                  <div className="text-[9px] font-black text-[#22C55E] uppercase tracking-wider mt-0.5">• {t('settings.current')}</div>
                 ) : (
-                  <div className="text-[9px] font-bold text-[#3B82F6] uppercase tracking-wider mt-0.5">● Ready</div>
+                  <div className="text-[9px] font-bold text-[#3B82F6] uppercase tracking-wider mt-0.5">• {t('settings.ready_status')}</div>
                 )}
               </button>
             )}
 
             <button
               onClick={() => onRequestDisconnect(info.account_id)}
-              title={`Disconnect ${info.account_id}`}
+              title={t('settings.disconnect_account_title', { account: info.account_id })}
               className="p-2 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/60"
             >
               <LogOut size={12} />
@@ -147,19 +150,19 @@ export function AccountSwitcherList({
         <div className="border-t border-white/5 px-4 py-3 space-y-3">
           <div className="min-w-0">
             <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-1">
-              AI Language for This Account
+              {t('settings.ai_language_for_this_account')}
             </div>
             <div className="text-slate-200 font-semibold text-xs truncate">
               {activeEmail}
             </div>
             <p id={languageHelpId} className="text-slate-500 text-[11px] mt-1 leading-relaxed">
-              Used for new summaries, action items, and draft replies on this account. Existing AI results stay unchanged.
+              {t('settings.ai_language_help')}
             </p>
           </div>
 
           <div>
             <p id={languageLabelId} className="block text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-2">
-              Use This Language for New AI Results
+              {t('settings.use_this_language_for_new_ai_results')}
             </p>
             <div
               className={`flex rounded-xl bg-white/[0.03] border border-white/[0.08] p-1 gap-1 ${aiLanguageLoading || aiLanguageSaving ? 'opacity-60 pointer-events-none' : ''}`}
@@ -189,13 +192,13 @@ export function AccountSwitcherList({
 
             <div className="mt-2 min-h-[18px]">
               {aiLanguageSaving ? (
-                <p className="text-[11px] font-medium text-primary-300">Saving AI language...</p>
+                <p className="text-[11px] font-medium text-primary-300">{t('settings.ai_language_saving')}</p>
               ) : aiLanguageLoading ? (
-                <p className="text-[11px] font-medium text-slate-500">Loading AI language...</p>
+                <p className="text-[11px] font-medium text-slate-500">{t('settings.ai_language_loading')}</p>
               ) : aiLanguageError ? (
                 <p className="text-[11px] font-medium text-rose-400">{aiLanguageError}</p>
               ) : aiLanguageSavedAccountId === activeEmail ? (
-                <p className="text-[11px] font-medium text-emerald-400">AI language saved for this account.</p>
+                <p className="text-[11px] font-medium text-emerald-400">{t('settings.ai_language_saved_for_this_account')}</p>
               ) : null}
             </div>
           </div>
@@ -208,7 +211,7 @@ export function AccountSwitcherList({
           <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-rose-500/[0.08] border border-rose-500/20">
             <AlertCircle size={12} className="text-rose-400 mt-0.5 flex-shrink-0" />
             <p className="text-[10px] font-semibold text-rose-400 leading-snug">
-              Maximum {maxAccounts} accounts reached. Disconnect one to add another.
+              {t('auth.maximum_accounts_reached', { maxAccounts })}
             </p>
           </div>
         )}
@@ -217,14 +220,14 @@ export function AccountSwitcherList({
             onClick={onMaxAccountsAttempt}
             className="text-[10px] font-bold text-primary-400 hover:text-primary-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 rounded"
           >
-            + Add account
+            {t('auth.add_account')}
           </button>
         ) : (
           <a
             href={authUrl}
             className="text-[10px] font-bold text-primary-400 hover:text-primary-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 rounded"
           >
-            + Add account
+            {t('auth.add_account')}
           </a>
         )}
       </div>

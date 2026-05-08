@@ -4,6 +4,7 @@ import { Briefing } from '@types';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
 import { AttachmentStrip, AttachmentStripItem } from './AttachmentStrip';
 import { ImageLightbox } from './ImageLightbox';
+import { useTranslation } from 'react-i18next';
 
 type TranslationInlineState = 'idle' | 'loading' | 'translated' | 'error';
 
@@ -226,6 +227,7 @@ export function EmailFullView({
   const [renderError, setRenderError] = useState<string | null>(null);
   const [lightboxAttachment, setLightboxAttachment] = useState<AttachmentStripItem | null>(null);
   const bodyContainerRef = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
 
   useEffect(() => {
     setLightboxAttachment(null);
@@ -369,7 +371,7 @@ export function EmailFullView({
         <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-primary-500/25 bg-primary-500/10 px-3 py-2">
           <span className="inline-flex items-center gap-2 text-xs font-semibold text-primary-200">
             <Globe size={14} className="text-primary-300" />
-            <span>{`Translated to ${translateLanguageLabel}`}</span>
+            <span>{t('modal.translated_to', { language: translateLanguageLabel })}</span>
           </span>
           <span className="text-primary-300/60">·</span>
           <button
@@ -377,7 +379,7 @@ export function EmailFullView({
             onClick={onTranslateToggle}
             className="text-xs font-semibold text-primary-300 hover:text-primary-200 transition-colors"
           >
-            View original
+            {t('modal.view_original')}
           </button>
         </div>
       );
@@ -391,7 +393,7 @@ export function EmailFullView({
           className="inline-flex items-center gap-2 rounded-2xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-300 hover:text-amber-200 transition-colors"
         >
           <AlertTriangle size={14} />
-          <span>Translation failed · Try again</span>
+          <span>{t('modal.translation_failed_try_again')}</span>
         </button>
       );
     }
@@ -405,7 +407,7 @@ export function EmailFullView({
           className="inline-flex items-center gap-2 rounded-2xl border border-primary-500/20 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-primary-200 opacity-80 cursor-not-allowed"
         >
           <RefreshCw size={14} className="animate-spin" />
-          <span>{`Translating to ${translateLanguageLabel}...`}</span>
+          <span>{t('modal.translating_to', { language: translateLanguageLabel })}</span>
         </button>
       );
     }
@@ -417,7 +419,7 @@ export function EmailFullView({
         className="inline-flex items-center gap-2 rounded-2xl border border-primary-500/20 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-primary-300 hover:text-primary-200 hover:border-primary-400/35 hover:bg-primary-500/8 transition-colors"
       >
         <Globe size={14} />
-        <span>{`Translate to ${translateLanguageLabel}`}</span>
+        <span>{t('modal.translate_to', { language: translateLanguageLabel })}</span>
       </button>
     );
   };
@@ -428,7 +430,7 @@ export function EmailFullView({
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Sparkles size={16} className="text-primary-400" />
-            <h3 className="text-sm font-semibold text-primary-400 uppercase tracking-wider">AI Analysis</h3>
+            <h3 className="text-sm font-semibold text-primary-400 uppercase tracking-wider">{t('modal.ai_analysis')}</h3>
             {email.ai_summary_model && (
               <span className="text-[9px] text-slate-600 font-bold">{email.ai_summary_model}</span>
             )}
@@ -440,7 +442,7 @@ export function EmailFullView({
                 disabled={refreshSummaryQueued}
                 aria-busy={refreshSummaryQueued}
                 aria-label={refreshSummaryTitle}
-                title={refreshSummaryQueued ? 'Summary request queued' : refreshSummaryTitle}
+                title={refreshSummaryQueued ? t('modal.summary_request_queued') : refreshSummaryTitle}
                 className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <RefreshCw size={14} className={refreshSummaryQueued ? 'animate-spin' : ''} />
@@ -454,7 +456,7 @@ export function EmailFullView({
 
           {email.ai_summary_json?.action_items && email.ai_summary_json.action_items.length > 0 && (
             <div ref={actionItemsRef} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-              <p className="text-xs font-semibold text-primary-400 uppercase tracking-wider mb-3">Action Items</p>
+              <p className="text-xs font-semibold text-primary-400 uppercase tracking-wider mb-3">{t('modal.action_items')}</p>
               <ol className="space-y-2 list-decimal list-inside">
                 {email.ai_summary_json.action_items.map((action: string, idx: number) => (
                   <li key={idx} className="text-sm leading-relaxed text-slate-300">{action}</li>
