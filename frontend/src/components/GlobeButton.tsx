@@ -92,7 +92,7 @@ export function GlobeButton() {
                 <div
                     role="menu"
                     aria-label={t('nav.language_picker_label')}
-                    className="absolute right-0 top-full mt-2 z-[340] w-44 rounded-2xl border border-white/10 bg-brand-surface/95 backdrop-blur-md shadow-2xl shadow-black/30 p-1.5"
+                    className="fixed left-3 right-3 top-20 z-[340] rounded-2xl border border-white/10 bg-brand-surface/95 backdrop-blur-md shadow-2xl shadow-black/30 p-1.5 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-44"
                 >
                     <div className="space-y-1">
                         {LANGUAGE_OPTIONS.map((option) => {

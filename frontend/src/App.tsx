@@ -1797,18 +1797,24 @@ export const App = () => {
         <div className="max-w-7xl mx-auto px-6 py-4">
           {/* Primary row — brand + desktop controls */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-primary-600 to-primary-500 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20">
-                <Brain className="text-white" size={20} />
-              </div>
-              <div>
-                <h1 className="text-white font-bold tracking-tight text-lg">{brandName}</h1>
-                <div className="flex items-center gap-2">
-                  <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${error ? 'bg-rose-500' : 'bg-emerald-500'}`} />
-                  <p className={`text-[10px] uppercase tracking-[0.2em] font-bold ${error ? 'text-rose-500' : 'text-slate-500'}`}>
-                    {error ? t('nav.sentinel_offline') : t('nav.sentinel_active')}
-                  </p>
+            <div className="flex items-center justify-between gap-3 w-full sm:w-auto">
+              <div className="flex items-center gap-4 min-w-0">
+                <div className="w-10 h-10 bg-gradient-to-br from-primary-600 to-primary-500 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20">
+                  <Brain className="text-white" size={20} />
                 </div>
+                <div className="min-w-0">
+                  <h1 className="text-white font-bold tracking-tight text-lg truncate">{brandName}</h1>
+                  <div className="flex items-center gap-2">
+                    <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${error ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                    <p className={`text-[10px] uppercase tracking-[0.2em] font-bold ${error ? 'text-rose-500' : 'text-slate-500'}`}>
+                      {error ? t('nav.sentinel_offline') : t('nav.sentinel_active')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="sm:hidden flex items-center gap-2 flex-shrink-0">
+                <GlobeButton />
               </div>
             </div>
 
@@ -1899,50 +1905,43 @@ export const App = () => {
             </div>
           </div>
 
-          {/* Mobile-only action row */}
-          <div
-            className={`sm:hidden flex items-center gap-2 mt-3 ${connectedAccounts.length > 0 ? 'pt-2.5 border-t border-white/[0.05]' : ''
-              }`}
-          >
-            <GlobeButton />
-
-            {connectedAccounts.length > 0 && (
-              <>
-                <AccountSwitcherMobile
-                  connectedAccounts={connectedAccounts}
-                  activeEmail={activeEmail}
-                  offlineAccounts={offlineAccounts}
-                  maxAccounts={MAX_CONNECTED_ACCOUNTS}
-                  authUrl={apiService.getGoogleAuthUrl()}
-                  onSwitchAccount={handleSwitchAccount}
-                  onRequestDisconnect={(id) => setConfirmDisconnect(id)}
-                  aiLanguage={aiLanguage}
-                  aiLanguageLoading={aiLanguageLoading}
-                  aiLanguageSaving={aiLanguageSaving}
-                  aiLanguageError={aiLanguageError}
-                  aiLanguageSavedAccountId={aiLanguageSavedAccountId}
-                  languageOptions={resolvedLanguageOptions}
-                  onAiLanguageChange={handleAiLanguageChange}
-                  languageAriaIdPrefix="mobile"
-                />
-                {canShowSyncControl && (
-                  <button
-                    onClick={async () => {
-                      if (!activeEmail || syncingRef.current) return;
-                      setLoading(true);
-                      await runSync(activeEmail);
-                    }}
-                    disabled={loading || syncing}
-                    aria-label={syncing ? t('common.syncing') : t('common.sync')}
-                    title={syncing ? t('common.syncing') : t('common.sync')}
-                    className="flex-shrink-0 w-11 h-11 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white transition-all shadow-lg shadow-primary-600/20 active:scale-95"
-                  >
-                    <RefreshCw size={16} className={`${syncing ? 'animate-spin' : ''} transition-transform duration-700`} />
-                  </button>
-                )}
-              </>
-            )}
-          </div>
+          {/* Mobile-only session/action row — connected accounts only */}
+          {connectedAccounts.length > 0 && (
+            <div className="sm:hidden flex items-center gap-2 mt-3 pt-2.5 border-t border-white/[0.05]">
+              <AccountSwitcherMobile
+                connectedAccounts={connectedAccounts}
+                activeEmail={activeEmail}
+                offlineAccounts={offlineAccounts}
+                maxAccounts={MAX_CONNECTED_ACCOUNTS}
+                authUrl={apiService.getGoogleAuthUrl()}
+                onSwitchAccount={handleSwitchAccount}
+                onRequestDisconnect={(id) => setConfirmDisconnect(id)}
+                aiLanguage={aiLanguage}
+                aiLanguageLoading={aiLanguageLoading}
+                aiLanguageSaving={aiLanguageSaving}
+                aiLanguageError={aiLanguageError}
+                aiLanguageSavedAccountId={aiLanguageSavedAccountId}
+                languageOptions={resolvedLanguageOptions}
+                onAiLanguageChange={handleAiLanguageChange}
+                languageAriaIdPrefix="mobile"
+              />
+              {canShowSyncControl && (
+                <button
+                  onClick={async () => {
+                    if (!activeEmail || syncingRef.current) return;
+                    setLoading(true);
+                    await runSync(activeEmail);
+                  }}
+                  disabled={loading || syncing}
+                  aria-label={syncing ? t('common.syncing') : t('common.sync')}
+                  title={syncing ? t('common.syncing') : t('common.sync')}
+                  className="flex-shrink-0 w-11 h-11 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white transition-all shadow-lg shadow-primary-600/20 active:scale-95"
+                >
+                  <RefreshCw size={16} className={`${syncing ? 'animate-spin' : ''} transition-transform duration-700`} />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </header>
 
@@ -2494,9 +2493,9 @@ export const App = () => {
         <div className="flex flex-col md:flex-row items-center justify-between gap-8 border-t border-white/5 pt-12">
           <div className="flex items-center gap-2 text-slate-600">
             <Shield size={18} className="text-primary-500/50" />
-            <span className="text-[10px] font-black uppercase tracking-[0.3em]">Hardware Aligned Intelligence</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.3em]">{t('footer.hardware_aligned_intelligence')}</span>
           </div>
-          <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest opacity-50">© 2026 Executive Brain Ecosystem</p>
+          <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest opacity-50">{t('footer.executive_brain_ecosystem_2026')}</p>
         </div>
       </footer>
 
@@ -2636,8 +2635,8 @@ export const App = () => {
             exit={{ opacity: 0, y: 20, scale: 0.8 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            aria-label="Scroll to top"
-            className="fixed bottom-6 right-6 z-50 w-11 h-11 flex items-center justify-center rounded-full bg-brand-surface border border-brand-border text-slate-400 hover:text-white hover:border-primary-500/40 hover:bg-primary-600/20 shadow-xl transition-all duration-200 hover:scale-105"
+            aria-label={t('common.scroll_to_top')}
+            className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-50 w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center rounded-full bg-brand-surface border border-brand-border text-slate-400 hover:text-white hover:border-primary-500/40 hover:bg-primary-600/20 shadow-xl transition-all duration-200 hover:scale-105"
           >
             <svg
               className="w-4 h-4 sm:w-[18px] sm:h-[18px]"

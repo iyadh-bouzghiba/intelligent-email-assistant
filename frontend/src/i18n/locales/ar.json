@@ -2,6 +2,7 @@
     "common": {
         "close": "إغلاق",
         "cancel": "إلغاء",
+        "scroll_to_top": "العودة إلى الأعلى",
         "previous": "السابق",
         "next": "التالي",
         "navigation": "التنقّل",
@@ -117,5 +118,9 @@
         "current": "الحالي",
         "ready_status": "جاهز",
         "disconnect_account_title": "فصل {{account}}"
+    },
+    "footer": {
+        "hardware_aligned_intelligence": "ذكاء متوافق مع العتاد",
+        "executive_brain_ecosystem_2026": "© 2026 منظومة Executive Brain"
     }
 }

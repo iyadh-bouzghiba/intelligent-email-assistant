@@ -2,6 +2,7 @@
     "common": {
         "close": "Close",
         "cancel": "Cancel",
+        "scroll_to_top": "Scroll to top",
         "previous": "Previous",
         "next": "Next",
         "navigation": "Navigation",
@@ -117,5 +118,9 @@
         "current": "Current",
         "ready_status": "Ready",
         "disconnect_account_title": "Disconnect {{account}}"
+    },
+    "footer": {
+        "hardware_aligned_intelligence": "Hardware Aligned Intelligence",
+        "executive_brain_ecosystem_2026": "© 2026 Executive Brain Ecosystem"
     }
 }

@@ -2,6 +2,7 @@
     "common": {
         "close": "Fermer",
         "cancel": "Annuler",
+        "scroll_to_top": "Revenir en haut",
         "previous": "Précédent",
         "next": "Suivant",
         "navigation": "Navigation",
@@ -38,7 +39,7 @@
         "sentinel_alert_notification_title": "⚠️ Alerte Sentinelle {{brand}}"
     },
     "inbox": {
-        "hardened_shell_version": "Hardened Shell 1.0",
+        "hardened_shell_version": "Interface renforcée 1.0",
         "hero_description": "Synthèse e-mail de niveau exécutif avec surveillance de sécurité intégrée.",
         "legacy_accounts_detected": "Anciens comptes détectés",
         "legacy_accounts_helper": "Vos comptes utilisent l’ancien système « default ». Pour activer les fonctionnalités multi-comptes avec de vraies adresses e-mail et des avatars colorés, veuillez déconnecter puis reconnecter vos comptes.",
@@ -117,5 +118,9 @@
         "current": "Actuel",
         "ready_status": "Prêt",
         "disconnect_account_title": "Déconnecter {{account}}"
+    },
+    "footer": {
+        "hardware_aligned_intelligence": "Intelligence alignée au matériel",
+        "executive_brain_ecosystem_2026": "© 2026 Écosystème Executive Brain"
     }
 }
