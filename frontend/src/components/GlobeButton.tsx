@@ -1,0 +1,123 @@
+import { useEffect, useRef, useState } from 'react';
+import { Check, Globe } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+
+import type { AppShellLanguage } from '../i18n';
+
+const LANGUAGE_OPTIONS: Array<{
+    code: AppShellLanguage;
+    labelKey: 'nav.language_option_english' | 'nav.language_option_french' | 'nav.language_option_arabic';
+    shortKey: 'common.language_short_en' | 'common.language_short_fr' | 'common.language_short_ar';
+}> = [
+        {
+            code: 'en',
+            labelKey: 'nav.language_option_english',
+            shortKey: 'common.language_short_en',
+        },
+        {
+            code: 'fr',
+            labelKey: 'nav.language_option_french',
+            shortKey: 'common.language_short_fr',
+        },
+        {
+            code: 'ar',
+            labelKey: 'nav.language_option_arabic',
+            shortKey: 'common.language_short_ar',
+        },
+    ];
+
+const resolveAppLanguage = (language: string | undefined): AppShellLanguage => {
+    return language === 'ar' || language === 'fr' ? language : 'en';
+};
+
+export function GlobeButton() {
+    const { i18n, t } = useTranslation();
+    const [isOpen, setIsOpen] = useState(false);
+    const rootRef = useRef<HTMLDivElement | null>(null);
+
+    const activeLanguage = resolveAppLanguage(i18n.resolvedLanguage ?? i18n.language);
+    const activeOption = LANGUAGE_OPTIONS.find((option) => option.code === activeLanguage) ?? LANGUAGE_OPTIONS[0];
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const handleDocumentMouseDown = (event: MouseEvent) => {
+            if (!rootRef.current) return;
+            if (rootRef.current.contains(event.target as Node)) return;
+
+            setIsOpen(false);
+        };
+
+        const handleDocumentKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setIsOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleDocumentMouseDown);
+        document.addEventListener('keydown', handleDocumentKeyDown);
+
+        return () => {
+            document.removeEventListener('mousedown', handleDocumentMouseDown);
+            document.removeEventListener('keydown', handleDocumentKeyDown);
+        };
+    }, [isOpen]);
+
+    const handleLanguageSelect = (language: AppShellLanguage) => {
+        if (language !== activeLanguage) {
+            void i18n.changeLanguage(language);
+        }
+
+        setIsOpen(false);
+    };
+
+    return (
+        <div ref={rootRef} className="relative flex-shrink-0">
+            <button
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={isOpen}
+                aria-label={t('nav.language_picker_label')}
+                title={t('nav.language_picker_label')}
+                onClick={() => setIsOpen((current) => !current)}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.05] text-slate-200 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg"
+            >
+                <Globe size={14} aria-hidden="true" />
+                <span className="text-[11px] font-black uppercase tracking-[0.18em]">
+                    {t(activeOption.shortKey)}
+                </span>
+            </button>
+
+            {isOpen && (
+                <div
+                    role="menu"
+                    aria-label={t('nav.language_picker_label')}
+                    className="absolute right-0 top-full mt-2 z-[340] w-44 rounded-2xl border border-white/10 bg-brand-surface/95 backdrop-blur-md shadow-2xl shadow-black/30 p-1.5"
+                >
+                    <div className="space-y-1">
+                        {LANGUAGE_OPTIONS.map((option) => {
+                            const isActive = option.code === activeLanguage;
+
+                            return (
+                                <button
+                                    key={option.code}
+                                    type="button"
+                                    role="menuitemradio"
+                                    aria-checked={isActive}
+                                    onClick={() => handleLanguageSelect(option.code)}
+                                    className={`w-full flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 ${isActive
+                                        ? 'bg-primary-500/16 border border-primary-400/30 text-primary-100'
+                                        : 'border border-transparent text-slate-300 hover:bg-white/[0.04] hover:text-white'
+                                        }`}
+                                >
+                                    <span className="font-semibold">{t(option.labelKey)}</span>
+                                    {isActive ? <Check size={14} aria-hidden="true" /> : <span className="w-[14px]" aria-hidden="true" />}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
+import './i18n';
 import { apiService, AILanguage } from '@services';
 import { websocketService, type EmailsUpdatedData, type SummaryReadyData } from '@services/websocket';
 import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { Briefing, AccountInfo, SentEmail, SupportedLanguage, SupportedTone, EmailTemplate, DraftTone, InboxThreadRow } from '@types';
 import { SentList } from './components/SentList';
 import { EmailDetailModal } from './components/EmailDetailModal';
@@ -10,6 +12,7 @@ import { ReplyComposeModal } from './components/ReplyComposeModal';
 import { AssistantPanel } from './components/AssistantPanel';
 import { AccountSwitcherMobile } from './components/AccountSwitcherMobile';
 import { AccountSwitcherDesktop } from './components/AccountSwitcherDesktop';
+import { GlobeButton } from './components/GlobeButton';
 import { WakingUp } from './components/WakingUp';
 import { getAccountColor, getEmailInitials } from './components/accountSwitcherHelpers';
 
@@ -20,10 +23,42 @@ const devLog = (...args: unknown[]) => {
 };
 
 const AUTH_REQUIRED_EVENT = 'iea:auth-required';
-const BRAND_NAME = "EXECUTIVE BRAIN";
-const SUBTITLE = "Strategic Intelligence Feed";
 const ITEMS_PER_PAGE = 5;
 const MAX_CONNECTED_ACCOUNTS = 3;
+
+type FilterCategory = 'All' | 'Security' | 'Financial' | 'Work' | 'Personal' | 'Marketing' | 'General';
+
+const CATEGORY_OPTIONS: FilterCategory[] = ['All', 'Security', 'Financial', 'Work', 'Personal', 'Marketing', 'General'];
+
+const resolveCategoryLabelKey = (category: string) => {
+  switch (category) {
+    case 'All':
+      return 'inbox.categories.all';
+    case 'Security':
+      return 'inbox.categories.security';
+    case 'Financial':
+      return 'inbox.categories.financial';
+    case 'Work':
+      return 'inbox.categories.work';
+    case 'Personal':
+      return 'inbox.categories.personal';
+    case 'Marketing':
+      return 'inbox.categories.marketing';
+    default:
+      return 'inbox.categories.general';
+  }
+};
+
+const resolveUrgencyLabelKey = (urgency: string) => {
+  switch (urgency) {
+    case 'high':
+      return 'inbox.urgency.high';
+    case 'low':
+      return 'inbox.urgency.low';
+    default:
+      return 'inbox.urgency.medium';
+  }
+};
 
 const FALLBACK_LANGUAGE_OPTIONS: SupportedLanguage[] = [
   { code: 'en', label: 'English', native: 'English' },
@@ -32,13 +67,14 @@ const FALLBACK_LANGUAGE_OPTIONS: SupportedLanguage[] = [
 ];
 
 export const App = () => {
+  const { t } = useTranslation();
   const [briefings, setBriefings] = useState<Briefing[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [startupPhase, setStartupPhase] = useState<'probing' | 'waking' | 'ready'>('probing');
   const [showReadyToast, setShowReadyToast] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [filterCategory, setFilterCategory] = useState<'All' | 'Security' | 'Financial' | 'Work' | 'Personal' | 'Marketing' | 'General'>('All');
+  const [filterCategory, setFilterCategory] = useState<FilterCategory>('All');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [showSentinelToast, setShowSentinelToast] = useState(false);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
@@ -107,6 +143,15 @@ export const App = () => {
   const resolvedLanguageOptions =
     supportedLanguages.length > 0 ? supportedLanguages : FALLBACK_LANGUAGE_OPTIONS;
 
+  const brandName = t('nav.brand_name');
+  const subtitle = t('nav.subtitle');
+  const urgencyAlertsHelp = t('nav.urgency_alerts_help');
+
+  const getCategoryDisplayLabel = (category: string) => t(resolveCategoryLabelKey(category));
+  const getUrgencyDisplayLabel = (urgency: string) => t(resolveUrgencyLabelKey(urgency));
+  const getPageStatusLabel = (current: number, total: number) =>
+    t('common.page_status', { current, total });
+
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") {
@@ -128,10 +173,13 @@ export const App = () => {
 
   const triggerSentinelAlert = (briefing: Briefing) => {
     if (notificationsEnabled && briefing.should_alert) {
-      new Notification(`⚠️ ${BRAND_NAME} Sentinel Alert`, {
-        body: `[${briefing.account}] ${briefing.subject} - ${briefing.summary.substring(0, 80)}...`,
-        icon: "/vite.svg"
-      });
+      new Notification(
+        t('nav.sentinel_alert_notification_title', { brand: brandName }),
+        {
+          body: `[${briefing.account}] ${briefing.subject} - ${briefing.summary.substring(0, 80)}...`,
+          icon: "/vite.svg"
+        }
+      );
     }
   };
 
@@ -1103,7 +1151,7 @@ export const App = () => {
       }
     } catch (err) {
       console.error('[DISCONNECT] Failed to disconnect account:', account_id, err);
-      setError(`Failed to disconnect ${account_id}. Please try again.`);
+      setError(t('auth.disconnect_account_failed', { account: account_id }));
     }
   };
 
@@ -1693,7 +1741,7 @@ export const App = () => {
     priority: 'Medium',
     category: 'General',
     should_alert: false,
-    summary: se.body_preview || 'No preview available.',
+    summary: se.body_preview || t('inbox.no_preview_available'),
     action: '',
     body: se.body_preview || '',
     sentMeta: {
@@ -1754,11 +1802,11 @@ export const App = () => {
                 <Brain className="text-white" size={20} />
               </div>
               <div>
-                <h1 className="text-white font-bold tracking-tight text-lg">{BRAND_NAME}</h1>
+                <h1 className="text-white font-bold tracking-tight text-lg">{brandName}</h1>
                 <div className="flex items-center gap-2">
                   <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${error ? 'bg-rose-500' : 'bg-emerald-500'}`} />
                   <p className={`text-[10px] uppercase tracking-[0.2em] font-bold ${error ? 'text-rose-500' : 'text-slate-500'}`}>
-                    {error ? 'Sentinel Offline' : 'Sentinel Active'}
+                    {error ? t('nav.sentinel_offline') : t('nav.sentinel_active')}
                   </p>
                 </div>
               </div>
@@ -1766,6 +1814,8 @@ export const App = () => {
 
             {/* Desktop-only controls */}
             <div className="hidden sm:flex items-center justify-end gap-3 flex-wrap min-w-0">
+              <GlobeButton />
+
               {/* Desktop utility rail — compact, future-extensible, only when an account is connected */}
               {connectedAccounts.length > 0 && (
                 <div className="flex items-center gap-2 flex-shrink-0 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/5">
@@ -1778,21 +1828,21 @@ export const App = () => {
                     id="sentinel-alerts-label"
                     className="text-[11px] font-bold text-slate-300 whitespace-nowrap"
                   >
-                    Urgency Alerts
+                    {t('nav.urgency_alerts')}
                   </span>
                   <button
                     type="button"
                     aria-labelledby="sentinel-alerts-label"
                     aria-describedby="sentinel-alerts-help"
                     aria-pressed={notificationsEnabled}
-                    title="Browser alerts for new high-urgency emails on this device. Requires notification permission."
+                    title={urgencyAlertsHelp}
                     onClick={() => notificationsEnabled ? setNotificationsEnabled(false) : requestNotificationPermission()}
                     className={`w-10 h-5 rounded-full relative transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg ${notificationsEnabled ? 'bg-primary-600' : 'bg-slate-700'}`}
                   >
                     <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 ${notificationsEnabled ? 'left-6' : 'left-1'}`} />
                   </button>
                   <span id="sentinel-alerts-help" className="sr-only">
-                    Browser alerts for new high-urgency emails on this device. Requires notification permission.
+                    {urgencyAlertsHelp}
                   </span>
                 </div>
               )}
@@ -1806,7 +1856,7 @@ export const App = () => {
                       className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 border border-primary-500/50 text-white text-sm font-bold transition-all shadow-lg shadow-primary-600/20 active:scale-95"
                     >
                       <Mail size={16} />
-                      <span>Connect Account</span>
+                      <span>{t('nav.connect_account')}</span>
                     </a>
                   ) : (
                     <AccountSwitcherDesktop
@@ -1842,50 +1892,57 @@ export const App = () => {
                     className="group flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white text-sm font-bold transition-all shadow-xl shadow-primary-600/20 active:scale-95"
                   >
                     <RefreshCw size={18} className={`${syncing ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-700`} />
-                    {syncing ? 'Syncing...' : 'Sync'}
+                    {syncing ? t('common.syncing') : t('common.sync')}
                   </button>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Mobile-only action row — only when at least one account is connected */}
-          {connectedAccounts.length > 0 && (
-            <div className="sm:hidden flex items-center gap-2 mt-3 pt-2.5 border-t border-white/[0.05]">
-              <AccountSwitcherMobile
-                connectedAccounts={connectedAccounts}
-                activeEmail={activeEmail}
-                offlineAccounts={offlineAccounts}
-                maxAccounts={MAX_CONNECTED_ACCOUNTS}
-                authUrl={apiService.getGoogleAuthUrl()}
-                onSwitchAccount={handleSwitchAccount}
-                onRequestDisconnect={(id) => setConfirmDisconnect(id)}
-                aiLanguage={aiLanguage}
-                aiLanguageLoading={aiLanguageLoading}
-                aiLanguageSaving={aiLanguageSaving}
-                aiLanguageError={aiLanguageError}
-                aiLanguageSavedAccountId={aiLanguageSavedAccountId}
-                languageOptions={resolvedLanguageOptions}
-                onAiLanguageChange={handleAiLanguageChange}
-                languageAriaIdPrefix="mobile"
-              />
-              {canShowSyncControl && (
-                <button
-                  onClick={async () => {
-                    if (!activeEmail || syncingRef.current) return;
-                    setLoading(true);
-                    await runSync(activeEmail);
-                  }}
-                  disabled={loading || syncing}
-                  aria-label={syncing ? 'Syncing...' : 'Sync'}
-                  title={syncing ? 'Syncing...' : 'Sync'}
-                  className="flex-shrink-0 w-11 h-11 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white transition-all shadow-lg shadow-primary-600/20 active:scale-95"
-                >
-                  <RefreshCw size={16} className={`${syncing ? 'animate-spin' : ''} transition-transform duration-700`} />
-                </button>
-              )}
-            </div>
-          )}
+          {/* Mobile-only action row */}
+          <div
+            className={`sm:hidden flex items-center gap-2 mt-3 ${connectedAccounts.length > 0 ? 'pt-2.5 border-t border-white/[0.05]' : ''
+              }`}
+          >
+            <GlobeButton />
+
+            {connectedAccounts.length > 0 && (
+              <>
+                <AccountSwitcherMobile
+                  connectedAccounts={connectedAccounts}
+                  activeEmail={activeEmail}
+                  offlineAccounts={offlineAccounts}
+                  maxAccounts={MAX_CONNECTED_ACCOUNTS}
+                  authUrl={apiService.getGoogleAuthUrl()}
+                  onSwitchAccount={handleSwitchAccount}
+                  onRequestDisconnect={(id) => setConfirmDisconnect(id)}
+                  aiLanguage={aiLanguage}
+                  aiLanguageLoading={aiLanguageLoading}
+                  aiLanguageSaving={aiLanguageSaving}
+                  aiLanguageError={aiLanguageError}
+                  aiLanguageSavedAccountId={aiLanguageSavedAccountId}
+                  languageOptions={resolvedLanguageOptions}
+                  onAiLanguageChange={handleAiLanguageChange}
+                  languageAriaIdPrefix="mobile"
+                />
+                {canShowSyncControl && (
+                  <button
+                    onClick={async () => {
+                      if (!activeEmail || syncingRef.current) return;
+                      setLoading(true);
+                      await runSync(activeEmail);
+                    }}
+                    disabled={loading || syncing}
+                    aria-label={syncing ? t('common.syncing') : t('common.sync')}
+                    title={syncing ? t('common.syncing') : t('common.sync')}
+                    className="flex-shrink-0 w-11 h-11 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white transition-all shadow-lg shadow-primary-600/20 active:scale-95"
+                  >
+                    <RefreshCw size={16} className={`${syncing ? 'animate-spin' : ''} transition-transform duration-700`} />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -1898,7 +1955,7 @@ export const App = () => {
             className="fixed bottom-10 left-1/2 z-[100] px-6 py-3 rounded-2xl bg-primary-600 text-white font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-primary-500/40 border border-white/10 flex items-center gap-3"
           >
             <Shield size={16} />
-            Urgency Alerts enabled
+            {t('nav.urgency_alerts_enabled')}
           </motion.div>
         )}
       </AnimatePresence>
@@ -1914,8 +1971,8 @@ export const App = () => {
           >
             <Mail size={16} />
             <span>
-              {sentToAddress ? `Sent to ${sentToAddress}` : 'Email sent successfully'}
-              {sentCCAddress && <span className="font-normal opacity-70"> - cc: {sentCCAddress}</span>}
+              {sentToAddress ? t('common.sent_to', { address: sentToAddress }) : t('common.email_sent_successfully')}
+              {sentCCAddress && <span className="font-normal opacity-70"> - {t('common.cc_prefix')} {sentCCAddress}</span>}
             </span>
           </motion.div>
         )}
@@ -1931,7 +1988,7 @@ export const App = () => {
             className="fixed bottom-10 left-1/2 z-[320] px-6 py-3 rounded-2xl bg-primary-600 text-white font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-primary-500/40 border border-white/10 flex items-center gap-3"
           >
             <Brain size={16} />
-            Ready
+            {t('common.ready')}
           </motion.div>
         )}
       </AnimatePresence>
@@ -1948,22 +2005,22 @@ export const App = () => {
               <div className="p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-4">
                 <AlertCircle size={24} className="text-amber-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <h4 className="text-white font-bold text-base mb-2">⚠️ Legacy Accounts Detected</h4>
+                  <h4 className="text-white font-bold text-base mb-2">⚠️ {t('inbox.legacy_accounts_detected')}</h4>
                   <p className="text-amber-200 text-sm mb-4">
-                    Your accounts use the old "default" system. To enable multi-account features with real email addresses and colored avatars, please disconnect and reconnect your accounts.
+                    {t('inbox.legacy_accounts_helper')}
                   </p>
                   <div className="flex gap-3">
                     <button
                       onClick={handleDisconnectAll}
                       className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold transition-all shadow-lg"
                     >
-                      Disconnect All & Start Fresh
+                      {t('inbox.disconnect_all_start_fresh')}
                     </button>
                     <a
                       href={apiService.getGoogleAuthUrl()}
                       className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-bold transition-all"
                     >
-                      Reconnect First Account
+                      {t('inbox.reconnect_first_account')}
                     </a>
                   </div>
                 </div>
@@ -1982,13 +2039,13 @@ export const App = () => {
                   className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-500/10 border border-primary-500/20 text-primary-400 text-xs font-black uppercase tracking-[0.2em] mb-6"
                 >
                   <Sparkles size={14} />
-                  <span>Hardened Shell 1.0</span>
+                  <span>{t('inbox.hardened_shell_version')}</span>
                 </motion.div>
                 <h2 className="text-5xl lg:text-6xl font-black text-white tracking-tighter mb-4">
-                  {SUBTITLE}<span className="text-primary-500">.</span>
+                  {subtitle}<span className="text-primary-500">.</span>
                 </h2>
                 <p className="text-slate-400 text-lg max-w-xl font-medium leading-relaxed">
-                  Executive-grade email distillation with integrated security monitoring.
+                  {t('inbox.hero_description')}
                 </p>
               </div>
 
@@ -2009,7 +2066,7 @@ export const App = () => {
                 <AlertCircle size={22} className="flex-shrink-0" />
                 <div className="flex-grow">
                   <h4 className="font-bold text-base">
-                    {consecutiveFailures >= 5 ? 'Transmission Alert' : 'Connecting...'}
+                    {consecutiveFailures >= 5 ? t('inbox.transmission_alert') : t('inbox.connecting')}
                   </h4>
                   <p className="text-sm opacity-90">{error}</p>
                 </div>
@@ -2030,7 +2087,7 @@ export const App = () => {
                   className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'inbox' ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
                 >
                   <Mail size={13} />
-                  Inbox
+                  {t('nav.inbox_tab')}
                   {unreadCount > 0 && (
                     <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black leading-none">
                       {unreadCount}
@@ -2042,20 +2099,20 @@ export const App = () => {
                   className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'sent' ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
                 >
                   <Send size={13} />
-                  Sent
+                  {t('nav.sent_tab')}
                 </button>
               </div>
 
               {/* Right: category chips — inbox only */}
               {activeTab === 'inbox' && (
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {(['All', 'Security', 'Financial', 'Work', 'Personal', 'Marketing', 'General'] as const).map((cat) => (
+                  {CATEGORY_OPTIONS.map((cat) => (
                     <button
                       key={cat}
                       onClick={() => { setFilterCategory(cat); setCurrentPage(1); }}
                       className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterCategory === cat ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
                     >
-                      {cat}
+                      {getCategoryDisplayLabel(cat)}
                     </button>
                   ))}
                 </div>
@@ -2078,18 +2135,18 @@ export const App = () => {
                     disabled={sentCurrentPage === 1}
                     className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
                   >
-                    Previous
+                    {t('common.previous')}
                   </button>
                   <div className="flex flex-col items-center min-w-[120px]">
-                    <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em] mb-1">Navigation</span>
-                    <span className="text-white font-black text-sm">{sentCurrentPage} of {sentTotalPages}</span>
+                    <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em] mb-1">{t('common.navigation')}</span>
+                    <span className="text-white font-black text-sm">{getPageStatusLabel(sentCurrentPage, sentTotalPages)}</span>
                   </div>
                   <button
                     onClick={() => setSentCurrentPage(prev => Math.min(sentTotalPages, prev + 1))}
                     disabled={sentCurrentPage === sentTotalPages}
                     className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
                   >
-                    Next
+                    {t('common.next')}
                   </button>
                 </div>
               )}
@@ -2141,22 +2198,22 @@ export const App = () => {
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
                             <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getPriorityBadgeStyle()}`}>
-                              {urgency}
+                              {getUrgencyDisplayLabel(urgency)}
                             </span>
                             <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getCategoryStyles(item.category)}`}>
-                              {item.category}
+                              {getCategoryDisplayLabel(item.category)}
                             </span>
                           </div>
                           {item.ai_summary_text && (
                             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-primary-500/15 border border-primary-400/30">
                               <Sparkles size={10} className={`text-primary-300 ${summarizingIds.has(item.gmail_message_id || '') ? 'animate-pulse' : ''}`} />
-                              <span className="text-[8px] font-black text-primary-300 uppercase tracking-wider">AI</span>
+                              <span className="text-[8px] font-black text-primary-300 uppercase tracking-wider">{t('common.ai_badge')}</span>
                             </div>
                           )}
                           {!item.ai_summary_text && item.gmail_message_id && summarizingIds.has(item.gmail_message_id) && (
                             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-primary-500/10 border border-primary-400/20">
                               <Sparkles size={10} className="text-primary-400 animate-pulse" />
-                              <span className="text-[8px] font-black text-primary-400 uppercase tracking-wider">Queued</span>
+                              <span className="text-[8px] font-black text-primary-400 uppercase tracking-wider">{t('common.queued_badge')}</span>
                             </div>
                           )}
                         </div>
@@ -2165,8 +2222,8 @@ export const App = () => {
                         <div className="mb-3">
                           <div className="flex items-start gap-2 mb-1">
                             {item.is_read === false
-                              ? <Mail size={14} className="mt-1 text-primary-400 flex-shrink-0" aria-label="Unread" />
-                              : <MailOpen size={14} className="mt-1 text-slate-600 flex-shrink-0" aria-label="Read" />
+                              ? <Mail size={14} className="mt-1 text-primary-400 flex-shrink-0" aria-label={t('common.unread')} />
+                              : <MailOpen size={14} className="mt-1 text-slate-600 flex-shrink-0" aria-label={t('common.read')} />
                             }
                             <h3 className={`text-lg tracking-tight leading-tight group-hover:text-primary-400 transition-colors duration-300 ${item.is_read === false ? 'font-black text-white' : 'font-bold text-slate-200'}`}>
                               {item.subject}
@@ -2289,9 +2346,9 @@ export const App = () => {
                     </div>
 
                     <div className="space-y-2">
-                      <h3 className="text-2xl font-black text-white">Welcome to {BRAND_NAME}</h3>
+                      <h3 className="text-2xl font-black text-white">{t('auth.welcome_to_brand', { brand: brandName })}</h3>
                       <p className="text-slate-400 text-sm font-medium">
-                        Connect your Gmail account to start your intelligence feed.
+                        {t('auth.connect_gmail_intro')}
                       </p>
                     </div>
 
@@ -2299,22 +2356,24 @@ export const App = () => {
                       <div className="flex gap-3 items-start">
                         <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary-600 flex items-center justify-center text-white font-black text-xs">1</div>
                         <div>
-                          <p className="text-slate-200 text-sm font-semibold">Connect your Gmail account</p>
-                          <p className="text-slate-500 text-xs mt-0.5">Click the button below to securely authorize access.</p>
+                          <p className="text-slate-200 text-sm font-semibold">{t('auth.connect_gmail_account')}</p>
+                          <p className="text-slate-500 text-xs mt-0.5">{t('auth.authorize_access_help')}</p>
                         </div>
                       </div>
                       <div className="flex gap-3 items-start">
                         <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary-600 flex items-center justify-center text-white font-black text-xs">2</div>
                         <div>
-                          <p className="text-slate-200 text-sm font-semibold">Select your account</p>
-                          <p className="text-slate-500 text-xs mt-0.5">Use the account switcher (top-right) to activate it. Up to {MAX_CONNECTED_ACCOUNTS} accounts.</p>
+                          <p className="text-slate-200 text-sm font-semibold">{t('auth.select_your_account_step')}</p>
+                          <p className="text-slate-500 text-xs mt-0.5">
+                            {t('auth.select_your_account_step_help', { maxAccounts: MAX_CONNECTED_ACCOUNTS })}
+                          </p>
                         </div>
                       </div>
                       <div className="flex gap-3 items-start">
                         <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary-600 flex items-center justify-center text-white font-black text-xs">3</div>
                         <div>
-                          <p className="text-slate-200 text-sm font-semibold">Your feed syncs automatically</p>
-                          <p className="text-slate-500 text-xs mt-0.5">Inbox emails appear and AI summaries generate in seconds.</p>
+                          <p className="text-slate-200 text-sm font-semibold">{t('auth.feed_syncs_automatically')}</p>
+                          <p className="text-slate-500 text-xs mt-0.5">{t('auth.feed_syncs_automatically_help')}</p>
                         </div>
                       </div>
                     </div>
@@ -2324,12 +2383,12 @@ export const App = () => {
                       className="inline-flex items-center gap-3 px-6 py-3 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-white text-sm font-bold transition-all shadow-2xl shadow-primary-600/30 active:scale-95 border border-primary-400/20"
                     >
                       <Mail size={16} />
-                      <span>Connect Your First Account</span>
+                      <span>{t('auth.connect_your_first_account')}</span>
                       <ChevronRight size={14} />
                     </a>
 
                     <p className="text-slate-600 text-xs max-w-xs">
-                      Read-only INBOX access. Encrypted credentials. Disconnect anytime.
+                      {t('auth.read_only_inbox_notice')}
                     </p>
                   </div>
                 ) : !activeEmail && connectedAccounts.length > 0 ? (
@@ -2340,9 +2399,14 @@ export const App = () => {
                       <div className="absolute inset-0 rounded-full border border-primary-500/20 animate-pulse" />
                     </div>
                     <div>
-                      <h3 className="text-2xl font-black text-white mb-2">Select Account to Begin</h3>
+                      <h3 className="text-2xl font-black text-white mb-2">{t('auth.select_account_to_begin')}</h3>
                       <p className="text-slate-400 max-w-md font-medium mb-6">
-                        You have {connectedAccounts.length} connected {connectedAccounts.length === 1 ? 'account' : 'accounts'}. Click the account switcher above to select which account to view.
+                        {t(
+                          connectedAccounts.length === 1
+                            ? 'auth.connected_accounts_summary_one'
+                            : 'auth.connected_accounts_summary_other',
+                          { count: connectedAccounts.length }
+                        )}
                       </p>
                       <div className="flex flex-wrap gap-3 justify-center">
                         {connectedAccounts.map((acc) => (
@@ -2351,7 +2415,7 @@ export const App = () => {
                               key={acc.account_id}
                               href={apiService.getGoogleAuthUrl()}
                               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 hover:border-amber-400/50 transition-all group"
-                              title="Authentication expired — click to reconnect"
+                              title={t('auth.authentication_expired_click_to_reconnect')}
                             >
                               <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${getAccountColor(acc.account_id)} text-[10px] font-black text-white shadow-md`}>
                                 {getEmailInitials(acc.account_id)}
@@ -2360,7 +2424,7 @@ export const App = () => {
                                 <div className="text-xs font-bold text-amber-400 group-hover:text-amber-300 transition-colors">
                                   {acc.account_id.split('@')[0]}
                                 </div>
-                                <div className="text-[9px] font-black text-amber-500 uppercase tracking-wider">Reconnect required</div>
+                                <div className="text-[9px] font-black text-amber-500 uppercase tracking-wider">{t('settings.reconnect_required')}</div>
                               </div>
                             </a>
                           ) : (
@@ -2388,8 +2452,12 @@ export const App = () => {
                       <div className="absolute inset-0 rounded-full border border-primary-500/10 animate-ping" />
                     </div>
                     <div>
-                      <h3 className="text-2xl font-black text-white mb-2">{filterCategory} Channel Clear</h3>
-                      <p className="text-slate-500 max-w-xs font-medium">No fresh briefings caught in the {filterCategory} filter.</p>
+                      <h3 className="text-2xl font-black text-white mb-2">
+                        {t('inbox.channel_clear', { category: getCategoryDisplayLabel(filterCategory) })}
+                      </h3>
+                      <p className="text-slate-500 max-w-xs font-medium">
+                        {t('inbox.no_fresh_briefings_in_filter', { category: getCategoryDisplayLabel(filterCategory) })}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -2404,18 +2472,18 @@ export const App = () => {
                 disabled={effectiveInboxPage === 1}
                 className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
               >
-                Previous
+                {t('common.previous')}
               </button>
               <div className="flex flex-col items-center min-w-[120px]">
-                <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em] mb-1">Navigation</span>
-                <span className="text-white font-black text-sm">{effectiveInboxPage} of {totalPages}</span>
+                <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em] mb-1">{t('common.navigation')}</span>
+                <span className="text-white font-black text-sm">{getPageStatusLabel(effectiveInboxPage, totalPages)}</span>
               </div>
               <button
                 onClick={() => setCurrentPage(Math.min(totalPages, effectiveInboxPage + 1))}
                 disabled={effectiveInboxPage === totalPages}
                 className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
               >
-                Next
+                {t('common.next')}
               </button>
             </div>
           )}
@@ -2452,25 +2520,28 @@ export const App = () => {
                 <div className="w-10 h-10 rounded-2xl bg-rose-500/10 flex items-center justify-center">
                   <LogOut size={18} className="text-rose-400" />
                 </div>
-                <h3 className="text-white font-black text-lg">Disconnect Account</h3>
+                <h3 className="text-white font-black text-lg">{t('auth.disconnect_account_heading')}</h3>
               </div>
               <p className="text-slate-400 text-sm mb-2">
-                Remove <span className="text-white font-bold">{confirmDisconnect}</span> from your intelligence feed?
+                {t('auth.disconnect_account_prompt', { account: confirmDisconnect })}
               </p>
-              <p className="text-slate-600 text-xs mb-8">Emails from this account will no longer be synced. You can reconnect at any time.</p>
+              <p className="text-slate-600 text-xs mb-8">
+                {t('auth.disconnect_account_notice')}
+              </p>
               <div className="flex gap-3">
                 <button
                   onClick={() => setConfirmDisconnect(null)}
                   className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 hover:text-white text-sm font-bold transition-all"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={() => handleDisconnect(confirmDisconnect)}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition-all shadow-lg shadow-rose-900/30"
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition-all"
                 >
-                  Disconnect
+                  {t('auth.disconnect_account_confirm')}
                 </button>
+
               </div>
             </motion.div>
           </motion.div>

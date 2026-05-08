@@ -6,6 +6,7 @@ import { FocusTrap } from './FocusTrap';
 import { EmailQuickView } from './EmailQuickView';
 import { EmailFullView } from './EmailFullView';
 import { RefObject, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   email: Briefing;
@@ -66,10 +67,12 @@ export function EmailDetailModal({
   getCategoryStyles,
   preferredLanguage,
 }: Props) {
-  const languageLabel = (code?: string | null) => {
-    if (code === 'fr') return 'French';
-    if (code === 'ar') return 'Arabic';
-    return 'English';
+  const { t } = useTranslation();
+
+  const languageLabel = (code: string | null) => {
+    if (code === 'fr') return t('nav.language_option_french');
+    if (code === 'ar') return t('nav.language_option_arabic');
+    return t('nav.language_option_english');
   };
 
   const actualSummaryLanguage = email.ai_summary_language ?? 'en';
@@ -184,7 +187,7 @@ export function EmailDetailModal({
         setTranslatedBody(null);
         setTranslationTargetLanguage(null);
         setTranslationActive(false);
-        setTranslationError('No translatable body available for this email.');
+        setTranslationError(t('modal.no_translatable_body_available'));
         return;
       }
 
@@ -202,7 +205,7 @@ export function EmailDetailModal({
         setTranslatedBody(null);
         setTranslationTargetLanguage(null);
         setTranslationActive(false);
-        setTranslationError('Translation returned empty content.');
+        setTranslationError(t('modal.translation_returned_empty_content'));
         return;
       }
 
@@ -213,7 +216,7 @@ export function EmailDetailModal({
       setTranslatedBody(null);
       setTranslationTargetLanguage(null);
       setTranslationActive(false);
-      setTranslationError('Translation failed. Please try again.');
+      setTranslationError(t('modal.translation_failed_try_again'));
     } finally {
       setTranslationPending(false);
     }
@@ -303,10 +306,10 @@ export function EmailDetailModal({
                       <>
                         <span
                           className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${email.priority === 'High'
-                              ? 'bg-[#FF3B5C] text-white border-[#FF3B5C]'
-                              : email.priority === 'Medium'
-                                ? 'bg-[#FFB800] text-[#1a1a1a] border-[#FFB800]'
-                                : 'bg-[#3D4A5C] text-[#94A3B8] border-[#3D4A5C]'
+                            ? 'bg-[#FF3B5C] text-white border-[#FF3B5C]'
+                            : email.priority === 'Medium'
+                              ? 'bg-[#FFB800] text-[#1a1a1a] border-[#FFB800]'
+                              : 'bg-[#3D4A5C] text-[#94A3B8] border-[#3D4A5C]'
                             }`}
                         >
                           {email.priority}
@@ -320,11 +323,11 @@ export function EmailDetailModal({
 
                         <span
                           className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${isRead
-                              ? 'bg-slate-500/10 text-slate-500 border-slate-500/20'
-                              : 'bg-primary-500/10 text-primary-400 border-primary-500/20'
+                            ? 'bg-slate-500/10 text-slate-500 border-slate-500/20'
+                            : 'bg-primary-500/10 text-primary-400 border-primary-500/20'
                             }`}
                         >
-                          {isRead ? 'Read' : 'Unread'}
+                          {isRead ? t('common.read') : t('common.unread')}
                         </span>
                       </>
                     )}
@@ -334,7 +337,7 @@ export function EmailDetailModal({
                 <button
                   data-modal-close
                   onClick={onClose}
-                  aria-label="Close email details"
+                  aria-label={t('modal.close_email_details')}
                   className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors flex-shrink-0"
                 >
                   <X size={20} />
@@ -347,14 +350,13 @@ export function EmailDetailModal({
               {showPreferredLanguageBanner && (
                 <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
                   <p className="text-[11px] font-bold uppercase tracking-wide text-amber-300">
-                    Preferred language version not generated yet
+                    {t('modal.preferred_language_version_not_generated_yet')}
                   </p>
                   <p className="mt-1 text-sm leading-relaxed text-amber-100/90">
-                    The saved summary currently shown is in{' '}
-                    <span className="font-semibold">{languageLabel(actualSummaryLanguage)}</span>.
-                    {' '}Your preferred language is{' '}
-                    <span className="font-semibold">{languageLabel(effectivePreferredLanguage)}</span>.
-                    {' '}Generate the preferred-language version to replace this fallback view.
+                    {t('modal.preferred_language_fallback_notice', {
+                      actualLanguage: languageLabel(actualSummaryLanguage),
+                      preferredLanguage: languageLabel(effectivePreferredLanguage),
+                    })}
                   </p>
                 </div>
               )}
@@ -397,21 +399,21 @@ export function EmailDetailModal({
                         <button
                           onClick={onMarkUnread}
                           disabled={readStatePending}
-                          title="Mark as unread"
+                          title={t('modal.mark_as_unread')}
                           className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300 hover:text-white text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {readStatePending ? <RefreshCw size={12} className="animate-spin" /> : <Mail size={12} />}
-                          Mark Unread
+                          {t('modal.mark_as_unread')}
                         </button>
                       ) : (
                         <button
                           onClick={onMarkRead}
                           disabled={readStatePending}
-                          title="Mark as read"
+                          title={t('modal.mark_as_read')}
                           className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300 hover:text-white text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {readStatePending ? <RefreshCw size={12} className="animate-spin" /> : <MailOpen size={12} />}
-                          Mark Read
+                          {t('modal.mark_as_read')}
                         </button>
                       )
                     )}
@@ -423,7 +425,7 @@ export function EmailDetailModal({
                       className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-white text-xs font-bold transition-all shadow-lg shadow-primary-600/20"
                     >
                       <Mail size={12} />
-                      Draft Reply
+                      {t('modal.draft_reply')}
                     </button>
                   </div>
                 </div>
