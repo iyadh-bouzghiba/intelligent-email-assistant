@@ -146,7 +146,7 @@ export function AccountSwitcherMobile({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.97 }}
             transition={{ duration: 0.13, ease: 'easeOut' }}
-            className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-brand-surface border border-brand-border shadow-2xl z-[100] overflow-hidden max-h-[70vh] overflow-y-auto custom-scrollbar"
+            className="absolute right-0 top-full mt-3 z-[100] w-[16rem] max-w-[calc(100vw-1rem)] origin-top-right rounded-2xl bg-brand-surface border border-brand-border shadow-2xl overflow-hidden overflow-x-hidden max-h-[70vh] overflow-y-auto custom-scrollbar"
           >
             <AccountSwitcherList
               connectedAccounts={connectedAccounts}

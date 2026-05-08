@@ -1,9 +1,11 @@
 import { RefObject, useEffect, useMemo, useRef, useState } from 'react';
-import { ExternalLink, Sparkles } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Globe, RefreshCw, Sparkles } from 'lucide-react';
 import { Briefing } from '@types';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
 import { AttachmentStrip, AttachmentStripItem } from './AttachmentStrip';
 import { ImageLightbox } from './ImageLightbox';
+
+type TranslationInlineState = 'idle' | 'loading' | 'translated' | 'error';
 
 interface Props {
   email: Briefing;
@@ -13,6 +15,16 @@ interface Props {
   translatedBody?: string | null;
   translationTargetLanguage?: string | null;
   translationError?: string | null;
+
+  showRefreshSummary?: boolean;
+  onRefreshSummary?: () => void;
+  refreshSummaryQueued?: boolean;
+  refreshSummaryTitle?: string;
+
+  showTranslateControls?: boolean;
+  translateState?: TranslationInlineState;
+  translateLanguageLabel?: string;
+  onTranslateToggle?: () => void;
 }
 
 interface LinkedFileItem {
@@ -188,7 +200,9 @@ function buildSanitizedHtml(htmlInput: string): string {
  *   - AttachmentStrip renders non-inline attachments below the body
  *   - ImageLightbox renders full-size attachment previews on demand
  *
- * All action buttons live in EmailDetailModal's footer.
+ * Content actions live near the content they affect:
+ *   - AI summary refresh lives in the AI Analysis header
+ *   - Translation lives directly below the email body
  */
 export function EmailFullView({
   email,
@@ -198,6 +212,14 @@ export function EmailFullView({
   translatedBody = null,
   translationTargetLanguage = null,
   translationError = null,
+  showRefreshSummary = false,
+  onRefreshSummary,
+  refreshSummaryQueued = false,
+  refreshSummaryTitle = 'Refresh summary',
+  showTranslateControls = false,
+  translateState = 'idle',
+  translateLanguageLabel = 'English',
+  onTranslateToggle,
 }: Props) {
   const [renderedEmail, setRenderedEmail] = useState<RenderedEmailPayload | null>(null);
   const [renderLoading, setRenderLoading] = useState(false);
@@ -269,8 +291,8 @@ export function EmailFullView({
   const sectionTitle = isSent ? 'Sent Message' : 'Full Message';
   const backLabel = isSent ? '← Outbound Preview' : '← Summary';
   const loadingLabel = isSent
-    ? 'Loading sent message content…'
-    : 'Loading inline images and attachments…';
+    ? 'Loading sent message content...'
+    : 'Loading inline images and attachments...';
   const emptyBodyLabel = isSent
     ? 'No sent message body available.'
     : 'No message body available.';
@@ -279,6 +301,12 @@ export function EmailFullView({
     () => (renderedEmail?.body_html ? buildSanitizedHtml(renderedEmail.body_html) : null),
     [renderedEmail?.body_html]
   );
+
+  const canRenderRefreshSummary = showRefreshSummary && typeof onRefreshSummary === 'function';
+  const canRenderTranslateControls =
+    showTranslateControls &&
+    typeof onTranslateToggle === 'function' &&
+    Boolean(translateLanguageLabel);
 
   // Attach native load/error listeners to remote images after sanitizedHtml renders.
   // Handles three cases:
@@ -331,6 +359,69 @@ export function EmailFullView({
     };
   }, [sanitizedHtml]);
 
+  const renderTranslateControls = () => {
+    if (!canRenderTranslateControls || !onTranslateToggle) {
+      return null;
+    }
+
+    if (translateState === 'translated') {
+      return (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-primary-500/25 bg-primary-500/10 px-3 py-2">
+          <span className="inline-flex items-center gap-2 text-xs font-semibold text-primary-200">
+            <Globe size={14} className="text-primary-300" />
+            <span>{`Translated to ${translateLanguageLabel}`}</span>
+          </span>
+          <span className="text-primary-300/60">·</span>
+          <button
+            type="button"
+            onClick={onTranslateToggle}
+            className="text-xs font-semibold text-primary-300 hover:text-primary-200 transition-colors"
+          >
+            View original
+          </button>
+        </div>
+      );
+    }
+
+    if (translateState === 'error') {
+      return (
+        <button
+          type="button"
+          onClick={onTranslateToggle}
+          className="inline-flex items-center gap-2 rounded-2xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-300 hover:text-amber-200 transition-colors"
+        >
+          <AlertTriangle size={14} />
+          <span>Translation failed · Try again</span>
+        </button>
+      );
+    }
+
+    if (translateState === 'loading') {
+      return (
+        <button
+          type="button"
+          disabled
+          aria-busy="true"
+          className="inline-flex items-center gap-2 rounded-2xl border border-primary-500/20 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-primary-200 opacity-80 cursor-not-allowed"
+        >
+          <RefreshCw size={14} className="animate-spin" />
+          <span>{`Translating to ${translateLanguageLabel}...`}</span>
+        </button>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={onTranslateToggle}
+        className="inline-flex items-center gap-2 rounded-2xl border border-primary-500/20 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-primary-300 hover:text-primary-200 hover:border-primary-400/35 hover:bg-primary-500/8 transition-colors"
+      >
+        <Globe size={14} />
+        <span>{`Translate to ${translateLanguageLabel}`}</span>
+      </button>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {!isSent && email.ai_summary_text && (
@@ -340,6 +431,20 @@ export function EmailFullView({
             <h3 className="text-sm font-semibold text-primary-400 uppercase tracking-wider">AI Analysis</h3>
             {email.ai_summary_model && (
               <span className="text-[9px] text-slate-600 font-bold">{email.ai_summary_model}</span>
+            )}
+
+            {canRenderRefreshSummary && (
+              <button
+                type="button"
+                onClick={onRefreshSummary}
+                disabled={refreshSummaryQueued}
+                aria-busy={refreshSummaryQueued}
+                aria-label={refreshSummaryTitle}
+                title={refreshSummaryQueued ? 'Summary request queued' : refreshSummaryTitle}
+                className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw size={14} className={refreshSummaryQueued ? 'animate-spin' : ''} />
+              </button>
             )}
           </div>
 
@@ -414,7 +519,13 @@ export function EmailFullView({
           )}
         </div>
 
-        {translationError && (
+        {canRenderTranslateControls && (
+          <div className="pt-1">
+            {renderTranslateControls()}
+          </div>
+        )}
+
+        {translationError && translateState !== 'error' && (
           <p className="text-xs leading-relaxed text-amber-400">
             {translationError}
           </p>

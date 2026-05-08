@@ -123,7 +123,7 @@ export function AccountSwitcherDesktop({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-brand-surface border border-brand-border shadow-2xl z-[100] overflow-hidden max-h-[70vh] overflow-y-auto custom-scrollbar"
+            className="absolute right-0 top-full mt-3 z-[100] w-[18rem] max-w-[calc(100vw-1rem)] origin-top-right rounded-2xl bg-brand-surface border border-brand-border shadow-2xl overflow-hidden overflow-x-hidden max-h-[70vh] overflow-y-auto custom-scrollbar"
           >
             <AccountSwitcherList
               connectedAccounts={connectedAccounts}
