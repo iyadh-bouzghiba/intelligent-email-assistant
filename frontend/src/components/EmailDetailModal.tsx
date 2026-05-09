@@ -70,9 +70,27 @@ export function EmailDetailModal({
   const { t } = useTranslation();
 
   const languageLabel = (code: string | null) => {
-    if (code === 'fr') return t('nav.language_option_french');
-    if (code === 'ar') return t('nav.language_option_arabic');
-    return t('nav.language_option_english');
+    if (code === 'fr') return t('languages.french');
+    if (code === 'ar') return t('languages.arabic');
+    return t('languages.english');
+  };
+
+  const getPriorityDisplayLabel = (priority: string) => {
+    const normalized = priority.toLowerCase();
+    if (normalized === 'high') return t('inbox.urgency.high');
+    if (normalized === 'low') return t('inbox.urgency.low');
+    return t('inbox.urgency.medium');
+  };
+
+  const getCategoryDisplayLabel = (category: string) => {
+    switch (category) {
+      case 'Security': return t('inbox.categories.security');
+      case 'Financial': return t('inbox.categories.financial');
+      case 'Work': return t('inbox.categories.work');
+      case 'Personal': return t('inbox.categories.personal');
+      case 'Marketing': return t('inbox.categories.marketing');
+      default: return t('inbox.categories.general');
+    }
   };
 
   const actualSummaryLanguage = email.ai_summary_language ?? 'en';
@@ -87,8 +105,8 @@ export function EmailDetailModal({
   const summarizeButtonQueued = Boolean(isSummarizing);
 
   const summarizeButtonIdleLabel = showPreferredLanguageMismatch
-    ? `Generate ${languageLabel(effectivePreferredLanguage)} version`
-    : 'Refresh AI Summary';
+    ? t('modal.generate_language_version', { language: languageLabel(effectivePreferredLanguage) })
+    : t('modal.refresh_ai_summary');
 
   const summarizeButtonHandler = showPreferredLanguageMismatch
     ? onGeneratePreferred
@@ -270,21 +288,21 @@ export function EmailDetailModal({
                     {detailIsSent ? (
                       <>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-600">To</span>
+                          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-600">{t('modal.to_label')}</span>
                           <span className="font-semibold text-slate-200 break-all">
-                            {sentMeta?.toAddress || 'Unknown recipient'}
+                            {sentMeta?.toAddress || t('modal.unknown_recipient')}
                           </span>
                         </div>
 
                         {sentMeta?.ccAddresses && (
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-600">CC</span>
+                            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-600">{t('modal.cc_label')}</span>
                             <span className="text-slate-300 break-all">{sentMeta.ccAddresses}</span>
                           </div>
                         )}
 
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-600">Sent at</span>
+                          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-600">{t('modal.sent_at')}</span>
                           <span>{sentAtDisplay}</span>
                         </div>
                       </>
@@ -300,7 +318,7 @@ export function EmailDetailModal({
                   <div className="flex flex-wrap items-center gap-2 mt-3">
                     {detailIsSent ? (
                       <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border bg-slate-500/10 text-slate-400 border-slate-500/20">
-                        Sent
+                        {t('modal.sent_badge')}
                       </span>
                     ) : (
                       <>
@@ -312,13 +330,13 @@ export function EmailDetailModal({
                               : 'bg-[#3D4A5C] text-[#94A3B8] border-[#3D4A5C]'
                             }`}
                         >
-                          {email.priority}
+                          {getPriorityDisplayLabel(email.priority)}
                         </span>
 
                         <span
                           className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getCategoryStyles(email.category)}`}
                         >
-                          {email.category}
+                          {getCategoryDisplayLabel(email.category)}
                         </span>
 
                         <span

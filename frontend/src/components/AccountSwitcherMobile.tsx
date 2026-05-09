@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, User } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { AccountInfo } from '@types';
 import { AccountSwitcherList, type AccountSwitcherLanguageProps } from './AccountSwitcherList';
 import { getAccountColor, getEmailInitials } from './accountSwitcherHelpers';
@@ -46,6 +47,9 @@ export function AccountSwitcherMobile({
   onAiLanguageChange,
   languageAriaIdPrefix,
 }: Props) {
+  const { t } = useTranslation();
+  const switchAccountLabel = t('common.switch_account');
+  const selectAccountLabel = t('common.select_account');
   const [isOpen, setIsOpen] = useState(false);
   const [showMaxMsg, setShowMaxMsg] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -93,8 +97,8 @@ export function AccountSwitcherMobile({
             setIsOpen(true);
           }
         }}
-        aria-label={activeEmail ? 'Switch account' : 'Select account'}
-        title={activeEmail ? 'Switch account' : 'Select account'}
+        aria-label={activeEmail ? switchAccountLabel : selectAccountLabel}
+        title={activeEmail ? switchAccountLabel : selectAccountLabel}
         aria-expanded={isOpen}
         aria-haspopup="dialog"
         aria-controls="account-switcher-mobile-popover"
@@ -127,7 +131,7 @@ export function AccountSwitcherMobile({
             <span className="relative inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 to-slate-800 flex-shrink-0 ring-1 ring-white/10">
               <User size={12} className="text-slate-500" />
             </span>
-            <span className="text-[11px] font-bold text-slate-500 truncate">Select account</span>
+            <span className="text-[11px] font-bold text-slate-500 truncate">{selectAccountLabel}</span>
           </span>
         )}
         <ChevronDown

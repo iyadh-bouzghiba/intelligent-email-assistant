@@ -42,13 +42,6 @@ interface RenderedEmailPayload {
   linked_files?: LinkedFileItem[];
 }
 
-function linkedFileCta(provider: string): string {
-  if (provider === 'google_docs') return 'Open in Docs';
-  if (provider === 'google_sheets') return 'Open in Sheets';
-  if (provider === 'google_slides') return 'Open in Slides';
-  return 'Open in Drive';
-}
-
 // ---------------------------------------------------------------------------
 // HTML sanitization pipeline — three single-responsibility steps
 // ---------------------------------------------------------------------------
@@ -216,10 +209,10 @@ export function EmailFullView({
   showRefreshSummary = false,
   onRefreshSummary,
   refreshSummaryQueued = false,
-  refreshSummaryTitle = 'Refresh summary',
+  refreshSummaryTitle,
   showTranslateControls = false,
   translateState = 'idle',
-  translateLanguageLabel = 'English',
+  translateLanguageLabel,
   onTranslateToggle,
 }: Props) {
   const [renderedEmail, setRenderedEmail] = useState<RenderedEmailPayload | null>(null);
@@ -228,6 +221,23 @@ export function EmailFullView({
   const [lightboxAttachment, setLightboxAttachment] = useState<AttachmentStripItem | null>(null);
   const bodyContainerRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
+
+  const linkedFileCta = (provider: string): string => {
+    if (provider === 'google_docs') return t('modal.open_in_docs');
+    if (provider === 'google_sheets') return t('modal.open_in_sheets');
+    if (provider === 'google_slides') return t('modal.open_in_slides');
+    return t('modal.open_in_drive');
+  };
+
+  const effectiveRefreshSummaryTitle = refreshSummaryTitle ?? t('modal.refresh_ai_summary');
+  const effectiveTranslateLanguageLabel = translateLanguageLabel ?? t('languages.english');
+
+  const getUrgencyLabel = (urgency: string) => {
+    const normalized = urgency.toLowerCase();
+    if (normalized === 'high') return t('inbox.urgency.high');
+    if (normalized === 'low') return t('inbox.urgency.low');
+    return t('inbox.urgency.medium');
+  };
 
   useEffect(() => {
     setLightboxAttachment(null);
@@ -265,7 +275,7 @@ export function EmailFullView({
         }
 
         setRenderedEmail(null);
-        setRenderError('Unable to load inline images and attachments for this email.');
+        setRenderError(t('modal.loading_inline_assets'));
       } finally {
         if (!controller.signal.aborted) {
           setRenderLoading(false);
@@ -276,7 +286,7 @@ export function EmailFullView({
     loadRenderedEmail();
 
     return () => controller.abort();
-  }, [email.gmail_message_id]);
+  }, [email.gmail_message_id, t]);
 
   const isSent = Boolean(email.sentMeta);
 
@@ -290,14 +300,14 @@ export function EmailFullView({
     : [];
   const translatedDirection = translationTargetLanguage === 'ar' ? 'rtl' : 'ltr';
 
-  const sectionTitle = isSent ? 'Sent Message' : 'Full Message';
-  const backLabel = isSent ? '← Outbound Preview' : '← Summary';
+  const sectionTitle = isSent ? t('modal.sent_message') : t('modal.full_message');
+  const backLabel = isSent ? t('modal.back_to_outbound_preview') : t('modal.back_to_summary');
   const loadingLabel = isSent
-    ? 'Loading sent message content...'
-    : 'Loading inline images and attachments...';
+    ? t('modal.loading_sent_message_content')
+    : t('modal.loading_inline_assets');
   const emptyBodyLabel = isSent
-    ? 'No sent message body available.'
-    : 'No message body available.';
+    ? t('modal.no_sent_message_body')
+    : t('modal.no_message_body');
 
   const sanitizedHtml = useMemo(
     () => (renderedEmail?.body_html ? buildSanitizedHtml(renderedEmail.body_html) : null),
@@ -308,7 +318,7 @@ export function EmailFullView({
   const canRenderTranslateControls =
     showTranslateControls &&
     typeof onTranslateToggle === 'function' &&
-    Boolean(translateLanguageLabel);
+    Boolean(effectiveTranslateLanguageLabel);
 
   // Attach native load/error listeners to remote images after sanitizedHtml renders.
   // Handles three cases:
@@ -371,7 +381,7 @@ export function EmailFullView({
         <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-primary-500/25 bg-primary-500/10 px-3 py-2">
           <span className="inline-flex items-center gap-2 text-xs font-semibold text-primary-200">
             <Globe size={14} className="text-primary-300" />
-            <span>{t('modal.translated_to', { language: translateLanguageLabel })}</span>
+            <span>{t('modal.translated_to', { language: effectiveTranslateLanguageLabel })}</span>
           </span>
           <span className="text-primary-300/60">·</span>
           <button
@@ -407,7 +417,7 @@ export function EmailFullView({
           className="inline-flex items-center gap-2 rounded-2xl border border-primary-500/20 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-primary-200 opacity-80 cursor-not-allowed"
         >
           <RefreshCw size={14} className="animate-spin" />
-          <span>{t('modal.translating_to', { language: translateLanguageLabel })}</span>
+          <span>{t('modal.translating_to', { language: effectiveTranslateLanguageLabel })}</span>
         </button>
       );
     }
@@ -419,7 +429,7 @@ export function EmailFullView({
         className="inline-flex items-center gap-2 rounded-2xl border border-primary-500/20 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-primary-300 hover:text-primary-200 hover:border-primary-400/35 hover:bg-primary-500/8 transition-colors"
       >
         <Globe size={14} />
-        <span>{t('modal.translate_to', { language: translateLanguageLabel })}</span>
+        <span>{t('modal.translate_to', { language: effectiveTranslateLanguageLabel })}</span>
       </button>
     );
   };
@@ -441,8 +451,8 @@ export function EmailFullView({
                 onClick={onRefreshSummary}
                 disabled={refreshSummaryQueued}
                 aria-busy={refreshSummaryQueued}
-                aria-label={refreshSummaryTitle}
-                title={refreshSummaryQueued ? t('modal.summary_request_queued') : refreshSummaryTitle}
+                aria-label={effectiveRefreshSummaryTitle}
+                title={refreshSummaryQueued ? t('modal.summary_request_queued') : effectiveRefreshSummaryTitle}
                 className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <RefreshCw size={14} className={refreshSummaryQueued ? 'animate-spin' : ''} />
@@ -467,8 +477,8 @@ export function EmailFullView({
 
           {email.ai_summary_json?.urgency && (
             <p className="text-xs text-slate-500">
-              Urgency{' '}
-              <span className="font-bold text-slate-400 capitalize">{email.ai_summary_json.urgency}</span>
+              {t('modal.urgency_label')}{' '}
+              <span className="font-bold text-slate-400 capitalize">{getUrgencyLabel(email.ai_summary_json.urgency)}</span>
             </p>
           )}
         </div>
@@ -546,7 +556,7 @@ export function EmailFullView({
 
         {(renderedEmail?.linked_files ?? []).length > 0 && (
           <div className="space-y-2 pt-1">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Linked files</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{t('modal.linked_files')}</p>
             <div className="flex flex-col gap-1">
               {(renderedEmail!.linked_files!).map((file, idx) => (
                 <a

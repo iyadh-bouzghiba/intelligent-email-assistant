@@ -1,4 +1,5 @@
 import { Clock, Mail, Send, Users } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { SentEmail } from '@types';
 
 interface Props {
@@ -21,16 +22,18 @@ function compactText(value?: string | null): string {
   return (value || '').replace(/\s+/g, ' ').trim();
 }
 
-function cardLabel(email: SentEmail): string {
-  const subject = compactText(email.subject) || 'No subject';
-  const recipient = compactText(email.to_address) || 'unknown recipient';
-  return `Open sent email: ${subject}. Sent to ${recipient}.`;
-}
-
 export function SentList({ emails, loading, onSelect }: Props) {
+  const { t } = useTranslation();
+
+  const cardLabel = (email: SentEmail): string => {
+    const subject = compactText(email.subject) || t('sent.no_subject');
+    const recipient = compactText(email.to_address) || t('sent.unknown_recipient');
+    return t('sent.open_email_label', { subject, recipient });
+  };
+
   if (loading) {
     return (
-      <div className="flex flex-col gap-4" aria-label="Loading sent emails">
+      <div className="flex flex-col gap-4" aria-label={t('sent.loading')}>
         {[...Array(SENT_SKELETON_COUNT)].map((_, i) => (
           <div
             key={i}
@@ -59,12 +62,12 @@ export function SentList({ emails, loading, onSelect }: Props) {
           <Send size={38} className="text-primary-300/45" />
         </div>
         <div className="max-w-sm">
-          <h3 className="text-xl font-black text-white mb-2">No Sent Emails</h3>
+          <h3 className="text-xl font-black text-white mb-2">{t('sent.empty_title')}</h3>
           <p className="text-slate-400 text-sm leading-relaxed font-medium">
-            Sent messages from this account will appear here after you send a reply from Executive Brain.
+            {t('sent.empty_description')}
           </p>
           <p className="text-slate-600 text-xs mt-3 leading-relaxed">
-            This view only shows messages sent through the app.
+            {t('sent.empty_scope_notice')}
           </p>
         </div>
       </div>
@@ -74,9 +77,9 @@ export function SentList({ emails, loading, onSelect }: Props) {
   return (
     <div className="flex flex-col gap-4">
       {emails.map((email) => {
-        const subject = compactText(email.subject) || '(No Subject)';
+        const subject = compactText(email.subject) || t('sent.no_subject');
         const preview = compactText(email.body_preview);
-        const toAddress = compactText(email.to_address) || 'Unknown recipient';
+        const toAddress = compactText(email.to_address) || t('sent.unknown_recipient');
         const ccAddresses = compactText(email.cc_addresses);
 
         return (
@@ -91,10 +94,10 @@ export function SentList({ emails, loading, onSelect }: Props) {
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border bg-primary-500/10 text-primary-300 border-primary-400/20 flex-shrink-0">
                     <Send size={10} />
-                    Sent
+                    {t('sent.badge_sent')}
                   </span>
                   <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.18em] flex-shrink-0">
-                    To
+                    {t('sent.to_label')}
                   </span>
                   <span className="text-xs font-semibold text-slate-300 truncate">
                     {toAddress}
@@ -110,7 +113,7 @@ export function SentList({ emails, loading, onSelect }: Props) {
               {ccAddresses && (
                 <div className="flex items-center gap-2 min-w-0 text-[11px] text-slate-500">
                   <Users size={12} className="text-slate-600 flex-shrink-0" />
-                  <span className="font-bold uppercase tracking-wider text-slate-600 flex-shrink-0">cc</span>
+                  <span className="font-bold uppercase tracking-wider text-slate-600 flex-shrink-0">{t('sent.cc_label')}</span>
                   <span className="truncate">{ccAddresses}</span>
                 </div>
               )}
@@ -126,7 +129,7 @@ export function SentList({ emails, loading, onSelect }: Props) {
                   </p>
                 ) : (
                   <p className="mt-2 text-sm text-slate-600 italic">
-                    No preview available.
+                    {t('sent.no_preview')}
                   </p>
                 )}
               </div>
@@ -134,10 +137,10 @@ export function SentList({ emails, loading, onSelect }: Props) {
               <div className="pt-1 flex items-center justify-between gap-3">
                 <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-600">
                   <Mail size={11} className="text-slate-600" />
-                  Outbound message
+                  {t('sent.outbound_message')}
                 </span>
                 <span className="text-[10px] font-black uppercase tracking-[0.18em] text-primary-500/80 opacity-0 group-hover:opacity-100 transition-opacity">
-                  Open
+                  {t('sent.open')}
                 </span>
               </div>
             </div>

@@ -1,6 +1,7 @@
 import { RefObject, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, AlertCircle, RefreshCw, Mail, Sparkles, ChevronDown, Save, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Briefing, DraftTone, SupportedTone, EmailTemplate } from '@types';
 import { FocusTrap } from './FocusTrap';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
@@ -44,13 +45,6 @@ interface Props {
 }
 
 const TITLE_ID = 'reply-compose-title';
-
-const FALLBACK_TONES: SupportedTone[] = [
-  { code: 'professional', label: 'Professional' },
-  { code: 'casual', label: 'Casual' },
-  { code: 'concise', label: 'Concise' },
-  { code: 'empathetic', label: 'Empathetic' },
-];
 
 const EMPTY_TEMPLATES: EmailTemplate[] = [];
 
@@ -103,13 +97,22 @@ export function ReplyComposeModal({
   onDeleteTemplate,
   buildAttribution,
 }: Props) {
+  const { t } = useTranslation();
+
   const [showQuoted, setShowQuoted] = useState(false);
   const [localTone, setLocalTone] = useState<DraftTone>('professional');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [showSaveTemplateForm, setShowSaveTemplateForm] = useState(false);
   const [templateName, setTemplateName] = useState('');
 
-  const toneOptions = availableTones && availableTones.length > 0 ? availableTones : FALLBACK_TONES;
+  const translatedFallbackTones: SupportedTone[] = [
+    { code: 'professional', label: t('compose.tone_professional') },
+    { code: 'casual', label: t('compose.tone_casual') },
+    { code: 'concise', label: t('compose.tone_concise') },
+    { code: 'empathetic', label: t('compose.tone_empathetic') },
+  ];
+
+  const toneOptions = availableTones && availableTones.length > 0 ? availableTones : translatedFallbackTones;
   const effectiveTone: DraftTone = selectedTone ?? localTone;
   const templateOptions = templates ?? EMPTY_TEMPLATES;
   const hasSaveTemplateHandler = typeof onSaveTemplate === 'function';
@@ -207,15 +210,15 @@ export function ReplyComposeModal({
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <h2 id={TITLE_ID} className="text-xs font-semibold text-primary-400 uppercase tracking-wider">
-                    Reply
+                    {t('compose.reply')}
                   </h2>
                   <p className="text-sm font-semibold text-slate-300 mt-0.5 truncate">{email.subject}</p>
-                  <p className="text-xs text-slate-500 mt-0.5 truncate">to {email.sender}</p>
+                  <p className="text-xs text-slate-500 mt-0.5 truncate">{t('compose.to_sender', { sender: email.sender })}</p>
                 </div>
                 <button
                   onClick={onDiscard}
                   disabled={sending}
-                  aria-label="Discard draft"
+                  aria-label={t('compose.discard_draft')}
                   className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors flex-shrink-0"
                 >
                   <X size={20} />
@@ -245,8 +248,8 @@ export function ReplyComposeModal({
                 type="text"
                 value={replySubject}
                 onChange={(e) => onReplySubjectChange(e.target.value)}
-                aria-label="Subject"
-                placeholder="Subject"
+                aria-label={t('compose.subject')}
+                placeholder={t('compose.subject')}
                 className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
               />
 
@@ -256,8 +259,8 @@ export function ReplyComposeModal({
                 type="text"
                 value={replyCC}
                 onChange={(e) => onReplyCCChange(e.target.value)}
-                aria-label="Cc"
-                placeholder="Cc (optional — comma or semicolon separated)"
+                aria-label={t('compose.cc')}
+                placeholder={t('compose.cc_placeholder')}
                 className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
               />
 
@@ -265,17 +268,17 @@ export function ReplyComposeModal({
               <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 sm:px-4 sm:py-3 space-y-2.5">
                 <div className="space-y-1">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.18em]">
-                    Draft Tools
+                    {t('compose.tools_title')}
                   </p>
                   <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Adjust tone, apply a saved template, or save this reply for faster reuse.
+                    {t('compose.tools_description')}
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <p id="reply-tone-group-label" className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                      Tone
+                      {t('compose.tone')}
                     </p>
 
                     <div
@@ -308,7 +311,7 @@ export function ReplyComposeModal({
 
                   <div className="space-y-1.5">
                     <label htmlFor="reply-template-select" className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                      Template
+                      {t('compose.template')}
                     </label>
                     <select
                       id="reply-template-select"
@@ -320,10 +323,10 @@ export function ReplyComposeModal({
                     >
                       <option value="" className="bg-slate-900 text-slate-200">
                         {templatesLoading
-                          ? 'Loading templates…'
+                          ? t('compose.loading_templates')
                           : templateOptions.length > 0
-                            ? 'Select a template'
-                            : 'No templates saved yet'}
+                            ? t('compose.select_template')
+                            : t('compose.no_templates_saved')}
                       </option>
                       {templateOptions.map((template) => (
                         <option
@@ -338,7 +341,7 @@ export function ReplyComposeModal({
 
                     {!templatesLoading && templateOptions.length === 0 && (
                       <p className="text-[11px] leading-relaxed text-slate-500">
-                        To create your first template, write a reply, then tap Save as Template to reuse it later.
+                        {t('compose.empty_templates_help')}
                       </p>
                     )}
                   </div>
@@ -352,7 +355,7 @@ export function ReplyComposeModal({
                     className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-200 hover:text-white hover:bg-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
                   >
                     <Sparkles size={12} />
-                    Apply Template
+                    {t('compose.apply_template')}
                   </button>
 
                   <button
@@ -365,7 +368,7 @@ export function ReplyComposeModal({
                     className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-white/[0.03] border border-white/10 text-slate-300 hover:text-white hover:bg-white/[0.06] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
                   >
                     <Save size={12} />
-                    Save as Template
+                    {t('compose.save_as_template')}
                   </button>
 
                   <button
@@ -377,12 +380,12 @@ export function ReplyComposeModal({
                     {templateDeletingId === selectedTemplate?.id ? (
                       <>
                         <RefreshCw size={12} className="animate-spin" />
-                        Deleting…
+                        {t('compose.deleting')}
                       </>
                     ) : (
                       <>
                         <Trash2 size={12} />
-                        Delete Template
+                        {t('compose.delete_template')}
                       </>
                     )}
                   </button>
@@ -391,7 +394,7 @@ export function ReplyComposeModal({
                 {showSaveTemplateForm && (
                   <div className="space-y-2 rounded-xl border border-white/[0.06] bg-black/5 px-3 py-2.5">
                     <label htmlFor="reply-template-name-input" className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                      Template Name
+                      {t('compose.template_name')}
                     </label>
                     <div className="flex flex-col sm:flex-row gap-2">
                       <input
@@ -400,7 +403,7 @@ export function ReplyComposeModal({
                         type="text"
                         value={templateName}
                         onChange={(e) => setTemplateName(e.target.value)}
-                        placeholder="e.g. Security acknowledgment"
+                        placeholder={t('compose.template_name_placeholder')}
                         disabled={templateSaving}
                         className="flex-1 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 disabled:opacity-50 transition-all"
                       />
@@ -412,12 +415,12 @@ export function ReplyComposeModal({
                         {templateSaving ? (
                           <>
                             <RefreshCw size={12} className="animate-spin" />
-                            Saving…
+                            {t('compose.saving')}
                           </>
                         ) : (
                           <>
                             <Save size={12} />
-                            Save
+                            {t('compose.save')}
                           </>
                         )}
                       </button>
@@ -429,10 +432,10 @@ export function ReplyComposeModal({
               <div className="rounded-2xl border border-primary-500/[0.14] bg-white/[0.035] px-3 py-3 sm:px-4 sm:py-4 space-y-2 shadow-lg shadow-black/10 transition-colors duration-150 focus-within:border-primary-500/[0.26] focus-within:bg-white/[0.05]">
                 <div className="space-y-1">
                   <p id="reply-body-label" className="text-[10px] font-black text-primary-300 uppercase tracking-[0.2em]">
-                    Reply Body
+                    {t('compose.reply_body')}
                   </p>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    Write, review, and refine your final reply before sending.
+                    {t('compose.reply_body_help')}
                   </p>
                 </div>
 
@@ -443,7 +446,7 @@ export function ReplyComposeModal({
                   ref={replyTextareaRef}
                   value={replyBody}
                   onChange={(e) => onReplyBodyChange(e.target.value)}
-                  placeholder="Write your reply here…"
+                  placeholder={t('compose.reply_body_placeholder')}
                   rows={6}
                   className="w-full min-h-[220px] resize-none bg-transparent border-0 p-0 text-sm leading-relaxed text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-0"
                 />
@@ -454,10 +457,10 @@ export function ReplyComposeModal({
                 <div className="border-t border-white/[0.06] pt-4 space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] select-none">
-                      Reference — not sent
+                      {t('compose.reference_not_sent')}
                     </p>
                     <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.14em]">
-                      Tone: {toneOptions.find((tone) => tone.code === effectiveTone)?.label ?? effectiveTone}
+                      {t('compose.tone_value', { tone: toneOptions.find((tone) => tone.code === effectiveTone)?.label ?? effectiveTone })}
                     </span>
                   </div>
 
@@ -474,7 +477,7 @@ export function ReplyComposeModal({
                       {email.ai_summary_json?.action_items && email.ai_summary_json.action_items.length > 0 && (
                         <div className="px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05] space-y-1.5">
                           <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.14em]">
-                            Action items
+                            {t('compose.action_items')}
                           </p>
                           <ol className="space-y-1 list-decimal list-inside">
                             {email.ai_summary_json.action_items.map((action: string, idx: number) => (
@@ -503,7 +506,7 @@ export function ReplyComposeModal({
                             size={11}
                             className={`transition-transform duration-150 ${showQuoted ? 'rotate-180' : ''}`}
                           />
-                          {showQuoted ? 'Hide original' : 'Show original'}
+                          {showQuoted ? t('compose.hide_original') : t('compose.show_original')}
                         </button>
 
                         {showQuoted && (
@@ -550,7 +553,7 @@ export function ReplyComposeModal({
                 disabled={sending}
                 className="w-full sm:w-auto inline-flex items-center justify-center min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
               >
-                Discard
+                {t('compose.discard')}
               </button>
               <button
                 onClick={onSend}
@@ -560,12 +563,12 @@ export function ReplyComposeModal({
                 {sending ? (
                   <>
                     <RefreshCw size={12} className="animate-spin" />
-                    Sending...
+                    {t('compose.sending')}
                   </>
                 ) : (
                   <>
                     <Mail size={12} />
-                    Send Reply
+                    {t('compose.send_reply')}
                   </>
                 )}
               </button>
