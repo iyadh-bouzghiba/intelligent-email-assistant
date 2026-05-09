@@ -1,5 +1,6 @@
 import { RefObject } from 'react';
 import { Sparkles, Bot } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Briefing } from '@types';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
 
@@ -23,6 +24,15 @@ interface Props {
  * All action buttons live in EmailDetailModal's footer.
  */
 export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizing, onAskAssistant }: Props) {
+  const { t } = useTranslation();
+
+  const getUrgencyLabel = (urgency: string) => {
+    const normalized = urgency.toLowerCase();
+    if (normalized === 'high') return t('inbox.urgency.high');
+    if (normalized === 'low') return t('inbox.urgency.low');
+    return t('inbox.urgency.medium');
+  };
+
   const isSent = Boolean(email.sentMeta);
 
   const rawText = isSent
@@ -78,7 +88,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Sparkles size={16} className="text-primary-400 animate-pulse" />
-            <h3 className="text-sm font-semibold text-primary-400 uppercase tracking-wider">AI Analysis</h3>
+            <h3 className="text-sm font-semibold text-primary-400 uppercase tracking-wider">{t('modal.ai_analysis')}</h3>
           </div>
           <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 space-y-2.5">
             <div className="skeleton-bar h-3.5" style={{ width: '90%' }} />
@@ -92,11 +102,11 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Sparkles size={16} className="text-slate-600" />
-            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">AI Analysis</h3>
+            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">{t('modal.ai_analysis')}</h3>
           </div>
           <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
             <p className="text-xs text-slate-500 leading-relaxed">
-              Summary is being generated automatically and will appear shortly.
+              {t('modal.summary_generating')}
             </p>
           </div>
         </div>
@@ -106,7 +116,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Sparkles size={16} className="text-primary-400" />
-            <h3 className="text-sm font-semibold text-primary-400 uppercase tracking-wider">AI Analysis</h3>
+            <h3 className="text-sm font-semibold text-primary-400 uppercase tracking-wider">{t('modal.ai_analysis')}</h3>
             {email.ai_summary_model && (
               <span className="text-[9px] text-slate-600 font-bold">{email.ai_summary_model}</span>
             )}
@@ -117,9 +127,9 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
 
             {email.ai_summary_json?.urgency && (
               <p className={`mt-3 text-xs font-semibold ${urgencyTextClassName}`}>
-                Urgency:{' '}
+                {t('modal.urgency_label')}{' '}
                 <span className={`font-bold capitalize ${urgencyTextClassName}`}>
-                  {email.ai_summary_json.urgency}
+                  {getUrgencyLabel(email.ai_summary_json.urgency)}
                 </span>
               </p>
             )}
@@ -127,7 +137,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
 
           {email.ai_summary_json?.action_items && email.ai_summary_json.action_items.length > 0 && (
             <div ref={actionItemsRef} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-              <p className="text-xs font-semibold text-primary-400 uppercase tracking-wider mb-3">Action Items</p>
+              <p className="text-xs font-semibold text-primary-400 uppercase tracking-wider mb-3">{t('modal.action_items')}</p>
               <ol className="space-y-2 list-decimal list-inside">
                 {email.ai_summary_json.action_items.map((action: string, idx: number) => (
                   <li key={idx} className="text-sm leading-relaxed text-slate-300">{action}</li>
@@ -142,7 +152,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-              {isSent ? 'Outbound Preview' : 'Preview'}
+              {isSent ? t('modal.outbound_preview') : t('modal.preview')}
             </h3>
 
             {showInlineReadFullCta && (
@@ -151,21 +161,21 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
                 onClick={onReadFull}
                 className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] font-bold text-primary-400 hover:text-primary-300 hover:border-primary-500/30 hover:bg-primary-500/[0.08] transition-all"
               >
-                Read full email
+                {t('modal.read_full_email')}
               </button>
             )}
           </div>
 
           {isSent && (
             <p className="text-xs leading-relaxed text-slate-500">
-              Preview only. Open the full sent message to access the complete body and translation controls.
+              {t('modal.sent_preview_notice')}
             </p>
           )}
         </div>
 
         <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
           <p className="text-sm leading-relaxed text-slate-300 whitespace-pre-wrap break-words">
-            {preview || (isSent ? 'No outbound preview available.' : 'No preview available.')}
+            {preview || (isSent ? t('modal.no_outbound_preview') : t('modal.no_preview'))}
           </p>
           {showCardReadFullCta && (
             <button
@@ -173,7 +183,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
               onClick={onReadFull}
               className="mt-3 text-xs font-bold text-primary-400 hover:text-primary-300 transition-colors"
             >
-              Read full email
+              {t('modal.read_full_email')}
             </button>
           )}
         </div>
@@ -186,7 +196,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] hover:bg-primary-500/[0.08] hover:border-primary-500/30 text-slate-400 hover:text-primary-300 text-xs font-semibold transition-all"
         >
           <Bot size={13} />
-          Ask AI Assistant
+          {t('modal.ask_ai_assistant')}
         </button>
       )}
     </div>

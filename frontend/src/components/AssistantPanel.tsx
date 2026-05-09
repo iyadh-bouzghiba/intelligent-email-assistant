@@ -1,19 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import axios, { isAxiosError } from 'axios';
 import { Bot, X, Send, RefreshCw, Sparkles, AlertCircle, CheckCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Briefing, DraftTone, SupportedTone } from '@types';
 import { apiService } from '@services';
 
 const BASE_URL: string = import.meta.env.PROD
   ? window.location.origin
   : (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(/\/$/, '');
-
-const FALLBACK_TONES: SupportedTone[] = [
-  { code: 'professional', label: 'Professional' },
-  { code: 'casual', label: 'Casual' },
-  { code: 'concise', label: 'Concise' },
-  { code: 'empathetic', label: 'Empathetic' },
-];
 
 interface Props {
   email: Briefing;
@@ -60,6 +54,8 @@ export function AssistantPanel({
   availableTones,
   onToneChange,
 }: Props) {
+  const { t } = useTranslation();
+
   const [state, setState] = useState<PanelState>('checking');
   const [instruction, setInstruction] = useState('');
   const [draft, setDraft] = useState('');
@@ -70,7 +66,14 @@ export function AssistantPanel({
   const [localTone, setLocalTone] = useState<DraftTone>('professional');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const toneOptions = availableTones && availableTones.length > 0 ? availableTones : FALLBACK_TONES;
+  const translatedFallbackTones: SupportedTone[] = [
+    { code: 'professional', label: t('compose.tone_professional') },
+    { code: 'casual', label: t('compose.tone_casual') },
+    { code: 'concise', label: t('compose.tone_concise') },
+    { code: 'empathetic', label: t('compose.tone_empathetic') },
+  ];
+
+  const toneOptions = availableTones && availableTones.length > 0 ? availableTones : translatedFallbackTones;
   const effectiveTone: DraftTone = selectedTone ?? localTone;
 
   const checkStatus = useCallback(async () => {
@@ -85,9 +88,9 @@ export function AssistantPanel({
       setState(res.data.approved ? 'ready' : 'consent_required');
     } catch {
       setState('error');
-      setError('Could not check assistant status.');
+      setError(t('assistant.error_check_status'));
     }
-  }, [email.account]);
+  }, [email.account, t]);
 
   useEffect(() => {
     checkStatus();
@@ -123,7 +126,7 @@ export function AssistantPanel({
       );
       setState('ready');
     } catch {
-      setError('Failed to enable AI assistant.');
+      setError(t('assistant.error_enable_failed'));
     } finally {
       setConsenting(false);
     }
@@ -152,12 +155,12 @@ export function AssistantPanel({
           : null;
 
       if (status === 429) {
-        setError('Rate limit reached (10/hour). Try again next hour.');
+        setError(t('assistant.error_rate_limit'));
       } else if (status === 403) {
         setState('consent_required');
         return;
       } else {
-        setError(detail ?? 'Draft generation failed.');
+        setError(detail ?? t('assistant.error_draft_failed'));
       }
       setState('ready');
     }
@@ -211,12 +214,12 @@ export function AssistantPanel({
         <div className="flex items-center gap-2">
           <Bot size={15} className="text-primary-400" />
           <span className="text-xs font-bold text-primary-400 uppercase tracking-wider">
-            AI Assistant
+            {t('assistant.title')}
           </span>
         </div>
         <button
           onClick={handleClose}
-          aria-label="Close AI assistant"
+          aria-label={t('assistant.close')}
           className="p-1.5 rounded-lg hover:bg-white/[0.08] text-slate-400 hover:text-white transition-colors"
         >
           <X size={14} />
@@ -230,7 +233,7 @@ export function AssistantPanel({
         {state === 'checking' && (
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <RefreshCw size={12} className="animate-spin" />
-            Checking assistant status...
+            {t('assistant.checking_status')}
           </div>
         )}
 
@@ -248,15 +251,13 @@ export function AssistantPanel({
             <div className="p-4 rounded-2xl bg-primary-500/[0.08] border border-primary-500/20 space-y-3">
               <div className="flex items-center gap-2">
                 <Sparkles size={13} className="text-primary-400" />
-                <p className="text-xs font-bold text-primary-300">Enable AI Assistant</p>
+                <p className="text-xs font-bold text-primary-300">{t('assistant.enable_title')}</p>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
-                The AI assistant drafts replies for your review. It will never send email on
-                your behalf - you review and send every message through the compose window.
+                {t('assistant.consent_description')}
               </p>
               <p className="text-[10px] text-slate-500 leading-relaxed">
-                Draft actions are limited to 10 per hour. Your email subjects (not body
-                content) may be used to improve future suggestions.
+                {t('assistant.privacy_notice')}
               </p>
             </div>
             {error && <p className="text-xs text-rose-400">{error}</p>}
@@ -266,8 +267,8 @@ export function AssistantPanel({
               className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white text-xs font-bold transition-colors"
             >
               {consenting
-                ? <><RefreshCw size={12} className="animate-spin" /> Enabling...</>
-                : <><Sparkles size={12} /> Enable AI Assistant</>}
+                ? <><RefreshCw size={12} className="animate-spin" /> {t('assistant.enabling')}</>
+                : <><Sparkles size={12} /> {t('assistant.enable_action')}</>}
             </button>
           </div>
         )}
@@ -276,9 +277,9 @@ export function AssistantPanel({
         {(state === 'ready' || state === 'generating') && (
           <div className="space-y-4">
             <div className="space-y-0.5">
-              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Email</p>
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{t('assistant.email_label')}</p>
               <p className="text-xs text-slate-300 font-medium truncate">{email.subject}</p>
-              <p className="text-[10px] text-slate-500 truncate">From {email.sender}</p>
+              <p className="text-[10px] text-slate-500 truncate">{t('assistant.from_sender', { sender: email.sender })}</p>
             </div>
 
             {error && (
@@ -290,7 +291,7 @@ export function AssistantPanel({
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                Tone
+                {t('assistant.tone_label')}
               </label>
               <select
                 value={effectiveTone}
@@ -308,12 +309,12 @@ export function AssistantPanel({
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                Instruction
+                {t('assistant.instruction_label')}
               </label>
               <textarea
                 value={instruction}
                 onChange={(e) => setInstruction(e.target.value)}
-                placeholder="e.g. Acknowledge receipt and say I'll respond by Friday"
+                placeholder={t('assistant.instruction_placeholder')}
                 rows={4}
                 disabled={state === 'generating'}
                 className="w-full p-3 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 disabled:opacity-50 transition-all"
@@ -321,7 +322,7 @@ export function AssistantPanel({
             </div>
 
             <p className="text-[10px] text-slate-600">
-              {rateLimitRemaining}/10 actions remaining this hour
+              {t('assistant.actions_remaining', { count: rateLimitRemaining, limit: 10 })}
             </p>
           </div>
         )}
@@ -332,12 +333,12 @@ export function AssistantPanel({
             <div className="flex items-center gap-2">
               <CheckCircle size={13} className="text-emerald-400" />
               <p className="text-xs font-bold text-emerald-400">
-                Draft ready - review before sending
+                {t('assistant.draft_ready')}
               </p>
             </div>
             <div className="flex items-center justify-between gap-3">
               <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                Tone
+                {t('assistant.tone_label')}
               </p>
               <span className="text-[10px] font-bold text-primary-300 uppercase tracking-wide">
                 {toneOptions.find((tone) => tone.code === effectiveTone)?.label ?? effectiveTone}
@@ -349,8 +350,7 @@ export function AssistantPanel({
               </p>
             </div>
             <p className="text-[10px] text-slate-500 leading-relaxed">
-              "Use this draft" opens the compose window. You review and send - nothing is
-              sent automatically.
+              {t('assistant.use_draft_notice')}
             </p>
           </div>
         )}
@@ -365,8 +365,8 @@ export function AssistantPanel({
             className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-colors"
           >
             {state === 'generating'
-              ? <><RefreshCw size={12} className="animate-spin" /> Generating...</>
-              : <><Bot size={12} /> Generate Draft</>}
+              ? <><RefreshCw size={12} className="animate-spin" /> {t('assistant.generating')}</>
+              : <><Bot size={12} /> {t('assistant.generate_draft')}</>}
           </button>
         )}
 
@@ -377,14 +377,14 @@ export function AssistantPanel({
               className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold transition-colors"
             >
               <Send size={12} />
-              Use this draft
+              {t('assistant.use_this_draft')}
             </button>
             <button
               onClick={handleRegenerate}
               className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.08] border border-white/10 text-slate-400 hover:text-white text-xs font-semibold transition-colors"
             >
               <RefreshCw size={12} />
-              Regenerate
+              {t('assistant.regenerate')}
             </button>
           </div>
         )}
@@ -394,7 +394,7 @@ export function AssistantPanel({
             onClick={checkStatus}
             className="w-full py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.08] text-slate-400 hover:text-white text-xs font-semibold transition-colors"
           >
-            Retry
+            {t('assistant.retry')}
           </button>
         )}
       </div>

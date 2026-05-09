@@ -1,4 +1,5 @@
 import { Download, Eye, File, FileSpreadsheet, FileText, Image as ImageIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export interface AttachmentStripItem {
     attachment_key?: string | null;
@@ -80,6 +81,7 @@ interface CardProps {
 }
 
 function AttachmentCard({ attachment, onOpenImage }: CardProps) {
+    const { t } = useTranslation();
     const category = getFileCategory(attachment.mime_type);
     const Icon = getAttachmentIcon(attachment.mime_type, category);
     const hasPreview = category === 'image' && !attachment.too_large && !!attachment.preview_url;
@@ -120,7 +122,7 @@ function AttachmentCard({ attachment, onOpenImage }: CardProps) {
             <div className="flex items-center gap-2 flex-wrap">
                 {attachment.too_large ? (
                     <span className="text-[10px] text-amber-400 leading-relaxed">
-                        {attachment.placeholder_text || 'File too large'}
+                        {attachment.placeholder_text || t('attachments.file_too_large')}
                     </span>
                 ) : (
                     <>
@@ -132,13 +134,13 @@ function AttachmentCard({ attachment, onOpenImage }: CardProps) {
                                 className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-400 hover:text-primary-300 transition-colors"
                             >
                                 <Eye size={11} />
-                                View
+                                {t('attachments.view')}
                             </button>
                         )}
 
                         {/* Image: no preview available */}
                         {category === 'image' && !hasPreview && (
-                            <span className="text-[10px] text-slate-500">Preview unavailable</span>
+                            <span className="text-[10px] text-slate-500">{t('attachments.preview_unavailable')}</span>
                         )}
 
                         {/* PDF: View in browser tab (served inline) */}
@@ -150,7 +152,7 @@ function AttachmentCard({ attachment, onOpenImage }: CardProps) {
                                 className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-400 hover:text-primary-300 transition-colors"
                             >
                                 <Eye size={11} />
-                                View
+                                {t('attachments.view')}
                             </a>
                         )}
 
@@ -162,18 +164,18 @@ function AttachmentCard({ attachment, onOpenImage }: CardProps) {
                                 className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-slate-300 transition-colors"
                             >
                                 <Download size={11} />
-                                Download
+                                {t('attachments.download')}
                             </a>
                         )}
 
                         {/* Office files: honest note */}
                         {category === 'office' && (
-                            <span className="text-[10px] text-slate-600">No in-app preview</span>
+                            <span className="text-[10px] text-slate-600">{t('attachments.no_in_app_preview')}</span>
                         )}
 
                         {/* No download available */}
                         {category !== 'image' && !canDownload && (
-                            <span className="text-[10px] text-slate-500">Download unavailable</span>
+                            <span className="text-[10px] text-slate-500">{t('attachments.download_unavailable')}</span>
                         )}
                     </>
                 )}
@@ -183,6 +185,7 @@ function AttachmentCard({ attachment, onOpenImage }: CardProps) {
 }
 
 export function AttachmentStrip({ attachments, onOpenImage }: Props) {
+    const { t } = useTranslation();
     const displayAttachments = attachments.filter((a) => !a.is_inline);
 
     if (displayAttachments.length === 0) return null;
@@ -191,10 +194,10 @@ export function AttachmentStrip({ attachments, onOpenImage }: Props) {
         <div className="space-y-2">
             <div className="flex items-center justify-between">
                 <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    Attachments
+                    {t('attachments.title')}
                 </h3>
                 <span className="text-[11px] text-slate-600">
-                    {displayAttachments.length} {displayAttachments.length === 1 ? 'file' : 'files'}
+                    {t('attachments.file_count', { count: displayAttachments.length })}
                 </span>
             </div>
 

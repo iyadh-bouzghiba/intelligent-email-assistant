@@ -1,13 +1,14 @@
 import { Brain } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 
 interface WakingUpProps {
     message?: string;
 }
 
-const DEFAULT_MESSAGE = 'Starting up - usually takes about 20 seconds on first load.';
-
-export function WakingUp({ message = DEFAULT_MESSAGE }: WakingUpProps) {
+export function WakingUp({ message }: WakingUpProps) {
+    const { t } = useTranslation();
+    const displayMessage = message ?? t('startup.default_message');
     return (
         <motion.div
             key="waking-up-overlay"
@@ -41,7 +42,7 @@ export function WakingUp({ message = DEFAULT_MESSAGE }: WakingUpProps) {
                 </motion.div>
 
                 <p className="mb-2 text-[11px] font-black uppercase tracking-[0.28em] text-primary-300/90">
-                    Executive System Wake
+                    {t('startup.system_wake')}
                 </p>
 
                 <h1 className="mb-3 text-2xl font-black tracking-tight text-white sm:text-[30px]">
@@ -49,7 +50,7 @@ export function WakingUp({ message = DEFAULT_MESSAGE }: WakingUpProps) {
                 </h1>
 
                 <p className="max-w-sm text-sm leading-6 text-slate-300 sm:text-[15px]">
-                    {message}
+                    {displayMessage}
                 </p>
 
                 <div className="mt-7 flex items-center gap-2" aria-hidden="true">
@@ -69,7 +70,7 @@ export function WakingUp({ message = DEFAULT_MESSAGE }: WakingUpProps) {
                 </div>
 
                 <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                    Warming the service
+                    {t('startup.warming_service')}
                 </p>
             </motion.div>
         </motion.div>

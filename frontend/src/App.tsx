@@ -493,7 +493,7 @@ export const App = () => {
       // Map DB schema to UI Briefing model
       const mapped: Briefing[] = ordered.map((e: InboxThreadRow) => {
         const isoDate = e.date ?? e.created_at;
-        let formattedDate = 'Unknown time';
+        let formattedDate = t('inbox.unknown_time');
         try {
           if (isoDate) {
             formattedDate = new Date(isoDate).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
@@ -508,10 +508,10 @@ export const App = () => {
         else if (e.ai_summary_json?.urgency === 'low') priority = 'Low';
 
         // Use AI overview if available, fallback to raw body
-        const displaySummary = e.ai_summary_text || e.body || 'Awaiting strategic processing.';
+        const displaySummary = e.ai_summary_text || e.body || t('inbox.awaiting_processing');
 
         // Use first action item as primary action if available
-        const primaryAction = e.ai_summary_json?.action_items?.[0] || 'Review Pending';
+        const primaryAction = e.ai_summary_json?.action_items?.[0] || t('inbox.review_pending');
 
         // Smart categorization based on email content
         const category = categorizeEmail(
@@ -522,9 +522,9 @@ export const App = () => {
         );
 
         const briefing: Briefing = {
-          account: e.account_id || 'Unknown',
-          subject: e.subject || 'No Subject',
-          sender: e.sender || 'Unknown',
+          account: e.account_id || t('common.unknown'),
+          subject: e.subject || t('inbox.no_subject'),
+          sender: e.sender || t('common.unknown'),
           date: formattedDate,
           priority: priority,
           category: category,
@@ -581,9 +581,9 @@ export const App = () => {
           const newFailureCount = prev + 1;
           if (briefings.length === 0) {
             if (newFailureCount < 5) {
-              setError("Waking backend… (reconnecting silently)");
+              setError(t('common.waking_backend'));
             } else {
-              setError("Connection Failure: API is unreachable after multiple attempts.");
+              setError(t('common.connection_failure'));
             }
           }
           return newFailureCount;
@@ -1025,7 +1025,7 @@ export const App = () => {
       } catch (error) {
         if (cancelled || activeEmailRef.current !== activeEmail) return;
         setTemplates([]);
-        setTemplatesError('Could not load templates. Please try again.');
+        setTemplatesError(t('compose.templates_load_failed'));
       } finally {
         if (!cancelled && activeEmailRef.current === activeEmail) {
           setTemplatesLoading(false);
@@ -1038,7 +1038,7 @@ export const App = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeEmail, aiLanguage, aiLanguageResolvedAccountId]);
+  }, [activeEmail, aiLanguage, aiLanguageResolvedAccountId, t]);
 
   // Detect OAuth callback success and auto-activate the newly connected account
   // CRITICAL: Retry logic with exponential backoff to handle replication delays
@@ -1056,7 +1056,7 @@ export const App = () => {
 
     if (!newAccountId) {
       console.error('[OAUTH-CALLBACK] CRITICAL: account_id parameter missing from callback URL');
-      setError('OAuth completed but account information was lost. Please try connecting again.');
+      setError(t('auth.oauth_account_missing'));
       return;
     }
 
@@ -1099,7 +1099,7 @@ export const App = () => {
         } else {
           // Max retries exceeded - show error
           console.error(`[OAUTH-CALLBACK] ❌ FAILED - Account ${newAccountId} not found after ${MAX_RETRIES} attempts`);
-          setError(`Failed to activate ${newAccountId}. Please select it manually from the account dropdown.`);
+          setError(t('auth.oauth_activation_failed', { account: newAccountId }));
           // Leave user on account selection screen - don't auto-activate wrong account
         }
       } catch (error) {
@@ -1107,7 +1107,7 @@ export const App = () => {
         if (retryCount < MAX_RETRIES) {
           setTimeout(attemptActivation, delay);
         } else {
-          setError('Failed to load accounts after OAuth. Please refresh the page.');
+          setError(t('auth.oauth_load_accounts_failed'));
         }
       }
     };
@@ -1161,16 +1161,16 @@ export const App = () => {
   // ── BL-01: Reply compose helpers ──────────────────────────────────────────
   const normalizeReplySubject = (subject: string): string => {
     const trimmed = subject.trim();
-    if (!trimmed) return 'Re: (No Subject)';
+    if (!trimmed) return t('compose.reply_subject_no_subject');
     const withoutRe = trimmed.replace(/^(re:\s*)+/i, '');
     return `Re: ${withoutRe}`;
   };
 
   const buildAttribution = (date: string, sender: string): string => {
-    if (date && sender) return `On ${date}, ${sender} wrote:`;
-    if (sender) return `${sender} wrote:`;
-    if (date) return `On ${date}:`;
-    return 'Original message:';
+    if (date && sender) return t('compose.attribution_on_date_sender', { date, sender });
+    if (sender) return t('compose.attribution_sender_only', { sender });
+    if (date) return t('compose.attribution_date_only', { date });
+    return t('compose.original_message');
   };
 
   // Conservative sanitizer for the original message body.
@@ -1223,13 +1223,13 @@ export const App = () => {
 
   const handleSendReply = async () => {
     if (!selectedEmailDetail?.thread_id) {
-      setPanelError('Cannot send: thread ID missing. Please refresh and try again.');
+      setPanelError(t('compose.cannot_send_missing_thread'));
       return;
     }
 
     const userText = replyBody.trim();
     if (!userText) {
-      setPanelError('Please type your reply before sending.');
+      setPanelError(t('compose.empty_reply'));
       return;
     }
 
@@ -1266,11 +1266,11 @@ export const App = () => {
         await fetchEmails(activeEmail, { reason: 'post-send' });
         setTimeout(() => { setSendSuccess(false); setSentToAddress(''); setSentCCAddress(''); }, 4000);
       } else {
-        setPanelError(result.error || 'Failed to send. Please check your connection and try again.');
+        setPanelError(result.error || t('compose.send_failed'));
       }
     } catch (err: unknown) {
       console.error('[SEND] Unexpected error:', err);
-      setPanelError('Network error: Could not reach the server. Please try again.');
+      setPanelError(t('common.network_error_try_again'));
     } finally {
       setSending(false);
     }
@@ -1416,7 +1416,7 @@ export const App = () => {
       aiLanguageRef.current = previousLanguage;
       setAiLanguage(previousLanguage);
       setAiLanguageSavedAccountId(null);
-      setAiLanguageError('Could not save AI language preference. Please try again.');
+      setAiLanguageError(t('settings.ai_language_save_failed'));
 
       // Restore the previous account-language context as authoritative
       aiLanguageResolvedAccountRef.current = accountId;
@@ -1493,7 +1493,7 @@ export const App = () => {
     } catch (error) {
       if (activeEmailRef.current !== accountId) return false;
 
-      setTemplatesError('Template save failed. Please try again.');
+      setTemplatesError(t('compose.template_save_failed'));
       return false;
     } finally {
       if (activeEmailRef.current === accountId) {
@@ -1525,7 +1525,7 @@ export const App = () => {
       }
     } catch (error) {
       if (activeEmailRef.current !== accountId) return;
-      setTemplatesError('Could not delete template. Please try again.');
+      setTemplatesError(t('compose.template_delete_failed'));
     } finally {
       if (activeEmailRef.current === accountId) {
         setTemplateDeletingId(null);
@@ -1538,7 +1538,7 @@ export const App = () => {
     setPanelError(null);
     setTemplatesError(null);
     if (!selectedEmailDetail?.thread_id) {
-      setPanelError('Cannot reply: thread ID missing. Please refresh your emails and try again.');
+      setPanelError(t('compose.cannot_reply_missing_thread'));
       return;
     }
     const subject = normalizeReplySubject(selectedEmailDetail.subject || '');
@@ -1593,7 +1593,7 @@ export const App = () => {
           fetchEmails(activeEmail, { reason: 'read-state-db-reconcile' });
         }
       } else if (!res.success) {
-        setPanelError(`Could not mark as read: ${res.error || 'unknown error'}`);
+        setPanelError(t('modal.mark_read_failed', { error: res.error || t('common.unknown_error') }));
       }
     } finally {
       setReadStatePending(false);
@@ -1617,7 +1617,7 @@ export const App = () => {
           fetchEmails(activeEmail, { reason: 'read-state-db-reconcile' });
         }
       } else if (!res.success) {
-        setPanelError(`Could not mark as unread: ${res.error || 'unknown error'}`);
+        setPanelError(t('modal.mark_unread_failed', { error: res.error || t('common.unknown_error') }));
       }
     } finally {
       setReadStatePending(false);
@@ -1729,8 +1729,14 @@ export const App = () => {
   // Convert a SentEmail to a minimal Briefing for the shared detail panel
   const sentToBriefing = (se: SentEmail): Briefing => ({
     account: se.account_id,
-    subject: se.subject || '(No Subject)',
-    sender: `You → ${se.to_address}${se.cc_addresses ? ` · cc: ${se.cc_addresses}` : ''}`,
+    subject: se.subject || t('sent.no_subject'),
+    sender: se.cc_addresses
+      ? t('sent.you_to_recipient_with_cc', {
+          recipient: se.to_address || t('sent.unknown_recipient'),
+          ccLabel: t('sent.cc_label'),
+          cc: se.cc_addresses,
+        })
+      : t('sent.you_to_recipient', { recipient: se.to_address || t('sent.unknown_recipient') }),
     date: (() => {
       try {
         return new Date(se.sent_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
@@ -2259,7 +2265,7 @@ export const App = () => {
                                   onClick={() => openEmailDetail(item, true)}
                                   className="text-[10px] font-bold text-primary-400 hover:text-primary-300 mt-1.5 transition-colors"
                                 >
-                                  View {item.ai_summary_json.action_items.length - 3} more action{item.ai_summary_json.action_items.length - 3 > 1 ? 's' : ''} &rarr;
+                                  {t('inbox.view_more_actions', { count: item.ai_summary_json.action_items.length - 3 })} &rarr;
                                 </button>
                               )}
                             </div>
@@ -2273,7 +2279,7 @@ export const App = () => {
                             {!item.ai_summary_text && item.gmail_message_id && summarizingIds.has(item.gmail_message_id) && (
                               <span className="text-[9px] font-bold text-primary-400 uppercase flex items-center gap-1">
                                 <Sparkles size={11} className="animate-pulse" />
-                                Queued...
+                                {t('inbox.queued')}
                               </span>
                             )}
                             {/* Refresh AI Summary for cards that already have summaries */}
@@ -2288,7 +2294,7 @@ export const App = () => {
                                 }}
                                 disabled={summarizingIds.has(item.gmail_message_id!)}
                                 aria-busy={summarizingIds.has(item.gmail_message_id!)}
-                                title={summarizingIds.has(item.gmail_message_id!) ? 'Summary request queued' : 'Refresh AI Summary'}
+                                title={summarizingIds.has(item.gmail_message_id!) ? t('common.summary_request_queued') : t('common.refresh_ai_summary')}
                                 className="text-[9px] font-bold text-slate-500 hover:text-primary-400 uppercase flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 {summarizingIds.has(item.gmail_message_id!) ? (
@@ -2296,14 +2302,14 @@ export const App = () => {
                                 ) : (
                                   <Sparkles size={11} />
                                 )}
-                                {summarizingIds.has(item.gmail_message_id!) ? 'Queued...' : 'Refresh AI Summary'}
+                                {summarizingIds.has(item.gmail_message_id!) ? t('inbox.queued') : t('common.refresh_ai_summary')}
                               </button>
                             )}
                             <button
                               onClick={() => openEmailDetail(item)}
                               className="text-[9px] font-bold text-slate-500 hover:text-slate-300 uppercase flex items-center gap-1 transition-colors"
                             >
-                              Details <ChevronRight size={11} />
+                              {t('inbox.details')} <ChevronRight size={11} />
                             </button>
                           </div>
                         </div>
@@ -2321,15 +2327,16 @@ export const App = () => {
                       </div>
                       <div className="flex-1">
                         <h4 className="text-sm font-black text-primary-300 mb-1 uppercase tracking-wide">
-                          Auto-Summary Batch Limit Reached
+                          {t('inbox.auto_summary_limit_title')}
                         </h4>
                         <p className="text-xs text-slate-400 leading-relaxed mb-3">
-                          You have <span className="text-white font-bold">{currentItems.length} emails</span> in this account.
-                          Only the <span className="text-primary-400 font-bold">first 30 emails</span> receive automatic AI summaries to optimize costs.
+                          {t('inbox.auto_summary_limit_count', { count: currentItems.length })}
+                          {' '}
+                          {t('inbox.auto_summary_limit_body', { limit: 30 })}
                         </p>
                         <p className="text-xs text-slate-500">
-                          <strong className="text-primary-400">💡 Tip:</strong> Use the <strong className="text-white">"Summarize Email"</strong> button
-                          to manually generate AI summaries for emails #{31} onwards.
+                          <strong className="text-primary-400">💡 {t('inbox.auto_summary_limit_tip_label')}</strong>{' '}
+                          {t('inbox.auto_summary_limit_tip', { start: 31 })}
                         </p>
                       </div>
                     </div>

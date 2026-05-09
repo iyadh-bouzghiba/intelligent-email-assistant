@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { AttachmentStripItem } from './AttachmentStrip';
 
 interface Props {
@@ -9,6 +10,8 @@ interface Props {
 }
 
 export function ImageLightbox({ attachment, onClose }: Props) {
+    const { t } = useTranslation();
+
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
@@ -54,7 +57,7 @@ export function ImageLightbox({ attachment, onClose }: Props) {
                     <button
                         type="button"
                         onClick={onClose}
-                        aria-label="Close image preview"
+                        aria-label={t('attachments.close_image_preview')}
                         className="absolute right-3 top-3 z-10 inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black/90 transition-colors"
                     >
                         <X size={18} />

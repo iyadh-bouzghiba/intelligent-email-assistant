@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { AccountInfo } from '@types';
 import { AccountSwitcherList, type AccountSwitcherLanguageProps } from './AccountSwitcherList';
 import { getAccountColor, getEmailInitials } from './accountSwitcherHelpers';
@@ -43,6 +44,7 @@ export function AccountSwitcherDesktop({
   onAiLanguageChange,
   languageAriaIdPrefix,
 }: Props) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [showMaxMsg, setShowMaxMsg] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -102,7 +104,7 @@ export function AccountSwitcherDesktop({
               ?
             </span>
             <span className="text-[11px] font-bold text-slate-500 truncate">
-              Select Account
+              {t('common.select_account')}
             </span>
           </>
         )}
