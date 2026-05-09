@@ -6,28 +6,40 @@ import type { AppShellLanguage } from '../i18n';
 
 const LANGUAGE_OPTIONS: Array<{
     code: AppShellLanguage;
-    labelKey: 'nav.language_option_english' | 'nav.language_option_french' | 'nav.language_option_arabic';
-    shortKey: 'common.language_short_en' | 'common.language_short_fr' | 'common.language_short_ar';
+    nativeLabel: string;
+    shortLabel: string;
 }> = [
         {
             code: 'en',
-            labelKey: 'nav.language_option_english',
-            shortKey: 'common.language_short_en',
+            nativeLabel: 'English',
+            shortLabel: 'EN',
         },
         {
             code: 'fr',
-            labelKey: 'nav.language_option_french',
-            shortKey: 'common.language_short_fr',
+            nativeLabel: 'Français',
+            shortLabel: 'FR',
         },
         {
             code: 'ar',
-            labelKey: 'nav.language_option_arabic',
-            shortKey: 'common.language_short_ar',
+            nativeLabel: 'العربية',
+            shortLabel: 'AR',
+        },
+        // Pending native-speaker review before broader production activation.
+        {
+            code: 'pt-BR',
+            nativeLabel: 'Português (Brasil)',
+            shortLabel: 'PT',
+        },
+        // Pending native-speaker review before broader production activation.
+        {
+            code: 'tr',
+            nativeLabel: 'Türkçe',
+            shortLabel: 'TR',
         },
     ];
 
 const resolveAppLanguage = (language: string | undefined): AppShellLanguage => {
-    return language === 'ar' || language === 'fr' ? language : 'en';
+    return language === 'ar' || language === 'fr' || language === 'pt-BR' || language === 'tr' ? language : 'en';
 };
 
 export function GlobeButton() {
@@ -84,7 +96,7 @@ export function GlobeButton() {
             >
                 <Globe size={14} aria-hidden="true" />
                 <span className="text-[11px] font-black uppercase tracking-[0.18em]">
-                    {t(activeOption.shortKey)}
+                    {activeOption.shortLabel}
                 </span>
             </button>
 
@@ -110,7 +122,7 @@ export function GlobeButton() {
                                         : 'border border-transparent text-slate-300 hover:bg-white/[0.04] hover:text-white'
                                         }`}
                                 >
-                                    <span className="font-semibold">{t(option.labelKey)}</span>
+                                    <span className="font-semibold">{option.nativeLabel}</span>
                                     {isActive ? <Check size={14} aria-hidden="true" /> : <span className="w-[14px]" aria-hidden="true" />}
                                 </button>
                             );

@@ -4,15 +4,17 @@ import { initReactI18next } from 'react-i18next';
 import en from './locales/en.json';
 import ar from './locales/ar.json';
 import fr from './locales/fr.json';
+import ptBR from './locales/pt-BR.json';
+import tr from './locales/tr.json';
 
 export const APP_LANG_STORAGE_KEY = 'eb_lang';
 
-export type AppShellLanguage = 'en' | 'ar' | 'fr';
+export type AppShellLanguage = 'en' | 'ar' | 'fr' | 'pt-BR' | 'tr';
 
-export const SUPPORTED_APP_LANGUAGES: AppShellLanguage[] = ['en', 'ar', 'fr'];
+export const SUPPORTED_APP_LANGUAGES: AppShellLanguage[] = ['en', 'ar', 'fr', 'pt-BR', 'tr'];
 
 const isSupportedAppLanguage = (value: string | null): value is AppShellLanguage => {
-    return value === 'en' || value === 'ar' || value === 'fr';
+    return value === 'en' || value === 'ar' || value === 'fr' || value === 'pt-BR' || value === 'tr';
 };
 
 export const getStoredAppLanguage = (): AppShellLanguage => {
@@ -39,6 +41,8 @@ const resources = {
     en: { translation: en },
     ar: { translation: ar },
     fr: { translation: fr },
+    'pt-BR': { translation: ptBR },
+    tr: { translation: tr },
 };
 
 void i18n
@@ -62,8 +66,7 @@ void i18n
 applyDocumentLanguage(initialLanguage);
 
 i18n.on('languageChanged', (language) => {
-    const resolvedLanguage: AppShellLanguage =
-        language === 'ar' || language === 'fr' ? language : 'en';
+    const resolvedLanguage: AppShellLanguage = isSupportedAppLanguage(language) ? language : 'en';
 
     if (typeof window !== 'undefined') {
         window.localStorage.setItem(APP_LANG_STORAGE_KEY, resolvedLanguage);
