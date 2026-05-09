@@ -67,7 +67,7 @@ const FALLBACK_LANGUAGE_OPTIONS: SupportedLanguage[] = [
 ];
 
 export const App = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [briefings, setBriefings] = useState<Briefing[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,6 +151,18 @@ export const App = () => {
   const getUrgencyDisplayLabel = (urgency: string) => t(resolveUrgencyLabelKey(urgency));
   const getPageStatusLabel = (current: number, total: number) =>
     t('common.page_status', { current, total });
+
+  const dateLocale = i18n.resolvedLanguage ?? i18n.language ?? 'en';
+
+  const formatDisplayDate = (value?: string | null, fallback = t('inbox.unknown_time')) => {
+    if (!value) return fallback;
+
+    try {
+      return new Date(value).toLocaleString(dateLocale, { dateStyle: 'medium', timeStyle: 'short' });
+    } catch {
+      return fallback;
+    }
+  };
 
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) return;
@@ -493,14 +505,7 @@ export const App = () => {
       // Map DB schema to UI Briefing model
       const mapped: Briefing[] = ordered.map((e: InboxThreadRow) => {
         const isoDate = e.date ?? e.created_at;
-        let formattedDate = t('inbox.unknown_time');
-        try {
-          if (isoDate) {
-            formattedDate = new Date(isoDate).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-          }
-        } catch {
-          // Fallback already set
-        }
+        const formattedDate = formatDisplayDate(isoDate);
 
         // CRITICAL: Determine priority from AI urgency if available
         let priority: 'Low' | 'Medium' | 'High' = 'Medium';
@@ -526,6 +531,7 @@ export const App = () => {
           subject: e.subject || t('inbox.no_subject'),
           sender: e.sender || t('common.unknown'),
           date: formattedDate,
+          date_iso: isoDate ?? null,
           priority: priority,
           category: category,
           should_alert: e.ai_summary_json?.urgency === 'high',
@@ -1237,7 +1243,7 @@ export const App = () => {
     setPanelError(null);
 
     const originalBody = selectedEmailDetail.body || '';
-    const date = selectedEmailDetail.date || '';
+    const date = formatDisplayDate(selectedEmailDetail.date_iso, selectedEmailDetail.date || '');
     const sender = selectedEmailDetail.sender || '';
     const outboundBody = originalBody
       ? buildOutboundBody(userText, date, sender, originalBody)
@@ -1737,13 +1743,8 @@ export const App = () => {
           cc: se.cc_addresses,
         })
       : t('sent.you_to_recipient', { recipient: se.to_address || t('sent.unknown_recipient') }),
-    date: (() => {
-      try {
-        return new Date(se.sent_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-      } catch {
-        return se.sent_at;
-      }
-    })(),
+    date: formatDisplayDate(se.sent_at, se.sent_at),
+    date_iso: se.sent_at ?? null,
     priority: 'Medium',
     category: 'General',
     should_alert: false,
@@ -2238,7 +2239,7 @@ export const App = () => {
                             <span className={`truncate mr-2 ${item.is_read === false ? 'font-bold text-slate-300' : 'font-semibold'}`}>{item.sender.split('<')[0].trim()}</span>
                             <div className="flex items-center gap-1 shrink-0">
                               <Clock size={11} className="text-primary-400/60" />
-                              <span className="text-[10px] font-medium">{item.date}</span>
+                              <span className="text-[10px] font-medium">{formatDisplayDate(item.date_iso, item.date)}</span>
                             </div>
                           </div>
                         </div>

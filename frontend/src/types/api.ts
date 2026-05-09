@@ -93,6 +93,7 @@ export interface Briefing {
     subject: string;
     sender: string;
     date: string;
+    date_iso?: string | null;
     priority: 'Low' | 'Medium' | 'High';
     category: 'Security' | 'Financial' | 'Work' | 'Personal' | 'Marketing' | 'General';
     should_alert: boolean;

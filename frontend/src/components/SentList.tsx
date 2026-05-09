@@ -10,9 +10,9 @@ interface Props {
 
 const SENT_SKELETON_COUNT = 5;
 
-function formatSentAt(sentAt: string): string {
+function formatSentAt(sentAt: string, locale: string): string {
   try {
-    return new Date(sentAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    return new Date(sentAt).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' });
   } catch {
     return sentAt;
   }
@@ -23,7 +23,8 @@ function compactText(value?: string | null): string {
 }
 
 export function SentList({ emails, loading, onSelect }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.resolvedLanguage ?? i18n.language ?? 'en';
 
   const cardLabel = (email: SentEmail): string => {
     const subject = compactText(email.subject) || t('sent.no_subject');
@@ -106,7 +107,7 @@ export function SentList({ emails, loading, onSelect }: Props) {
 
                 <div className="flex items-center gap-1.5 text-[10px] text-slate-600 flex-shrink-0 pt-0.5">
                   <Clock size={11} className="text-primary-400/55" />
-                  <span>{formatSentAt(email.sent_at)}</span>
+                  <span>{formatSentAt(email.sent_at, dateLocale)}</span>
                 </div>
               </div>
 

@@ -67,7 +67,7 @@ export function EmailDetailModal({
   getCategoryStyles,
   preferredLanguage,
 }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const languageLabel = (code: string | null) => {
     if (code === 'fr') return t('languages.french');
@@ -112,16 +112,22 @@ export function EmailDetailModal({
     ? onGeneratePreferred
     : onSummarize;
 
+  const dateLocale = i18n.resolvedLanguage ?? i18n.language ?? 'en';
+
+  const formatDisplayDate = (value?: string | null, fallback = email.date) => {
+    if (!value) return fallback;
+
+    try {
+      return new Date(value).toLocaleString(dateLocale, { dateStyle: 'medium', timeStyle: 'short' });
+    } catch {
+      return fallback;
+    }
+  };
+
   const sentMeta = detailIsSent ? email.sentMeta : undefined;
 
-  const sentAtDisplay = (() => {
-    if (!sentMeta?.sentAt) return email.date;
-    try {
-      return new Date(sentMeta.sentAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-    } catch {
-      return sentMeta.sentAt;
-    }
-  })();
+  const sentAtDisplay = formatDisplayDate(sentMeta?.sentAt, sentMeta?.sentAt ?? email.date);
+  const receivedAtDisplay = formatDisplayDate(email.date_iso, email.date);
 
   const showPreferredLanguageBanner = !detailIsSent && showPreferredLanguageMismatch;
   const showSummarizeButton = !detailIsSent && Boolean(email.ai_summary_text && email.gmail_message_id);
@@ -310,7 +316,7 @@ export function EmailDetailModal({
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold text-slate-300">{email.sender}</span>
                         <span className="text-slate-600">|</span>
-                        <span>{email.date}</span>
+                        <span>{receivedAtDisplay}</span>
                       </div>
                     )}
                   </div>
