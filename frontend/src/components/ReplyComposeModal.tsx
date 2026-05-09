@@ -114,6 +114,16 @@ export function ReplyComposeModal({
 
   const toneOptions = availableTones && availableTones.length > 0 ? availableTones : translatedFallbackTones;
   const effectiveTone: DraftTone = selectedTone ?? localTone;
+
+  const getToneDisplayLabel = (tone: SupportedTone) => {
+    switch (tone.code) {
+      case 'professional': return t('compose.tone_professional');
+      case 'casual': return t('compose.tone_casual');
+      case 'concise': return t('compose.tone_concise');
+      case 'empathetic': return t('compose.tone_empathetic');
+      default: return tone.label;
+    }
+  };
   const templateOptions = templates ?? EMPTY_TEMPLATES;
   const hasSaveTemplateHandler = typeof onSaveTemplate === 'function';
   const hasSaveableReplyBody = replyBody.trim().length > 0;
@@ -302,7 +312,7 @@ export function ReplyComposeModal({
                               : 'bg-white/[0.02] border-white/[0.08] text-slate-300 hover:text-white hover:bg-white/[0.05]'
                               } ${sending ? 'opacity-50 cursor-not-allowed' : ''}`}
                           >
-                            {tone.label}
+                            {getToneDisplayLabel(tone)}
                           </button>
                         );
                       })}
@@ -460,7 +470,7 @@ export function ReplyComposeModal({
                       {t('compose.reference_not_sent')}
                     </p>
                     <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.14em]">
-                      {t('compose.tone_value', { tone: toneOptions.find((tone) => tone.code === effectiveTone)?.label ?? effectiveTone })}
+                      {t('compose.tone_value', { tone: (() => { const found = toneOptions.find((tone) => tone.code === effectiveTone); return found ? getToneDisplayLabel(found) : effectiveTone; })() })}
                     </span>
                   </div>
 

@@ -76,6 +76,16 @@ export function AssistantPanel({
   const toneOptions = availableTones && availableTones.length > 0 ? availableTones : translatedFallbackTones;
   const effectiveTone: DraftTone = selectedTone ?? localTone;
 
+  const getToneDisplayLabel = (tone: SupportedTone) => {
+    switch (tone.code) {
+      case 'professional': return t('compose.tone_professional');
+      case 'casual': return t('compose.tone_casual');
+      case 'concise': return t('compose.tone_concise');
+      case 'empathetic': return t('compose.tone_empathetic');
+      default: return tone.label;
+    }
+  };
+
   const checkStatus = useCallback(async () => {
     setState('checking');
     setError(null);
@@ -301,7 +311,7 @@ export function AssistantPanel({
               >
                 {toneOptions.map((tone) => (
                   <option key={tone.code} value={tone.code} className="bg-slate-900 text-slate-200">
-                    {tone.label}
+                    {getToneDisplayLabel(tone)}
                   </option>
                 ))}
               </select>
@@ -341,7 +351,7 @@ export function AssistantPanel({
                 {t('assistant.tone_label')}
               </p>
               <span className="text-[10px] font-bold text-primary-300 uppercase tracking-wide">
-                {toneOptions.find((tone) => tone.code === effectiveTone)?.label ?? effectiveTone}
+                {(() => { const found = toneOptions.find((tone) => tone.code === effectiveTone); return found ? getToneDisplayLabel(found) : effectiveTone; })()}
               </span>
             </div>
             <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08]">
