@@ -301,5 +301,16 @@
         "open": "Open",
         "you_to_recipient": "You → {{recipient}}",
         "you_to_recipient_with_cc": "You → {{recipient}} · {{ccLabel}}: {{cc}}"
+    },
+    "search": {
+        "placeholder": "Search emails…",
+        "aria_label": "Search emails",
+        "loading": "Searching emails…",
+        "no_results_title": "No results found",
+        "no_results_body": "Try a different keyword, sender, or phrase.",
+        "error_title": "Search unavailable",
+        "error_body": "We couldn't load search results right now.",
+        "clear": "Clear search",
+        "results_count": "{{count}} results"
     }
 }

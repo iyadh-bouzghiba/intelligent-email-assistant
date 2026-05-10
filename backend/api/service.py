@@ -2442,6 +2442,209 @@ async def get_inbox_threads(account_id: str = Query(...), limit: int = Query(50)
         return []
 
 
+@api_router.get("/search")
+async def search_emails(
+    q: str = Query(...),
+    account_id: str = Query(...),
+    preferred_language: str = Query("en"),
+    limit: int = Query(50),
+):
+    """
+    Full-text search over the inbox.  Returns InboxThreadRow-compatible dicts.
+
+    Uses the DB function search_emails_ranked (ts_rank over search_vector) for
+    server-side ranked candidates, then applies the same summary-enrichment,
+    sent-activity merge, thread-collapse, and unread-propagation logic as
+    /api/inbox.  Results are sorted by relevance DESC, latest activity DESC.
+    """
+    q = (q or "").strip()
+    if len(q) < 2:
+        return []
+    limit = min(max(limit, 1), 50)
+    preferred_language = normalize_language(preferred_language)
+
+    store = safe_get_store()
+    if not store:
+        logger.warning("[SEARCH] Store unavailable")
+        return []
+
+    try:
+        # 1. Fetch ranked candidates from the DB function (bounded at 200)
+        rpc_result = await asyncio.to_thread(
+            lambda: store.client.rpc(
+                "search_emails_ranked",
+                {"p_account_id": account_id, "p_query": q, "p_limit": 200},
+            ).execute()
+        )
+        candidates = rpc_result.data or []
+        if not candidates:
+            logger.info(f"[SEARCH] No candidates for q={q!r} account={account_id}")
+            return []
+
+        # 2. Build gmail_message_id -> candidate map; preserve rank
+        cand_map: dict = {}
+        for row in candidates:
+            mid = row.get("gmail_message_id")
+            if mid and mid not in cand_map:
+                cand_map[mid] = row
+
+        # 3. Fetch summaries for candidate message IDs
+        message_ids = list(cand_map.keys())
+        summaries_map: dict = {}
+        try:
+            if not message_ids:
+                raise ValueError("empty message_ids — skip summary query")
+            summ_result = await asyncio.to_thread(
+                lambda: store.client.table("email_ai_summaries")
+                    .select("*")
+                    .eq("account_id", account_id)
+                    .in_("gmail_message_id", message_ids)
+                    .eq("prompt_version", EMAIL_SUMMARY_PROMPT_VERSION)
+                    .execute()
+            )
+            sorted_summ = sorted(
+                summ_result.data or [],
+                key=lambda s: s.get("updated_at") or "",
+                reverse=True,
+            )
+            candidates_by_lang: dict = {}
+            for s in sorted_summ:
+                mid = s.get("gmail_message_id")
+                if not mid:
+                    continue
+                lang = s.get("summary_language", "en")
+                c = candidates_by_lang.setdefault(mid, {})
+                if lang == preferred_language and "preferred" not in c:
+                    c["preferred"] = s
+                if lang == "en" and "en" not in c:
+                    c["en"] = s
+                if "any" not in c:
+                    c["any"] = s
+            for mid, c in candidates_by_lang.items():
+                chosen = c.get("preferred") or c.get("en") or c["any"]
+                summaries_map[mid] = {"row": chosen, "preferred_available": "preferred" in c}
+        except Exception as summ_err:
+            logger.warning(f"[SEARCH] Summary fetch failed (non-fatal): {type(summ_err).__name__}: {summ_err}")
+
+        # 4. Merge summary fields into each candidate
+        def _merge_summary(email: dict) -> dict:
+            mid = email.get("gmail_message_id")
+            entry = summaries_map.get(mid) if mid else None
+            if entry:
+                summary = entry["row"]
+                actual_lang = summary.get("summary_language", "en")
+                email["ai_summary_json"] = summary.get("summary_json")
+                email["ai_summary_text"] = summary.get("summary_text")
+                email["ai_summary_model"] = summary.get("model")
+                email["ai_summary_language"] = actual_lang
+                email["ai_summary_is_fallback"] = actual_lang != preferred_language
+                email["ai_preferred_language"] = preferred_language
+                email["ai_preferred_language_available"] = entry["preferred_available"]
+            else:
+                email["ai_summary_json"] = None
+                email["ai_summary_text"] = None
+                email["ai_summary_model"] = None
+                email["ai_summary_language"] = None
+                email["ai_summary_is_fallback"] = False
+                email["ai_preferred_language"] = preferred_language
+                email["ai_preferred_language_available"] = False
+            return email
+
+        enriched = [_merge_summary(dict(row)) for row in candidates]
+
+        # 5. Fetch sent_emails timestamps for latest-activity parity
+        sent_result = await asyncio.to_thread(
+            lambda: store.client.table("sent_emails")
+                .select("thread_id, sent_at")
+                .eq("account_id", account_id)
+                .order("sent_at", desc=True)
+                .limit(200)
+                .execute()
+        )
+        sent_latest: dict = {}
+        for row in (sent_result.data or []):
+            tid = row.get("thread_id")
+            sat = row.get("sent_at")
+            if tid and sat and tid not in sent_latest:
+                sent_latest[tid] = sat
+
+        def _parse_ts(ts: str) -> datetime:
+            try:
+                return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except Exception:
+                return datetime.min.replace(tzinfo=timezone.utc)
+
+        # 6. Thread collapse: one representative per thread (highest rank wins;
+        #    tie-break by latest activity DESC); propagate thread-level unread.
+        #    Four separate dicts prevent any bleed between representative state
+        #    and thread-wide aggregate state.
+        seen: dict = {}                  # key -> representative row
+        best_rank: dict = {}             # key -> float rank of the representative
+        rep_latest_activity: dict = {}   # key -> datetime of the representative row
+        thread_latest_activity: dict = {}# key -> datetime of the most-active row in thread
+        has_unread: dict = {}            # key -> bool (any message unread)
+
+        _epoch = datetime.min.replace(tzinfo=timezone.utc)
+
+        for email in enriched:
+            key = email.get("thread_id") or email.get("gmail_message_id") or email.get("subject", "")
+            rank = float(email.get("rank") or 0.0)
+            thread_id = email.get("thread_id")
+            inbox_ts = email.get("date") or email.get("created_at") or ""
+            sent_ts = sent_latest.get(thread_id, "") if thread_id else ""
+            latest_dt = max(_parse_ts(inbox_ts), _parse_ts(sent_ts))
+
+            # Always track thread-wide latest activity
+            thread_latest_activity[key] = max(
+                thread_latest_activity.get(key, _epoch), latest_dt
+            )
+
+            if key not in seen:
+                seen[key] = email
+                best_rank[key] = rank
+                rep_latest_activity[key] = latest_dt
+                has_unread[key] = not email.get("is_read", True)
+            else:
+                # Replace representative only when this row is strictly better:
+                # higher rank wins; equal rank resolved by more recent row activity.
+                if rank > best_rank[key] or (
+                    rank == best_rank[key] and latest_dt > rep_latest_activity[key]
+                ):
+                    seen[key] = email
+                    best_rank[key] = rank
+                    rep_latest_activity[key] = latest_dt
+
+            if not email.get("is_read", True):
+                has_unread[key] = True
+
+        # 7. Build final rows with thread-level unread and sort keys
+        rows = []
+        for key, rep in seen.items():
+            row = dict(rep)
+            row["is_read"] = not has_unread[key]
+            row["_rank"] = best_rank[key]
+            row["_latest_activity"] = thread_latest_activity[key].isoformat()
+            rows.append(row)
+
+        rows.sort(
+            key=lambda r: (r.get("_rank", 0.0), r.get("_latest_activity", "")),
+            reverse=True,
+        )
+        for row in rows:
+            row.pop("_rank", None)
+            row.pop("_latest_activity", None)
+            row.pop("rank", None)
+
+        logger.info(f"[SEARCH] Returning {min(len(rows), limit)} threads for q={q!r} account={account_id}")
+        return rows[:limit]
+
+    except Exception as e:
+        logger.error(f"[SEARCH] Failed: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return []
+
+
 @api_router.post("/backfill-sent")
 async def backfill_sent_emails(account_id: str = Query(...)):
     """

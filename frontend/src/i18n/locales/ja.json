@@ -301,5 +301,16 @@
         "open": "開く",
         "you_to_recipient": "あなた → {{recipient}}",
         "you_to_recipient_with_cc": "あなた → {{recipient}} · {{ccLabel}}: {{cc}}"
+    },
+    "search": {
+        "placeholder": "メールを検索…",
+        "aria_label": "メールを検索",
+        "loading": "メールを検索中…",
+        "no_results_title": "結果が見つかりません",
+        "no_results_body": "別のキーワード、送信者、またはフレーズを試してください。",
+        "error_title": "検索を利用できません",
+        "error_body": "現在、検索結果を読み込めませんでした。",
+        "clear": "検索をクリア",
+        "results_count": "{{count}} 件の結果"
     }
 }

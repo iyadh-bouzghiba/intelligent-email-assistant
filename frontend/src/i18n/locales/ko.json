@@ -301,5 +301,16 @@
         "open": "열기",
         "you_to_recipient": "나 → {{recipient}}",
         "you_to_recipient_with_cc": "나 → {{recipient}} · {{ccLabel}}: {{cc}}"
+    },
+    "search": {
+        "placeholder": "이메일 검색…",
+        "aria_label": "이메일 검색",
+        "loading": "이메일 검색 중…",
+        "no_results_title": "검색 결과가 없습니다",
+        "no_results_body": "다른 키워드, 발신자 또는 문구를 시도해 보세요.",
+        "error_title": "검색을 사용할 수 없습니다",
+        "error_body": "지금은 검색 결과를 불러올 수 없습니다.",
+        "clear": "검색 지우기",
+        "results_count": "{{count}}개 결과"
     }
 }

@@ -301,5 +301,16 @@
         "open": "Buka",
         "you_to_recipient": "Anda → {{recipient}}",
         "you_to_recipient_with_cc": "Anda → {{recipient}} · {{ccLabel}}: {{cc}}"
+    },
+    "search": {
+        "placeholder": "Cari email…",
+        "aria_label": "Cari email",
+        "loading": "Mencari email…",
+        "no_results_title": "Tidak ada hasil",
+        "no_results_body": "Coba kata kunci, pengirim, atau frasa lain.",
+        "error_title": "Pencarian tidak tersedia",
+        "error_body": "Hasil pencarian tidak dapat dimuat saat ini.",
+        "clear": "Hapus pencarian",
+        "results_count": "{{count}} hasil"
     }
 }

@@ -301,5 +301,16 @@
         "open": "Ouvrir",
         "you_to_recipient": "Vous → {{recipient}}",
         "you_to_recipient_with_cc": "Vous → {{recipient}} · {{ccLabel}} : {{cc}}"
+    },
+    "search": {
+        "placeholder": "Rechercher dans les e-mails…",
+        "aria_label": "Rechercher dans les e-mails",
+        "loading": "Recherche des e-mails…",
+        "no_results_title": "Aucun résultat trouvé",
+        "no_results_body": "Essayez un autre mot-clé, expéditeur ou une autre expression.",
+        "error_title": "Recherche indisponible",
+        "error_body": "Impossible de charger les résultats de recherche pour le moment.",
+        "clear": "Effacer la recherche",
+        "results_count": "{{count}} résultats"
     }
 }

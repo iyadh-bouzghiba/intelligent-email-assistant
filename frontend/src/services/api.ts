@@ -427,4 +427,22 @@ export const apiService = {
         }
     },
 
+    // Full-text search — /api/search (ranked, thread-aware, summary-enriched)
+    searchEmails: async (
+        q: string,
+        account_id: string,
+        preferred_language = 'en',
+        limit = 50
+    ): Promise<InboxThreadRow[]> => {
+        try {
+            const response = await api.get(`${API_ROOT}/search`, {
+                params: { q, account_id, preferred_language, limit },
+            });
+            return response.data ?? [];
+        } catch (error) {
+            console.warn('[API] searchEmails failed', error);
+            throw error;
+        }
+    },
+
 };
