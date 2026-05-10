@@ -300,10 +300,12 @@ export function AssistantPanel({
             )}
 
             <div className="space-y-1.5">
-              <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+              <label htmlFor="assistant-tone-select" className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                 {t('assistant.tone_label')}
               </label>
               <select
+                id="assistant-tone-select"
+                name="assistantTone"
                 value={effectiveTone}
                 onChange={(e) => handleToneSelection(e.target.value as DraftTone)}
                 disabled={state === 'generating'}
@@ -318,10 +320,12 @@ export function AssistantPanel({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+              <label htmlFor="assistant-instruction-textarea" className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                 {t('assistant.instruction_label')}
               </label>
               <textarea
+                id="assistant-instruction-textarea"
+                name="assistantInstruction"
                 value={instruction}
                 onChange={(e) => setInstruction(e.target.value)}
                 placeholder={t('assistant.instruction_placeholder')}
