@@ -6,15 +6,20 @@ import ar from './locales/ar.json';
 import fr from './locales/fr.json';
 import ptBR from './locales/pt-BR.json';
 import tr from './locales/tr.json';
+import ja from './locales/ja.json';
+import ko from './locales/ko.json';
+import hi from './locales/hi.json';
+import id from './locales/id.json';
 
 export const APP_LANG_STORAGE_KEY = 'eb_lang';
 
-export type AppShellLanguage = 'en' | 'ar' | 'fr' | 'pt-BR' | 'tr';
+export type AppShellLanguage = 'en' | 'ar' | 'fr' | 'pt-BR' | 'tr' | 'ja' | 'ko' | 'hi' | 'id';
 
-export const SUPPORTED_APP_LANGUAGES: AppShellLanguage[] = ['en', 'ar', 'fr', 'pt-BR', 'tr'];
+export const SUPPORTED_APP_LANGUAGES: AppShellLanguage[] = ['en', 'ar', 'fr', 'pt-BR', 'tr', 'ja', 'ko', 'hi', 'id'];
 
 const isSupportedAppLanguage = (value: string | null): value is AppShellLanguage => {
-    return value === 'en' || value === 'ar' || value === 'fr' || value === 'pt-BR' || value === 'tr';
+    return value === 'en' || value === 'ar' || value === 'fr' || value === 'pt-BR' || value === 'tr'
+        || value === 'ja' || value === 'ko' || value === 'hi' || value === 'id';
 };
 
 export const getStoredAppLanguage = (): AppShellLanguage => {
@@ -43,6 +48,10 @@ const resources = {
     fr: { translation: fr },
     'pt-BR': { translation: ptBR },
     tr: { translation: tr },
+    ja: { translation: ja },
+    ko: { translation: ko },
+    hi: { translation: hi },
+    id: { translation: id },
 };
 
 void i18n

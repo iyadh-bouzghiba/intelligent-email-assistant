@@ -36,10 +36,36 @@ const LANGUAGE_OPTIONS: Array<{
             nativeLabel: 'Türkçe',
             shortLabel: 'TR',
         },
+        // Pending native-speaker review before broader production activation.
+        {
+            code: 'ja',
+            nativeLabel: '日本語',
+            shortLabel: 'JA',
+        },
+        // Pending native-speaker review before broader production activation.
+        {
+            code: 'ko',
+            nativeLabel: '한국어',
+            shortLabel: 'KO',
+        },
+        // Pending native-speaker review before broader production activation.
+        {
+            code: 'hi',
+            nativeLabel: 'हिन्दी',
+            shortLabel: 'HI',
+        },
+        // Pending native-speaker review before broader production activation.
+        {
+            code: 'id',
+            nativeLabel: 'Bahasa Indonesia',
+            shortLabel: 'ID',
+        },
     ];
 
 const resolveAppLanguage = (language: string | undefined): AppShellLanguage => {
-    return language === 'ar' || language === 'fr' || language === 'pt-BR' || language === 'tr' ? language : 'en';
+    return language === 'ar' || language === 'fr' || language === 'pt-BR' || language === 'tr'
+        || language === 'ja' || language === 'ko' || language === 'hi' || language === 'id'
+        ? language : 'en';
 };
 
 export function GlobeButton() {
