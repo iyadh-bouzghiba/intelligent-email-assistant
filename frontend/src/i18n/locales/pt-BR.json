@@ -108,7 +108,7 @@
         "unknown_recipient": "Destinatário desconhecido",
         "to_label": "Para",
         "cc_label": "CC",
-        "sent_at": "Enviado {{date}}",
+        "sent_at": "Enviado",
         "sent_badge": "Enviado",
         "full_message": "Mensagem completa",
         "sent_message": "Mensagem enviada",

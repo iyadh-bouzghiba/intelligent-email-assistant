@@ -108,7 +108,7 @@
         "unknown_recipient": "مستلم غير معروف",
         "to_label": "إلى",
         "cc_label": "نسخة إلى",
-        "sent_at": "أُرسل {{date}}",
+        "sent_at": "أُرسل",
         "sent_badge": "مُرسل",
         "full_message": "الرسالة الكاملة",
         "sent_message": "الرسالة المرسلة",

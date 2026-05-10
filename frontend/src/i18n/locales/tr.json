@@ -108,7 +108,7 @@
         "unknown_recipient": "Bilinmeyen alıcı",
         "to_label": "Kime",
         "cc_label": "CC",
-        "sent_at": "{{date}} tarihinde gönderildi",
+        "sent_at": "Gönderildi",
         "sent_badge": "Gönderildi",
         "full_message": "Tam mesaj",
         "sent_message": "Gönderilen mesaj",

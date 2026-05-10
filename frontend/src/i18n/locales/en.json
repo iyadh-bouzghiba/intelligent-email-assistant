@@ -108,7 +108,7 @@
         "unknown_recipient": "Unknown recipient",
         "to_label": "To",
         "cc_label": "CC",
-        "sent_at": "Sent {{date}}",
+        "sent_at": "Sent",
         "sent_badge": "Sent",
         "full_message": "Full message",
         "sent_message": "Sent message",
