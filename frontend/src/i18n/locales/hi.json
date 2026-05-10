@@ -301,5 +301,16 @@
         "open": "खोलें",
         "you_to_recipient": "आप → {{recipient}}",
         "you_to_recipient_with_cc": "आप → {{recipient}} · {{ccLabel}}: {{cc}}"
+    },
+    "search": {
+        "placeholder": "ईमेल खोजें…",
+        "aria_label": "ईमेल खोजें",
+        "loading": "ईमेल खोजे जा रहे हैं…",
+        "no_results_title": "कोई परिणाम नहीं मिला",
+        "no_results_body": "कोई दूसरा कीवर्ड, प्रेषक या वाक्यांश आज़माएँ।",
+        "error_title": "खोज उपलब्ध नहीं है",
+        "error_body": "अभी खोज परिणाम लोड नहीं किए जा सके।",
+        "clear": "खोज साफ़ करें",
+        "results_count": "{{count}} परिणाम"
     }
 }

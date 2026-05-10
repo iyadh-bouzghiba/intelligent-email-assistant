@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import './i18n';
 import { apiService, AILanguage } from '@services';
 import { websocketService, type EmailsUpdatedData, type SummaryReadyData } from '@services/websocket';
-import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send } from 'lucide-react';
+import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send, Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { Briefing, AccountInfo, SentEmail, SupportedLanguage, SupportedTone, EmailTemplate, DraftTone, InboxThreadRow } from '@types';
@@ -134,6 +134,14 @@ export const App = () => {
   const [templateSaving, setTemplateSaving] = useState(false);
   const [templateDeletingId, setTemplateDeletingId] = useState<string | null>(null);
   const [aiLanguageResolvedAccountId, setAiLanguageResolvedAccountId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Briefing[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const desktopSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const activeSearchInputRef = () =>
+    window.innerWidth >= 640 ? desktopSearchInputRef.current : mobileSearchInputRef.current;
   const selectedEmailIdentity =
     selectedEmailDetail?.gmail_message_id ??
     selectedEmailDetail?.thread_id ??
@@ -286,6 +294,51 @@ export const App = () => {
     return 'General';
   };
 
+  // Maps one InboxThreadRow to a Briefing.  triggerAlerts=false suppresses
+  // Sentinel notifications for search results (avoids alert spam on FTS queries).
+  const mapRowToBriefing = (e: InboxThreadRow, triggerAlerts: boolean): Briefing => {
+    const isoDate = e.date ?? e.created_at;
+    const formattedDate = formatDisplayDate(isoDate);
+    let priority: 'Low' | 'Medium' | 'High' = 'Medium';
+    if (e.ai_summary_json?.urgency === 'high') priority = 'High';
+    else if (e.ai_summary_json?.urgency === 'low') priority = 'Low';
+    const displaySummary = e.ai_summary_text || e.body || t('inbox.awaiting_processing');
+    const primaryAction = e.ai_summary_json?.action_items?.[0] || t('inbox.review_pending');
+    const category = categorizeEmail(
+      e.subject || '',
+      e.sender || '',
+      e.body || '',
+      e.ai_summary_text ?? undefined
+    );
+    const briefing: Briefing = {
+      account: e.account_id || t('common.unknown'),
+      subject: e.subject || t('inbox.no_subject'),
+      sender: e.sender || t('common.unknown'),
+      date: formattedDate,
+      date_iso: isoDate ?? null,
+      priority,
+      category,
+      should_alert: e.ai_summary_json?.urgency === 'high',
+      summary: displaySummary,
+      action: primaryAction,
+      body: e.body || '',
+      ai_summary_json: e.ai_summary_json ?? undefined,
+      ai_summary_text: e.ai_summary_text ?? undefined,
+      ai_summary_model: e.ai_summary_model ?? undefined,
+      ai_summary_language: e.ai_summary_language ?? null,
+      ai_summary_is_fallback: e.ai_summary_is_fallback ?? false,
+      ai_preferred_language: e.ai_preferred_language ?? null,
+      ai_preferred_language_available: e.ai_preferred_language_available ?? false,
+      gmail_message_id: e.gmail_message_id ?? undefined,
+      thread_id: e.thread_id ?? undefined,
+      is_read: e.is_read !== undefined ? Boolean(e.is_read) : undefined,
+    };
+    if (triggerAlerts && briefing.should_alert) {
+      setTimeout(() => triggerSentinelAlert(briefing), 500);
+    }
+    return briefing;
+  };
+
   // Global session-expired handler: reset all UI state when backend returns 401
   useEffect(() => {
     const handleAuthRequired = () => {
@@ -330,6 +383,18 @@ export const App = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Cmd+K / Ctrl+K: focus search input when no modal is blocking
+  useEffect(() => {
+    const handleSearchFocus = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k' && activeModal === 'none') {
+        e.preventDefault();
+        activeSearchInputRef()?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleSearchFocus);
+    return () => window.removeEventListener('keydown', handleSearchFocus);
+  }, [activeModal]);
+
   // Escape key: if compose is open → discard compose, stay on detail; else → close detail
   useEffect(() => {
     if (!selectedEmailDetail) return;
@@ -353,6 +418,22 @@ export const App = () => {
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, [selectedEmailDetail, activeModal]);
+
+  // Search Escape: clear query or blur; yields to modal Escape handlers when any modal is open
+  useEffect(() => {
+    const handleSearchEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || activeModal !== 'none') return;
+      const focused = document.activeElement;
+      if (focused !== desktopSearchInputRef.current && focused !== mobileSearchInputRef.current) return;
+      if (searchQuery.trim().length > 0) {
+        setSearchQuery('');
+      } else {
+        (focused as HTMLElement).blur();
+      }
+    };
+    window.addEventListener('keydown', handleSearchEsc);
+    return () => window.removeEventListener('keydown', handleSearchEsc);
+  }, [activeModal, searchQuery]);
 
   // D2: Lock background scroll while detail panel is open; restore on close or unmount
   useEffect(() => {
@@ -404,6 +485,53 @@ export const App = () => {
       return () => clearTimeout(timer);
     }
   }, [scrollToActions, selectedEmailDetail]);
+
+  // Run FTS search whenever query or active account changes; debounced 300ms
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < 2 || !activeEmail) {
+      setSearchResults([]);
+      setSearchError(null);
+      setSearchLoading(false);
+      return;
+    }
+    let stale = false;
+    const timer = setTimeout(async () => {
+      if (stale) return;
+      setSearchLoading(true);
+      setSearchError(null);
+      try {
+        const rows = await apiService.searchEmails(trimmed, activeEmail, aiLanguageRef.current, 50);
+        if (!stale) setSearchResults(rows.map(e => mapRowToBriefing(e, false)));
+      } catch {
+        if (!stale) setSearchError('error');
+      } finally {
+        if (!stale) setSearchLoading(false);
+      }
+    }, 300);
+    return () => { stale = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, activeEmail, aiLanguage]);
+
+  // Rerun active search when briefings change (read/unread mutations, summary refreshes, inbox refetches)
+  // so the visible search card list stays coherent with inbox state without overwriting briefings.
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < 2 || !activeEmail) return;
+    let stale = false;
+    const timer = setTimeout(async () => {
+      if (stale) return;
+      if (!stale) setSearchError(null);
+      try {
+        const rows = await apiService.searchEmails(trimmed, activeEmail, aiLanguageRef.current, 50);
+        if (!stale) setSearchResults(rows.map(e => mapRowToBriefing(e, false)));
+      } catch {
+        if (!stale) setSearchError('error');
+      }
+    }, 200);
+    return () => { stale = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [briefings]);
 
   // Fetch sent emails when the Sent tab is active, or when the active account changes while Sent is open.
   useEffect(() => {
@@ -502,61 +630,8 @@ export const App = () => {
       // Client-side re-sort by individual message date would overwrite that ordering.
       const ordered = emailData || [];
 
-      // Map DB schema to UI Briefing model
-      const mapped: Briefing[] = ordered.map((e: InboxThreadRow) => {
-        const isoDate = e.date ?? e.created_at;
-        const formattedDate = formatDisplayDate(isoDate);
-
-        // CRITICAL: Determine priority from AI urgency if available
-        let priority: 'Low' | 'Medium' | 'High' = 'Medium';
-        if (e.ai_summary_json?.urgency === 'high') priority = 'High';
-        else if (e.ai_summary_json?.urgency === 'low') priority = 'Low';
-
-        // Use AI overview if available, fallback to raw body
-        const displaySummary = e.ai_summary_text || e.body || t('inbox.awaiting_processing');
-
-        // Use first action item as primary action if available
-        const primaryAction = e.ai_summary_json?.action_items?.[0] || t('inbox.review_pending');
-
-        // Smart categorization based on email content
-        const category = categorizeEmail(
-          e.subject || '',
-          e.sender || '',
-          e.body || '',
-          e.ai_summary_text ?? undefined
-        );
-
-        const briefing: Briefing = {
-          account: e.account_id || t('common.unknown'),
-          subject: e.subject || t('inbox.no_subject'),
-          sender: e.sender || t('common.unknown'),
-          date: formattedDate,
-          date_iso: isoDate ?? null,
-          priority: priority,
-          category: category,
-          should_alert: e.ai_summary_json?.urgency === 'high',
-          summary: displaySummary,
-          action: primaryAction,
-          body: e.body || '',
-          ai_summary_json: e.ai_summary_json ?? undefined,
-          ai_summary_text: e.ai_summary_text ?? undefined,
-          ai_summary_model: e.ai_summary_model ?? undefined,
-          ai_summary_language: e.ai_summary_language ?? null,
-          ai_summary_is_fallback: e.ai_summary_is_fallback ?? false,
-          ai_preferred_language: e.ai_preferred_language ?? null,
-          ai_preferred_language_available: e.ai_preferred_language_available ?? false,
-          gmail_message_id: e.gmail_message_id ?? undefined,
-          thread_id: e.thread_id ?? undefined,
-          is_read: e.is_read !== undefined ? Boolean(e.is_read) : undefined,
-        };
-
-        // CRITICAL: Trigger Sentinel Alert for high-urgency emails
-        if (briefing.should_alert) {
-          setTimeout(() => triggerSentinelAlert(briefing), 500);
-        }
-
-        return briefing;
-      });
+      // Map DB schema to UI Briefing model (alerts enabled for normal inbox fetch)
+      const mapped: Briefing[] = ordered.map((e: InboxThreadRow) => mapRowToBriefing(e, true));
 
       setBriefings(mapped);
       setError(null);
@@ -1729,6 +1804,11 @@ export const App = () => {
   const currentItems = filteredBriefings.slice((effectiveInboxPage - 1) * ITEMS_PER_PAGE, effectiveInboxPage * ITEMS_PER_PAGE);
   const hasFilteredBriefings = filteredBriefings.length > 0;
 
+  // Search active when trimmed query is long enough to trigger FTS
+  const isSearchActive = searchQuery.trim().length >= 2 && !!activeEmail;
+  // Unified display source: search results override normal paginated inbox when searching
+  const displayItems = isSearchActive ? searchResults : currentItems;
+
   // Unread count: thread-level collapsed rows (not raw per-message count)
   const unreadCount = collapsedInbox.filter(b => b.is_read === false).length;
 
@@ -1766,8 +1846,8 @@ export const App = () => {
   // already loaded data or finished its initial load - prevents toolbar flashing
   // during the "Analyzing..." skeleton state on first account selection.
   const showFeedNavigation = Boolean(activeEmail) && (!loading || briefings.length > 0);
-  const showInboxEmptyState = activeTab === 'inbox' && !loading && !error && !hasFilteredBriefings;
-  const showInboxPagination = activeTab === 'inbox' && !loading && hasFilteredBriefings && totalPages > 1;
+  const showInboxEmptyState = activeTab === 'inbox' && !loading && !error && !hasFilteredBriefings && !isSearchActive;
+  const showInboxPagination = activeTab === 'inbox' && !loading && !isSearchActive && hasFilteredBriefings && totalPages > 1;
   const showWakingOverlay = startupPhase === 'waking';
   const canShowSyncControl =
     startupPhase === 'ready' &&
@@ -1802,9 +1882,10 @@ export const App = () => {
 
       <header className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-brand-bg/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 py-4">
-          {/* Primary row — brand + desktop controls */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center justify-between gap-3 w-full sm:w-auto">
+          {/* Primary row — left: brand | center: desktop search | right: desktop controls */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* LEFT: brand/status + mobile GlobeButton */}
+            <div className="flex items-center gap-3 flex-shrink-0">
               <div className="flex items-center gap-4 min-w-0">
                 <div className="w-10 h-10 bg-gradient-to-br from-primary-600 to-primary-500 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20">
                   <Brain className="text-white" size={20} />
@@ -1819,14 +1900,42 @@ export const App = () => {
                   </div>
                 </div>
               </div>
-
               <div className="sm:hidden flex items-center gap-2 flex-shrink-0">
                 <GlobeButton />
               </div>
             </div>
 
-            {/* Desktop-only controls */}
-            <div className="hidden sm:flex items-center justify-end gap-3 flex-wrap min-w-0">
+            {/* CENTER: desktop search lane (visible only when an account is active) */}
+            {activeEmail && (
+              <div className="hidden sm:flex flex-1 justify-center px-2">
+                <div className="relative w-full max-w-xs lg:max-w-sm">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" aria-hidden="true" />
+                  <input
+                    ref={desktopSearchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    aria-label={t('search.aria_label')}
+                    placeholder={t('search.placeholder')}
+                    className="w-full h-9 pl-8 pr-8 rounded-xl bg-white/[0.04] border border-white/[0.08] text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-primary-500/50 focus:border-primary-500/30 transition-all"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      aria-label={t('search.clear')}
+                      title={t('search.clear')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* RIGHT: desktop controls */}
+            <div className="hidden sm:flex items-center justify-end gap-3 flex-shrink-0 flex-wrap min-w-0">
               <GlobeButton />
 
               {/* Desktop utility rail — compact, future-extensible, only when an account is connected */}
@@ -1911,6 +2020,35 @@ export const App = () => {
               </div>
             </div>
           </div>
+
+          {/* Mobile-only search row — below primary row, above session row */}
+          {activeEmail && (
+            <div className="sm:hidden mt-2">
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" aria-hidden="true" />
+                <input
+                  ref={mobileSearchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  aria-label={t('search.aria_label')}
+                  placeholder={t('search.placeholder')}
+                  className="w-full h-10 pl-8 pr-8 rounded-xl bg-white/[0.04] border border-white/[0.08] text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-primary-500/50 focus:border-primary-500/30 transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    aria-label={t('search.clear')}
+                    title={t('search.clear')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Mobile-only session/action row — connected accounts only */}
           {connectedAccounts.length > 0 && (
@@ -1999,7 +2137,7 @@ export const App = () => {
         )}
       </AnimatePresence>
 
-      <div className={connectedAccounts.length > 0 ? 'pt-32 sm:pt-24' : 'pt-24'}>
+      <div className={connectedAccounts.length > 0 ? (activeEmail ? 'pt-[11.5rem] sm:pt-24' : 'pt-32 sm:pt-24') : 'pt-24'}>
         <AnimatePresence>
           {hasLegacyAccounts && (
             <motion.div
@@ -2109,8 +2247,8 @@ export const App = () => {
                 </button>
               </div>
 
-              {/* Right: category chips — inbox only */}
-              {activeTab === 'inbox' && (
+              {/* Right: category chips — inbox only, hidden while search is active */}
+              {activeTab === 'inbox' && !isSearchActive && (
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {CATEGORY_OPTIONS.map((cat) => (
                     <button
@@ -2163,23 +2301,73 @@ export const App = () => {
           {activeTab === 'inbox' && (
             <div className="flex flex-col gap-4 mb-12 max-w-[720px] mx-auto">
               <AnimatePresence mode="popLayout">
-                {loading ? (
-                  [...Array(6)].map((_, i) => (
-                    <motion.div
-                      key={`skeleton-${i}`}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ duration: 0.3, delay: i * 0.05 }}
-                      className="skeleton-row rounded-2xl bg-white/[0.02] border border-white/5"
-                    >
-                      <div className="skeleton-bar h-4" style={{ width: '60%' }} />
-                      <div className="skeleton-bar h-4" style={{ width: '85%' }} />
-                      <div className="skeleton-bar h-3" style={{ width: '30%' }} />
-                    </motion.div>
-                  ))
-                ) : currentItems.length > 0 ? (
-                  currentItems.map((item, index) => {
+                {/* Search loading skeletons */}
+                {isSearchActive && searchLoading && [...Array(3)].map((_, i) => (
+                  <motion.div
+                    key={`search-skeleton-${i}`}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.3, delay: i * 0.05 }}
+                    className="skeleton-row rounded-2xl bg-white/[0.02] border border-white/5"
+                  >
+                    <div className="skeleton-bar h-4" style={{ width: '60%' }} />
+                    <div className="skeleton-bar h-4" style={{ width: '85%' }} />
+                    <div className="skeleton-bar h-3" style={{ width: '30%' }} />
+                  </motion.div>
+                ))}
+                {/* Search error state */}
+                {isSearchActive && !searchLoading && searchError && (
+                  <motion.div
+                    key="search-error"
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="p-6 rounded-3xl flex items-center gap-4 bg-rose-500/10 border border-rose-500/20 text-rose-400"
+                  >
+                    <AlertCircle size={22} className="flex-shrink-0" />
+                    <div>
+                      <h4 className="font-bold text-base text-white">{t('search.error_title')}</h4>
+                      <p className="text-sm opacity-90">{t('search.error_body')}</p>
+                    </div>
+                  </motion.div>
+                )}
+                {/* Search no-results state */}
+                {isSearchActive && !searchLoading && !searchError && searchResults.length === 0 && (
+                  <motion.div
+                    key="search-empty"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="w-full py-24 flex flex-col items-center gap-4 text-center"
+                  >
+                    <div className="w-16 h-16 rounded-full bg-white/[0.03] flex items-center justify-center border border-white/5">
+                      <Search size={28} className="text-primary-500/20" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black text-white mb-1">{t('search.no_results_title')}</h3>
+                      <p className="text-slate-500 text-sm max-w-xs font-medium">{t('search.no_results_body')}</p>
+                    </div>
+                  </motion.div>
+                )}
+                {/* Normal inbox loading skeletons (only when not in search mode) */}
+                {!isSearchActive && loading && [...Array(6)].map((_, i) => (
+                  <motion.div
+                    key={`skeleton-${i}`}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.3, delay: i * 0.05 }}
+                    className="skeleton-row rounded-2xl bg-white/[0.02] border border-white/5"
+                  >
+                    <div className="skeleton-bar h-4" style={{ width: '60%' }} />
+                    <div className="skeleton-bar h-4" style={{ width: '85%' }} />
+                    <div className="skeleton-bar h-3" style={{ width: '30%' }} />
+                  </motion.div>
+                ))}
+                {/* Cards: search results OR normal inbox items */}
+                {!(isSearchActive && searchLoading) && !(loading && !isSearchActive) && displayItems.length > 0 ? (
+                  displayItems.map((item, index) => {
                     const cardId = `${item.gmail_message_id || item.subject}-${index}`;
                     const urgency = item.ai_summary_json?.urgency || 'medium';
 
@@ -2320,7 +2508,7 @@ export const App = () => {
                 ) : null}
 
                 {/* BATCH LIMIT INDICATOR: Inform users about auto-summary limits */}
-                {currentItems.length > 30 && (
+                {!isSearchActive && currentItems.length > 30 && (
                   <div className="w-full mt-8 mb-4 p-6 rounded-2xl bg-gradient-to-r from-primary-500/10 to-primary-400/10 border border-primary-500/20">
                     <div className="flex items-start gap-4">
                       <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center border border-primary-500/30">
@@ -2344,7 +2532,7 @@ export const App = () => {
                   </div>
                 )}
 
-                {connectedAccounts.length === 0 && !error ? (
+                {!isSearchActive && connectedAccounts.length === 0 && !error ? (
                   /* ONBOARDING GUIDE: Professional zero-account state with step-by-step instructions */
                   <div className="w-full py-10 flex flex-col items-center gap-6 text-center max-w-lg mx-auto">
                     <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary-500/20 to-primary-400/20 flex items-center justify-center border border-primary-500/30 relative shadow-2xl">

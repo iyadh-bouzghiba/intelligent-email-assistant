@@ -301,5 +301,16 @@
         "open": "Aç",
         "you_to_recipient": "Siz → {{recipient}}",
         "you_to_recipient_with_cc": "Siz → {{recipient}} · {{ccLabel}}: {{cc}}"
+    },
+    "search": {
+        "placeholder": "E-postalarda ara…",
+        "aria_label": "E-postalarda ara",
+        "loading": "E-postalar aranıyor…",
+        "no_results_title": "Sonuç bulunamadı",
+        "no_results_body": "Farklı bir anahtar kelime, gönderen veya ifade deneyin.",
+        "error_title": "Arama kullanılamıyor",
+        "error_body": "Arama sonuçları şu anda yüklenemedi.",
+        "clear": "Aramayı temizle",
+        "results_count": "{{count}} sonuç"
     }
 }

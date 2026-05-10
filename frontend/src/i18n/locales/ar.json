@@ -301,5 +301,16 @@
         "open": "فتح",
         "you_to_recipient": "أنت ← {{recipient}}",
         "you_to_recipient_with_cc": "أنت ← {{recipient}} · {{ccLabel}}: {{cc}}"
+    },
+    "search": {
+        "placeholder": "ابحث في الرسائل…",
+        "aria_label": "ابحث في الرسائل",
+        "loading": "جارٍ البحث في الرسائل…",
+        "no_results_title": "لم يتم العثور على نتائج",
+        "no_results_body": "جرّب كلمة مختلفة أو اسم مرسل أو عبارة أخرى.",
+        "error_title": "البحث غير متاح",
+        "error_body": "تعذّر تحميل نتائج البحث الآن.",
+        "clear": "مسح البحث",
+        "results_count": "{{count}} نتيجة"
     }
 }
