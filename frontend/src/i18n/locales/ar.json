@@ -227,9 +227,9 @@
         "no_in_app_preview": "لا تتوفر معاينة داخل التطبيق لهذا الملف.",
         "download_unavailable": "التنزيل غير متاح",
         "close_image_preview": "إغلاق معاينة الصورة",
-        "file_count_zero": "لا ملفات",
-        "file_count_one": "ملف واحد",
-        "file_count_two": "ملفان",
+        "file_count_zero": "{{count}} ملف",
+        "file_count_one": "{{count}} ملف",
+        "file_count_two": "{{count}} ملف",
         "file_count_few": "{{count}} ملفات",
         "file_count_many": "{{count}} ملفًا",
         "file_count_other": "{{count}} ملف"
