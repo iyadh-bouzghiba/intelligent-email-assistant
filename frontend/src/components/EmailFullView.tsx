@@ -506,6 +506,7 @@ export function EmailFullView({
           {translationActive && sanitizedTranslatedHtml ? (
             <div
               ref={bodyContainerRef}
+              dir={translatedDirection}
               className="space-y-3 text-sm leading-relaxed text-slate-300 break-words overflow-x-auto"
               dangerouslySetInnerHTML={{ __html: sanitizedTranslatedHtml }}
             />
