@@ -14,6 +14,7 @@ interface Props {
   onBackToSummary: () => void;
   translationActive?: boolean;
   translatedBody?: string | null;
+  translatedBodyHtml?: string | null;
   translationTargetLanguage?: string | null;
   translationError?: string | null;
 
@@ -204,6 +205,7 @@ export function EmailFullView({
   onBackToSummary,
   translationActive = false,
   translatedBody = null,
+  translatedBodyHtml = null,
   translationTargetLanguage = null,
   translationError = null,
   showRefreshSummary = false,
@@ -314,6 +316,11 @@ export function EmailFullView({
     [renderedEmail?.body_html]
   );
 
+  const sanitizedTranslatedHtml = useMemo(
+    () => (translatedBodyHtml ? buildSanitizedHtml(translatedBodyHtml) : null),
+    [translatedBodyHtml]
+  );
+
   const canRenderRefreshSummary = showRefreshSummary && typeof onRefreshSummary === 'function';
   const canRenderTranslateControls =
     showTranslateControls &&
@@ -327,7 +334,7 @@ export function EmailFullView({
   //   pending                  → attach load/error listeners, clean up on effect re-run
   useEffect(() => {
     const container = bodyContainerRef.current;
-    if (!container || !sanitizedHtml) return;
+    if (!container || (!sanitizedHtml && !sanitizedTranslatedHtml)) return;
 
     const remoteImages = Array.from(
       container.querySelectorAll<HTMLImageElement>('img[data-remote-image="true"]')
@@ -369,7 +376,7 @@ export function EmailFullView({
     return () => {
       cleanups.forEach((fn) => fn());
     };
-  }, [sanitizedHtml, translationActive]);
+  }, [sanitizedHtml, sanitizedTranslatedHtml, translationActive]);
 
   const renderTranslateControls = () => {
     if (!canRenderTranslateControls || !onTranslateToggle) {
@@ -496,7 +503,13 @@ export function EmailFullView({
         </div>
 
         <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-          {translationActive && translatedParagraphs.length > 0 ? (
+          {translationActive && sanitizedTranslatedHtml ? (
+            <div
+              ref={bodyContainerRef}
+              className="space-y-3 text-sm leading-relaxed text-slate-300 break-words overflow-x-auto"
+              dangerouslySetInnerHTML={{ __html: sanitizedTranslatedHtml }}
+            />
+          ) : translationActive && translatedParagraphs.length > 0 ? (
             <div dir={translatedDirection} className="space-y-3">
               {translatedParagraphs.map((para, i) => (
                 <p

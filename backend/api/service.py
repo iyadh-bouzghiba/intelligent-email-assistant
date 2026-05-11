@@ -2850,6 +2850,10 @@ class TranslateEmailRequest(BaseModel):
     target_language: str
 
 
+class TranslateRenderRequest(BaseModel):
+    target_language: str
+
+
 def _get_preferences_store() -> SupabaseStore:
     """Create a Supabase store for preference reads/writes."""
     return SupabaseStore()
@@ -3152,6 +3156,95 @@ async def translate_email_body(request: TranslateEmailRequest):
         raise HTTPException(status_code=502, detail="Translation returned empty content")
 
     return {"translated_body": translated_body}
+
+
+@api_router.post("/emails/{gmail_message_id}/translate-render")
+async def translate_render_email(gmail_message_id: str, request: TranslateRenderRequest):
+    """
+    Message-bound translation endpoint returning an explicit translated render contract.
+
+    For this slice translation_mode is always "text_fallback" and translated_body_html is null.
+    The contract shape is stable for future HTML-fidelity upgrades.
+
+    Contract:
+      input  -> {"target_language": "en|fr|ar"}
+      output -> TranslateRenderResponse
+    """
+    record = await asyncio.to_thread(_lookup_email_record_by_message_id, gmail_message_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    account_id = record.get("account_id")
+    if not account_id:
+        raise HTTPException(status_code=404, detail="Account not found for email")
+
+    requested_language = (request.target_language or "").strip().lower()
+    normalized_language = normalize_language(requested_language)
+    if normalized_language != requested_language or normalized_language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(
+            status_code=400,
+            detail="target_language must be one of: en, fr, ar",
+        )
+
+    rendered_payload = await asyncio.to_thread(
+        _build_rendered_email_payload,
+        account_id,
+        gmail_message_id,
+        record.get("body") or "",
+    )
+
+    body_text = (rendered_payload.get("body_text") or record.get("body") or "").strip()
+    if not body_text:
+        raise HTTPException(status_code=400, detail="Email body is required for translation")
+
+    api_key = os.getenv("MISTRAL_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Translation service unavailable")
+
+    engine = MistralEngine(api_key=api_key)
+    estimated_output_tokens = max(512, min(4096, engine.count_tokens(body_text) + 256))
+
+    try:
+        translated_body_text = await engine.generate_text_async(
+            prompt=(
+                f"Target language: {normalized_language}\n\n"
+                f"Email body:\n{body_text}"
+            ),
+            max_tokens=estimated_output_tokens,
+            temperature=0.2,
+            system_prompt=_build_translation_system_prompt(normalized_language),
+        )
+    except ValueError:
+        raise HTTPException(status_code=503, detail="Translation service unavailable")
+    except TimeoutError:
+        logger.warning(
+            "[TRANSLATE-RENDER] Timed out for language=%s body_chars=%s",
+            normalized_language,
+            len(body_text),
+        )
+        raise HTTPException(status_code=502, detail="Translation timed out")
+    except Exception as e:
+        logger.error(
+            "[TRANSLATE-RENDER] Failed (language=%s, type=%s)",
+            normalized_language,
+            type(e).__name__,
+        )
+        raise HTTPException(status_code=502, detail="Translation failed")
+
+    translated_body_text = (translated_body_text or "").strip()
+    if not translated_body_text:
+        raise HTTPException(status_code=502, detail="Translation returned empty content")
+
+    return {
+        "gmail_message_id": gmail_message_id,
+        "target_language": normalized_language,
+        "translation_mode": "text_fallback",
+        "translation_fidelity": "simplified",
+        "translated_body_html": None,
+        "translated_body_text": translated_body_text,
+        "attachments": rendered_payload.get("attachments") or [],
+        "linked_files": rendered_payload.get("linked_files") or [],
+    }
 
 
 @api_router.post("/emails/{gmail_message_id}/summarize")
