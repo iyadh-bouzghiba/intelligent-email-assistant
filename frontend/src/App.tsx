@@ -1853,6 +1853,7 @@ export const App = () => {
     startupPhase === 'ready' &&
     Boolean(activeEmail) &&
     connectedAccounts.length > 0;
+  const useSearchHeaderLayout = Boolean(activeEmail);
 
   // Clamp inbox page when the filtered result set shrinks so the page indicator,
   // list slice, and empty state all stay aligned.
@@ -1883,9 +1884,9 @@ export const App = () => {
       <header className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-brand-bg/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 py-4">
           {/* Primary row — left: brand | center: desktop search | right: desktop controls */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className={useSearchHeaderLayout ? "flex flex-wrap items-center gap-2 sm:gap-3" : "flex flex-wrap items-center justify-between gap-3"}>
             {/* LEFT: brand/status + mobile GlobeButton */}
-            <div className="flex items-center gap-3 flex-shrink-0">
+            <div className={useSearchHeaderLayout ? "flex items-center gap-3 flex-shrink-0" : "flex items-center justify-between gap-3 w-full sm:w-auto"}>
               <div className="flex items-center gap-4 min-w-0">
                 <div className="w-10 h-10 bg-gradient-to-br from-primary-600 to-primary-500 rounded-xl flex items-center justify-center shadow-lg shadow-primary-600/20">
                   <Brain className="text-white" size={20} />
@@ -1907,11 +1908,13 @@ export const App = () => {
 
             {/* CENTER: desktop search lane (visible only when an account is active) */}
             {activeEmail && (
-              <div className="hidden sm:flex flex-1 justify-center px-2">
-                <div className="relative w-full max-w-xs lg:max-w-sm">
+              <div className="hidden sm:flex basis-full lg:basis-auto lg:flex-1 justify-center px-0 lg:px-2 order-3 lg:order-none">
+                <div className="relative w-full max-w-xl lg:max-w-sm">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" aria-hidden="true" />
                   <input
                     ref={desktopSearchInputRef}
+                    id="email-search-desktop"
+                    name="email_search_desktop"
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -1935,7 +1938,7 @@ export const App = () => {
             )}
 
             {/* RIGHT: desktop controls */}
-            <div className="hidden sm:flex items-center justify-end gap-3 flex-shrink-0 flex-wrap min-w-0">
+            <div className={useSearchHeaderLayout ? "hidden sm:flex items-center justify-end gap-3 flex-shrink-0 flex-wrap min-w-0 ml-auto" : "hidden sm:flex items-center justify-end gap-3 flex-wrap min-w-0"}>
               <GlobeButton />
 
               {/* Desktop utility rail — compact, future-extensible, only when an account is connected */}
@@ -2028,6 +2031,8 @@ export const App = () => {
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" aria-hidden="true" />
                 <input
                   ref={mobileSearchInputRef}
+                  id="email-search-mobile"
+                  name="email_search_mobile"
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -2273,22 +2278,22 @@ export const App = () => {
                 onSelect={(se: SentEmail) => openEmailDetail(sentToBriefing(se), false, true)}
               />
               {!loadingSent && sentTotalPages > 1 && (
-                <div className="flex items-center justify-center gap-8 mt-4">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-8 mt-4 w-full max-w-sm sm:max-w-none mx-auto">
                   <button
                     onClick={() => setSentCurrentPage(prev => Math.max(1, prev - 1))}
                     disabled={sentCurrentPage === 1}
-                    className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
+                    className="w-full sm:w-auto px-4 sm:px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest text-center"
                   >
                     {t('common.previous')}
                   </button>
-                  <div className="flex flex-col items-center min-w-[120px]">
+                  <div className="flex flex-col items-center min-w-0 sm:min-w-[120px]">
                     <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em] mb-1">{t('common.navigation')}</span>
                     <span className="text-white font-black text-sm">{getPageStatusLabel(sentCurrentPage, sentTotalPages)}</span>
                   </div>
                   <button
                     onClick={() => setSentCurrentPage(prev => Math.min(sentTotalPages, prev + 1))}
                     disabled={sentCurrentPage === sentTotalPages}
-                    className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
+                    className="w-full sm:w-auto px-4 sm:px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest text-center"
                   >
                     {t('common.next')}
                   </button>
@@ -2661,22 +2666,22 @@ export const App = () => {
           )}
 
           {showInboxPagination && (
-            <div className="flex items-center justify-center gap-8 mt-4">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-8 mt-4 w-full max-w-sm sm:max-w-none mx-auto">
               <button
                 onClick={() => setCurrentPage(Math.max(1, effectiveInboxPage - 1))}
                 disabled={effectiveInboxPage === 1}
-                className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
+                className="w-full sm:w-auto px-4 sm:px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest text-center"
               >
                 {t('common.previous')}
               </button>
-              <div className="flex flex-col items-center min-w-[120px]">
+              <div className="flex flex-col items-center min-w-0 sm:min-w-[120px]">
                 <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em] mb-1">{t('common.navigation')}</span>
                 <span className="text-white font-black text-sm">{getPageStatusLabel(effectiveInboxPage, totalPages)}</span>
               </div>
               <button
                 onClick={() => setCurrentPage(Math.min(totalPages, effectiveInboxPage + 1))}
                 disabled={effectiveInboxPage === totalPages}
-                className="px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest"
+                className="w-full sm:w-auto px-4 sm:px-6 py-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:bg-white/[0.05] disabled:opacity-30 disabled:pointer-events-none transition-all text-xs font-black uppercase tracking-widest text-center"
               >
                 {t('common.next')}
               </button>
