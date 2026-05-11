@@ -369,7 +369,7 @@ export function EmailFullView({
     return () => {
       cleanups.forEach((fn) => fn());
     };
-  }, [sanitizedHtml]);
+  }, [sanitizedHtml, translationActive]);
 
   const renderTranslateControls = () => {
     if (!canRenderTranslateControls || !onTranslateToggle) {
