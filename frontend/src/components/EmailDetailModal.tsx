@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { X, MailOpen, Mail, RefreshCw } from 'lucide-react';
-import { AILanguage, Briefing } from '@types';
+import { AILanguage, Briefing, TranslateRenderResponse } from '@types';
 import { apiService } from '../services/api';
 import { FocusTrap } from './FocusTrap';
 import { EmailQuickView } from './EmailQuickView';
@@ -27,10 +27,6 @@ interface Props {
   onAskAssistant?: () => void;
   getCategoryStyles: (cat: string) => string;
   preferredLanguage: string;
-}
-
-interface RenderedEmailTextPayload {
-  body_text?: string | null;
 }
 
 const TITLE_ID = 'email-detail-title';
@@ -147,6 +143,7 @@ export function EmailDetailModal({
   const [translationPending, setTranslationPending] = useState(false);
   const [translationActive, setTranslationActive] = useState(false);
   const [translatedBody, setTranslatedBody] = useState<string | null>(null);
+  const [translatedBodyHtml, setTranslatedBodyHtml] = useState<string | null>(null);
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [translationTargetLanguage, setTranslationTargetLanguage] = useState<AILanguage | null>(null);
 
@@ -154,31 +151,10 @@ export function EmailDetailModal({
     setTranslationPending(false);
     setTranslationActive(false);
     setTranslatedBody(null);
+    setTranslatedBodyHtml(null);
     setTranslationError(null);
     setTranslationTargetLanguage(null);
   }, [emailIdentity, normalizedTranslationLanguage]);
-
-  const resolveTranslationSourceBody = async (): Promise<string> => {
-    if (email.gmail_message_id) {
-      try {
-        const response = await fetch(`/api/emails/${encodeURIComponent(email.gmail_message_id)}/rendered`, {
-          credentials: 'include',
-        });
-
-        if (response.ok) {
-          const payload = (await response.json()) as RenderedEmailTextPayload;
-          const renderedBodyText = (payload.body_text || '').trim();
-          if (renderedBodyText) {
-            return renderedBodyText;
-          }
-        }
-      } catch {
-        // Fall through to local body fallback.
-      }
-    }
-
-    return fallbackTranslationBody;
-  };
 
   const handleTranslateToggle = async () => {
     if (translationPending) return;
@@ -205,42 +181,56 @@ export function EmailDetailModal({
     setTranslationPending(true);
     setTranslationError(null);
 
-    try {
-      const sourceBody = await resolveTranslationSourceBody();
-      if (!sourceBody.trim()) {
-        setTranslatedBody(null);
-        setTranslationTargetLanguage(null);
-        setTranslationActive(false);
-        setTranslationError(t('modal.no_translatable_body_available'));
-        return;
-      }
-
-      const result = await apiService.translateEmailBody(sourceBody, normalizedTranslationLanguage);
-      if (result.error) {
-        setTranslatedBody(null);
-        setTranslationTargetLanguage(null);
-        setTranslationActive(false);
-        setTranslationError(result.error);
-        return;
-      }
-
-      const translated = (result.translated_body || '').trim();
-      if (!translated) {
-        setTranslatedBody(null);
-        setTranslationTargetLanguage(null);
-        setTranslationActive(false);
-        setTranslationError(t('modal.translation_returned_empty_content'));
-        return;
-      }
-
-      setTranslatedBody(translated);
-      setTranslationTargetLanguage(normalizedTranslationLanguage);
-      setTranslationActive(true);
-    } catch {
+    const resetOnError = (msg: string) => {
       setTranslatedBody(null);
+      setTranslatedBodyHtml(null);
       setTranslationTargetLanguage(null);
       setTranslationActive(false);
-      setTranslationError(t('modal.translation_failed_try_again'));
+      setTranslationError(msg);
+    };
+
+    try {
+      if (email.gmail_message_id) {
+        const result: TranslateRenderResponse = await apiService.translateRenderEmail(
+          email.gmail_message_id,
+          normalizedTranslationLanguage
+        );
+        if (result.error) {
+          resetOnError(result.error);
+          return;
+        }
+        const translated = (result.translated_body_text || '').trim();
+        if (!translated) {
+          resetOnError(t('modal.translation_returned_empty_content'));
+          return;
+        }
+        setTranslatedBody(translated);
+        setTranslatedBodyHtml(result.translated_body_html ?? null);
+        setTranslationTargetLanguage(normalizedTranslationLanguage);
+        setTranslationActive(true);
+      } else {
+        const sourceBody = fallbackTranslationBody.trim();
+        if (!sourceBody) {
+          resetOnError(t('modal.no_translatable_body_available'));
+          return;
+        }
+        const result = await apiService.translateEmailBody(sourceBody, normalizedTranslationLanguage);
+        if (result.error) {
+          resetOnError(result.error);
+          return;
+        }
+        const translated = (result.translated_body || '').trim();
+        if (!translated) {
+          resetOnError(t('modal.translation_returned_empty_content'));
+          return;
+        }
+        setTranslatedBody(translated);
+        setTranslatedBodyHtml(null);
+        setTranslationTargetLanguage(normalizedTranslationLanguage);
+        setTranslationActive(true);
+      }
+    } catch {
+      resetOnError(t('modal.translation_failed_try_again'));
     } finally {
       setTranslationPending(false);
     }
@@ -400,6 +390,7 @@ export function EmailDetailModal({
                   onBackToSummary={() => onSwitchView('quick')}
                   translationActive={translationActive}
                   translatedBody={translatedBody}
+                  translatedBodyHtml={translatedBodyHtml}
                   translationTargetLanguage={translationTargetLanguage}
                   translationError={translationError}
                   showRefreshSummary={showSummarizeButton}

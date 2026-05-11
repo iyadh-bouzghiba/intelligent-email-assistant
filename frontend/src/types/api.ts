@@ -203,3 +203,15 @@ export interface SendEmailResponse {
     subject?: string;
     error?: string;
 }
+
+export interface TranslateRenderResponse {
+    gmail_message_id: string;
+    target_language: string;
+    translation_mode: 'text_fallback';
+    translation_fidelity: 'simplified';
+    translated_body_html: string | null;
+    translated_body_text: string;
+    attachments: unknown[];
+    linked_files: unknown[];
+    error?: string;
+}

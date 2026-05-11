@@ -18,6 +18,7 @@ import {
     DeleteTemplateResponse,
     AILanguage,
     TemplateLanguage,
+    TranslateRenderResponse,
 } from "@types";
 
 export type { AILanguage } from "@types";
@@ -198,6 +199,41 @@ export const apiService = {
             ai_language,
         });
         return response.data;
+    },
+
+    translateRenderEmail: async (
+        gmail_message_id: string,
+        target_language: AILanguage
+    ): Promise<TranslateRenderResponse> => {
+        try {
+            const response = await api.post(
+                `${API_ROOT}/emails/${encodeURIComponent(gmail_message_id)}/translate-render`,
+                { target_language }
+            );
+            return response.data;
+        } catch (error: unknown) {
+            console.warn('[API] translateRenderEmail failed:', error);
+
+            const apiError =
+                isAxiosError(error) && typeof error.response?.data?.detail === 'string'
+                    ? error.response.data.detail
+                    : undefined;
+
+            const message =
+                error instanceof Error ? error.message : 'Network error';
+
+            return {
+                gmail_message_id,
+                target_language,
+                translation_mode: 'text_fallback',
+                translation_fidelity: 'simplified',
+                translated_body_html: null,
+                translated_body_text: '',
+                attachments: [],
+                linked_files: [],
+                error: apiError || message,
+            };
+        }
     },
 
     translateEmailBody: async (
