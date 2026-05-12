@@ -2891,16 +2891,84 @@ _HTML_SKIP_TAGS = frozenset({
     "noscript", "svg", "math", "title",
 })
 
+# Inline style patterns that mark an element as hidden/non-user-visible.
+# Narrow, evidence-backed list — covers the dominant email preheader hiding techniques.
+_HIDDEN_STYLE_PATTERNS = re.compile(
+    r"display\s*:\s*none"
+    r"|visibility\s*:\s*hidden"
+    r"|opacity\s*:\s*0(?!\.[1-9])"   # 0 / 0.0 / 0px — but not 0.1..0.9
+    r"|mso-hide\s*:\s*all"
+    r"|max-height\s*:\s*0px"         # CSS collapse trick
+    r"|font-size\s*:\s*0px",         # zero-font-size preheader trick
+    re.IGNORECASE,
+)
+
+# Class/ID name fragments that signal a preheader/preview container.
+_HIDDEN_CLASS_ID_PATTERN = re.compile(r"\bpreheader\b", re.IGNORECASE)
+
+# For collapsing excessive blank lines in derived plain text.
+_MULTI_BLANK_LINE_RE = re.compile(r"\n{3,}")
+
 # Safety cap: fall back to text mode if there are more segments than this.
 # Prevents token explosion and validation fragility on dense HTML bodies.
 _MAX_TRANSLATABLE_SEGMENTS = 150
+
+
+def _is_hidden_element(element) -> bool:
+    """
+    Return True if the element is clearly hidden or non-user-visible.
+
+    Detects the dominant email preheader hiding patterns and common CSS hide
+    techniques. Only narrow, evidence-backed heuristics — no broad false-positive risk.
+    Checked against every ancestor in _collect_translatable_nodes so that
+    nested text inside a hidden container is also excluded.
+    """
+    if not hasattr(element, "get"):
+        return False
+    style = (element.get("style") or "").strip()
+    if style and _HIDDEN_STYLE_PATTERNS.search(style):
+        return True
+    classes = element.get("class") or []
+    if isinstance(classes, str):
+        classes = classes.split()
+    if classes and _HIDDEN_CLASS_ID_PATTERN.search(" ".join(classes)):
+        return True
+    elem_id = (element.get("id") or "").strip()
+    if elem_id and _HIDDEN_CLASS_ID_PATTERN.search(elem_id):
+        return True
+    return False
+
+
+def _derive_plain_text_from_html(html: str) -> str:
+    """
+    Extract clean, normalized plain text from translated HTML.
+
+    Used to populate translated_body_text in the structured_html path.
+    Two hardening steps beyond a raw get_text call:
+      1. Hidden/preheader elements are removed before extraction so they
+         cannot leak into the plain-text field.
+      2. Excessive blank lines (3+) are collapsed to at most one blank line,
+         preventing the blank-line inflation that get_text(separator="\\n")
+         can produce on dense HTML bodies.
+    """
+    soup = _BeautifulSoup(html, "html.parser")
+    for tag in list(soup.find_all(True)):
+        if tag.parent is not None and _is_hidden_element(tag):
+            tag.decompose()
+    raw = soup.get_text(separator="\n")
+    lines = [line.rstrip() for line in raw.splitlines()]
+    normalized = _MULTI_BLANK_LINE_RE.sub("\n\n", "\n".join(lines))
+    return normalized.strip()
 
 
 def _collect_translatable_nodes(soup) -> List:
     """
     Walk the parse tree in document order and return NavigableString objects
     that represent visible, non-whitespace text eligible for translation.
-    Nodes inside skip-tag ancestors are excluded.
+
+    Exclusion rules (checked against every ancestor):
+      - Nodes inside _HTML_SKIP_TAGS subtrees (script, style, etc.)
+      - Nodes inside hidden/preheader elements (_is_hidden_element)
     """
     root = getattr(soup, "body", None) or soup
     nodes = []
@@ -2913,6 +2981,9 @@ def _collect_translatable_nodes(soup) -> List:
         parent = element.parent
         while parent and hasattr(parent, "name"):
             if parent.name in _HTML_SKIP_TAGS:
+                skip = True
+                break
+            if _is_hidden_element(parent):
                 skip = True
                 break
             parent = getattr(parent, "parent", None)
@@ -3440,10 +3511,10 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
             raise HTTPException(status_code=502, detail="Translation returned empty content")
     else:
         # Derive plain-text from translated HTML for the text field.
-        # translated_body_html is guaranteed non-None here (structured_html mode).
+        # _derive_plain_text_from_html removes hidden elements and collapses
+        # blank lines before returning — see its docstring for details.
         assert translated_body_html is not None
-        soup_for_text = _BeautifulSoup(translated_body_html, "html.parser")
-        translated_body_text = soup_for_text.get_text(separator="\n").strip()
+        translated_body_text = _derive_plain_text_from_html(translated_body_html)
 
     return {
         "gmail_message_id": gmail_message_id,
