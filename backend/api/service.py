@@ -2913,6 +2913,46 @@ _MULTI_BLANK_LINE_RE = re.compile(r"\n{3,}")
 # Prevents token explosion and validation fragility on dense HTML bodies.
 _MAX_TRANSLATABLE_SEGMENTS = 150
 
+# Preflight degradation thresholds for clearly large/rich HTML bodies.
+# When any single threshold is exceeded the route skips structured JSON
+# translation entirely and proceeds directly to text fallback, avoiding
+# the latency cost of an expensive structured call that will likely fail
+# or timeout on dense newsletter-class emails.
+_PREFLIGHT_MAX_HTML_CHARS = 30_000   # raw HTML character count
+_PREFLIGHT_MAX_IMG_COUNT = 5         # <img elements (newsletter image density)
+_PREFLIGHT_MAX_LINK_COUNT = 20       # href= attributes (CTA / nav link density)
+_PREFLIGHT_MAX_TABLE_COUNT = 5       # <table elements (layout complexity)
+
+
+def _is_html_preflight_degraded(body_html: str) -> bool:
+    """
+    Deterministic preflight check for clearly large/rich HTML bodies.
+
+    Returns True if the HTML complexity clearly exceeds reliable structured
+    translation capacity.  All signals are computed on the raw HTML string
+    (no parsing needed) for maximum speed in the hot request path.
+
+    A single exceeded threshold is sufficient to trigger degradation —
+    any one of these signals alone indicates a newsletter-class email:
+      - raw HTML character count > _PREFLIGHT_MAX_HTML_CHARS (30 000)
+      - image count (<img tags)  > _PREFLIGHT_MAX_IMG_COUNT  (5)
+      - link count (href= attrs) > _PREFLIGHT_MAX_LINK_COUNT (20)
+      - table count (<table tags)> _PREFLIGHT_MAX_TABLE_COUNT (5)
+
+    Thresholds are set conservatively so a normal structured email
+    (e.g. Google Security Alert) never triggers degradation.
+    """
+    if len(body_html) > _PREFLIGHT_MAX_HTML_CHARS:
+        return True
+    html_lower = body_html.lower()
+    if html_lower.count("<img") > _PREFLIGHT_MAX_IMG_COUNT:
+        return True
+    if html_lower.count("href=") > _PREFLIGHT_MAX_LINK_COUNT:
+        return True
+    if html_lower.count("<table") > _PREFLIGHT_MAX_TABLE_COUNT:
+        return True
+    return False
+
 
 def _is_hidden_element(element) -> bool:
     """
@@ -3449,24 +3489,37 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
 
     body_html = (rendered_payload.get("body_html") or "").strip()
     if body_html:
-        try:
-            translated_body_html, html_reason_code = await _attempt_structured_html_translation(
-                body_html, normalized_language, engine
+        if _is_html_preflight_degraded(body_html):
+            # HTML is clearly too large/rich for reliable structured translation.
+            # Skip the expensive JSON path entirely and go straight to text fallback.
+            logger.info(
+                "[TRANSLATE-RENDER] structured_preflight_degraded html_chars=%d "
+                "imgs=%d hrefs=%d tables=%d — routing directly to text fallback",
+                len(body_html),
+                body_html.lower().count("<img"),
+                body_html.lower().count("href="),
+                body_html.lower().count("<table"),
             )
-        except Exception as exc:
-            logger.warning(
-                "[TRANSLATE-RENDER] Structured HTML attempt raised %s — falling back to text mode",
-                type(exc).__name__,
-            )
-            translated_body_html = None
-            html_reason_code = "structured_exception"
-
-        if translated_body_html is not None:
-            translation_mode = "structured_html"
-            translation_fidelity = "preserved"
-            translation_reason_code = "structured_success"
+            translation_reason_code = "structured_preflight_degraded"
         else:
-            translation_reason_code = html_reason_code
+            try:
+                translated_body_html, html_reason_code = await _attempt_structured_html_translation(
+                    body_html, normalized_language, engine
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[TRANSLATE-RENDER] Structured HTML attempt raised %s — falling back to text mode",
+                    type(exc).__name__,
+                )
+                translated_body_html = None
+                html_reason_code = "structured_exception"
+
+            if translated_body_html is not None:
+                translation_mode = "structured_html"
+                translation_fidelity = "preserved"
+                translation_reason_code = "structured_success"
+            else:
+                translation_reason_code = html_reason_code
     else:
         translation_reason_code = "html_missing"
 

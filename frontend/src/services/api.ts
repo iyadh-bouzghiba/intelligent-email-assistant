@@ -208,7 +208,8 @@ export const apiService = {
         try {
             const response = await api.post(
                 `${API_ROOT}/emails/${encodeURIComponent(gmail_message_id)}/translate-render`,
-                { target_language }
+                { target_language },
+                { timeout: 120000 }
             );
             return response.data;
         } catch (error: unknown) {
