@@ -30,7 +30,7 @@ except ImportError:
 import time
 from datetime import datetime, timezone
 from html import escape
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from email.utils import parseaddr
 
 from fastapi import FastAPI, HTTPException, Request, Response, APIRouter, Query, Depends
@@ -2942,7 +2942,7 @@ async def _attempt_structured_html_translation(
     body_html: str,
     target_language: str,
     engine,
-) -> Optional[str]:
+) -> Tuple[Optional[str], str]:
     """
     Attempt to translate body_html while preserving its HTML structure.
 
@@ -2954,17 +2954,18 @@ async def _attempt_structured_html_translation(
       5. Reinsert translated text into a fresh parse of the original HTML.
       6. Serialize and return the translated HTML body content.
 
-    Returns the translated HTML string on success, or None to signal fallback.
-    All exceptions are caught and return None — the caller decides to fall back.
+    Returns (translated_html, reason_code). On success: (html_string, "structured_success").
+    On any failure: (None, reason_code) — the caller decides to fall back.
+    All exceptions are caught internally; the caller's outer try handles unexpected raises.
     """
     if not _BS4_AVAILABLE:
-        return None
+        return None, "bs4_unavailable"
 
     soup = _BeautifulSoup(body_html, "html.parser")
     node_refs = _collect_translatable_nodes(soup)
 
     if not node_refs:
-        return None
+        return None, "no_translatable_nodes"
 
     if len(node_refs) > _MAX_TRANSLATABLE_SEGMENTS:
         logger.warning(
@@ -2972,7 +2973,7 @@ async def _attempt_structured_html_translation(
             len(node_refs),
             _MAX_TRANSLATABLE_SEGMENTS,
         )
-        return None
+        return None, "segment_cap_exceeded"
 
     input_segments = [str(n) for n in node_refs]
     total_chars = sum(len(s) for s in input_segments)
@@ -2997,16 +2998,16 @@ async def _attempt_structured_html_translation(
             "[TRANSLATE-RENDER] JSON translation call failed (%s) — falling back",
             type(exc).__name__,
         )
-        return None
+        return None, "json_translation_failed"
 
     if not isinstance(result, dict):
         logger.warning("[TRANSLATE-RENDER] Response is not a dict — falling back")
-        return None
+        return None, "response_not_dict"
 
     translated_segments = result.get("segments")
     if not isinstance(translated_segments, list):
         logger.warning("[TRANSLATE-RENDER] Response missing 'segments' list — falling back")
-        return None
+        return None, "segments_missing"
 
     if len(translated_segments) != len(input_segments):
         logger.warning(
@@ -3014,11 +3015,11 @@ async def _attempt_structured_html_translation(
             len(input_segments),
             len(translated_segments),
         )
-        return None
+        return None, "segment_count_mismatch"
 
     if not all(isinstance(s, str) for s in translated_segments):
         logger.warning("[TRANSLATE-RENDER] Non-string segment in response — falling back")
-        return None
+        return None, "non_string_segment"
 
     # Re-parse original HTML for mutation (avoids stale descriptor state)
     soup2 = _BeautifulSoup(body_html, "html.parser")
@@ -3030,13 +3031,13 @@ async def _attempt_structured_html_translation(
             len(node_refs2),
             len(input_segments),
         )
-        return None
+        return None, "node_recollection_mismatch"
 
     for node, translated_text in zip(node_refs2, translated_segments):
         node.replace_with(_NavigableString(translated_text))
 
     root = getattr(soup2, "body", None) or soup2
-    return root.decode_contents()
+    return root.decode_contents(), "structured_success"
 
 
 @app.get("/api/preferences/languages")
@@ -3373,11 +3374,12 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
     translated_body_html: Optional[str] = None
     translation_mode = "text_fallback"
     translation_fidelity = "simplified"
+    translation_reason_code = "text_fallback_used"
 
     body_html = (rendered_payload.get("body_html") or "").strip()
     if body_html:
         try:
-            translated_body_html = await _attempt_structured_html_translation(
+            translated_body_html, html_reason_code = await _attempt_structured_html_translation(
                 body_html, normalized_language, engine
             )
         except Exception as exc:
@@ -3386,10 +3388,16 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
                 type(exc).__name__,
             )
             translated_body_html = None
+            html_reason_code = "structured_exception"
 
         if translated_body_html is not None:
             translation_mode = "structured_html"
             translation_fidelity = "preserved"
+            translation_reason_code = "structured_success"
+        else:
+            translation_reason_code = html_reason_code
+    else:
+        translation_reason_code = "html_missing"
 
     # --- Text translation: primary when no HTML, explicit fallback otherwise ---
     translated_body_text: str
@@ -3409,15 +3417,19 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
         except ValueError:
             raise HTTPException(status_code=503, detail="Translation service unavailable")
         except TimeoutError:
+            translation_reason_code = "text_translation_timeout"
             logger.warning(
-                "[TRANSLATE-RENDER] Timed out for language=%s body_chars=%s",
+                "[TRANSLATE-RENDER] %s language=%s body_chars=%s",
+                translation_reason_code,
                 normalized_language,
                 len(body_text),
             )
             raise HTTPException(status_code=502, detail="Translation timed out")
         except Exception as e:
+            translation_reason_code = "text_translation_failed"
             logger.error(
-                "[TRANSLATE-RENDER] Failed (language=%s, type=%s)",
+                "[TRANSLATE-RENDER] %s language=%s type=%s",
+                translation_reason_code,
                 normalized_language,
                 type(e).__name__,
             )
@@ -3438,6 +3450,7 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
         "target_language": normalized_language,
         "translation_mode": translation_mode,
         "translation_fidelity": translation_fidelity,
+        "translation_reason_code": translation_reason_code,
         "translated_body_html": translated_body_html,
         "translated_body_text": translated_body_text,
         "attachments": rendered_payload.get("attachments") or [],

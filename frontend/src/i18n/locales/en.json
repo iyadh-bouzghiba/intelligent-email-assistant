@@ -133,7 +133,9 @@
         "no_preview": "No preview available.",
         "ask_ai_assistant": "Ask AI Assistant",
         "mark_read_failed": "Failed to mark as read.",
-        "mark_unread_failed": "Failed to mark as unread."
+        "mark_unread_failed": "Failed to mark as unread.",
+        "fallback_translation_title": "Simplified translated view",
+        "fallback_translation_notice": "Some original formatting could not be preserved."
     },
     "auth": {
         "add_account": "+ Add account",

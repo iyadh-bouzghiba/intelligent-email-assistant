@@ -207,8 +207,9 @@ export interface SendEmailResponse {
 export interface TranslateRenderResponse {
     gmail_message_id: string;
     target_language: string;
-    translation_mode: 'text_fallback';
-    translation_fidelity: 'simplified';
+    translation_mode: 'structured_html' | 'text_fallback';
+    translation_fidelity: 'preserved' | 'simplified';
+    translation_reason_code?: string;
     translated_body_html: string | null;
     translated_body_text: string;
     attachments: unknown[];

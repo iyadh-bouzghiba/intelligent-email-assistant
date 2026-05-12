@@ -133,7 +133,9 @@
         "no_preview": "Aucun aperçu disponible.",
         "ask_ai_assistant": "Demander à l'assistant IA",
         "mark_read_failed": "Impossible de marquer comme lu.",
-        "mark_unread_failed": "Impossible de marquer comme non lu."
+        "mark_unread_failed": "Impossible de marquer comme non lu.",
+        "fallback_translation_title": "Vue traduite simplifiée",
+        "fallback_translation_notice": "Une partie de la mise en forme d'origine n'a pas pu être conservée."
     },
     "auth": {
         "add_account": "+ Ajouter un compte",

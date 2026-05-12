@@ -15,6 +15,8 @@ interface Props {
   translationActive?: boolean;
   translatedBody?: string | null;
   translatedBodyHtml?: string | null;
+  translationMode?: 'structured_html' | 'text_fallback';
+  translationFidelity?: 'preserved' | 'simplified';
   translationTargetLanguage?: string | null;
   translationError?: string | null;
 
@@ -206,6 +208,8 @@ export function EmailFullView({
   translationActive = false,
   translatedBody = null,
   translatedBodyHtml = null,
+  translationMode,
+  translationFidelity,
   translationTargetLanguage = null,
   translationError = null,
   showRefreshSummary = false,
@@ -320,6 +324,31 @@ export function EmailFullView({
     () => (translatedBodyHtml ? buildSanitizedHtml(translatedBodyHtml) : null),
     [translatedBodyHtml]
   );
+
+  // Contract-driven translation rendering — mode/fidelity are the primary gates.
+  // Payload shape (sanitizedTranslatedHtml, translatedParagraphs) is a secondary guard only.
+  const canRenderStructuredTranslation =
+    translationActive &&
+    translationMode === 'structured_html' &&
+    translationFidelity === 'preserved' &&
+    sanitizedTranslatedHtml !== null;
+
+  const canRenderFallbackTranslation =
+    translationActive &&
+    translationMode === 'text_fallback' &&
+    translationFidelity === 'simplified' &&
+    translatedParagraphs.length > 0;
+
+  // Inconsistent payload guard: contract declares structured_html but HTML is absent.
+  // Safe behavior: render plain text + trigger disclosure rather than silently failing.
+  const hasStructuredContractMismatch =
+    translationActive &&
+    translationMode === 'structured_html' &&
+    sanitizedTranslatedHtml === null &&
+    translatedParagraphs.length > 0;
+
+  // Disclosure fires on explicit fallback OR inconsistent structured payload.
+  const isFallbackTranslation = canRenderFallbackTranslation || hasStructuredContractMismatch;
 
   const canRenderRefreshSummary = showRefreshSummary && typeof onRefreshSummary === 'function';
   const canRenderTranslateControls =
@@ -503,14 +532,14 @@ export function EmailFullView({
         </div>
 
         <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
-          {translationActive && sanitizedTranslatedHtml ? (
+          {canRenderStructuredTranslation ? (
             <div
               ref={bodyContainerRef}
               dir={translatedDirection}
               className="space-y-3 text-sm leading-relaxed text-slate-300 break-words overflow-x-auto"
-              dangerouslySetInnerHTML={{ __html: sanitizedTranslatedHtml }}
+              dangerouslySetInnerHTML={{ __html: sanitizedTranslatedHtml! }}
             />
-          ) : translationActive && translatedParagraphs.length > 0 ? (
+          ) : (canRenderFallbackTranslation || hasStructuredContractMismatch) ? (
             <div dir={translatedDirection} className="space-y-3">
               {translatedParagraphs.map((para, i) => (
                 <p
@@ -544,6 +573,13 @@ export function EmailFullView({
             <p className="text-sm leading-relaxed text-slate-500 italic">{emptyBodyLabel}</p>
           )}
         </div>
+
+        {isFallbackTranslation && translateState === 'translated' && (
+          <div className="rounded-xl border border-amber-500/15 bg-amber-500/5 px-3 py-2">
+            <p className="text-xs font-semibold text-amber-300/80">{t('modal.fallback_translation_title')}</p>
+            <p className="text-xs text-amber-300/60 mt-0.5">{t('modal.fallback_translation_notice')}</p>
+          </div>
+        )}
 
         {canRenderTranslateControls && (
           <div className="pt-1">
