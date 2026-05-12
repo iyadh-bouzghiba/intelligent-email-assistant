@@ -42,6 +42,16 @@ Deterministic proof for the translate-render contract covering:
     D2.  hidden elements excluded from derived plain text
     D3.  preheader-class elements excluded from derived plain text
 
+  Section E — Large/rich HTML preflight degradation (P3.5-R3D-P1):
+    E1.  preflight fires when raw HTML exceeds char threshold (30 000)
+    E2.  preflight fires when image count exceeds threshold (>5 <img tags)
+    E3.  preflight fires when link count exceeds threshold (>20 href= attrs)
+    E4.  preflight fires when table count exceeds threshold (>5 <table tags)
+    E5.  preflight does NOT fire for a normal structured email (Google Security Alert)
+    E6.  route returns text_fallback / simplified / structured_preflight_degraded
+         and does NOT call _attempt_structured_html_translation when preflight fires
+    E7.  structured_success route remains unaffected for normal emails
+
 All I/O and model calls are replaced with deterministic mocks.
 No live network, no Mistral API key, no Supabase connection required.
 
@@ -584,6 +594,196 @@ class TestDeriveCleanPlainText(unittest.TestCase):
         result = service._derive_plain_text_from_html(html)
         self.assertNotIn("Email preview: new messages waiting", result)
         self.assertIn("Dear customer, thank you for your order.", result)
+
+
+# ---------------------------------------------------------------------------
+# Section E — Large/rich HTML preflight degradation (P3.5-R3D-P1)
+# ---------------------------------------------------------------------------
+
+class TestHtmlPreflightDegradation(unittest.TestCase):
+    """
+    Section E (unit) — Deterministic proof that _is_html_preflight_degraded
+    correctly identifies clearly large/rich HTML bodies and leaves normal
+    structured emails unaffected.
+    """
+
+    # E1 — Fires when raw HTML exceeds the character-count threshold
+    def test_preflight_fires_on_large_html(self):
+        large_html = "<p>" + "A" * 30_001 + "</p>"
+        self.assertTrue(service._is_html_preflight_degraded(large_html))
+
+    # E1b — HTML right at the threshold boundary does NOT fire
+    def test_preflight_does_not_fire_at_threshold_boundary(self):
+        # Exactly _PREFLIGHT_MAX_HTML_CHARS chars — must not trigger
+        boundary_html = "A" * service._PREFLIGHT_MAX_HTML_CHARS
+        self.assertFalse(service._is_html_preflight_degraded(boundary_html))
+
+    # E2 — Fires when image count exceeds threshold (newsletter image density)
+    def test_preflight_fires_on_image_dense_html(self):
+        imgs = "".join(f'<img src="img{i}.png" alt="photo" />' for i in range(6))
+        html = f"<div>{imgs}<p>Newsletter body paragraph.</p></div>"
+        self.assertTrue(service._is_html_preflight_degraded(html))
+
+    # E2b — Exactly at the image threshold does NOT fire
+    def test_preflight_does_not_fire_at_image_threshold(self):
+        imgs = "".join(f'<img src="img{i}.png" />' for i in range(5))
+        html = f"<div>{imgs}<p>Body text.</p></div>"
+        self.assertFalse(service._is_html_preflight_degraded(html))
+
+    # E3 — Fires when link (href=) count exceeds threshold (CTA/nav link density)
+    def test_preflight_fires_on_link_dense_html(self):
+        links = "".join(
+            f'<a href="https://example.com/{i}">Link {i}</a>' for i in range(21)
+        )
+        html = f"<div>{links}</div>"
+        self.assertTrue(service._is_html_preflight_degraded(html))
+
+    # E3b — Exactly at the link threshold does NOT fire
+    def test_preflight_does_not_fire_at_link_threshold(self):
+        links = "".join(
+            f'<a href="https://example.com/{i}">Link {i}</a>' for i in range(20)
+        )
+        html = f"<div>{links}</div>"
+        self.assertFalse(service._is_html_preflight_degraded(html))
+
+    # E4 — Fires when table count exceeds threshold (layout complexity)
+    def test_preflight_fires_on_table_dense_html(self):
+        tables = "".join(
+            f"<table><tr><td>Row {i}</td></tr></table>" for i in range(6)
+        )
+        html = f"<div>{tables}</div>"
+        self.assertTrue(service._is_html_preflight_degraded(html))
+
+    # E4b — Exactly at the table threshold does NOT fire
+    def test_preflight_does_not_fire_at_table_threshold(self):
+        tables = "".join(
+            f"<table><tr><td>Row {i}</td></tr></table>" for i in range(5)
+        )
+        html = f"<div>{tables}</div>"
+        self.assertFalse(service._is_html_preflight_degraded(html))
+
+    # E5 — Normal structured email (Google Security Alert-class) does NOT trigger
+    def test_preflight_does_not_fire_for_normal_structured_email(self):
+        # Realistic compact transactional email: 1 logo image, 3 links, 1 table
+        html = (
+            "<html><body>"
+            "<table><tr><td>"
+            "  <img src='https://www.gstatic.com/images/branding/googleg/2x/googleg_standard_color_28dp.png' />"
+            "  <h2>Security alert</h2>"
+            "  <p>A new sign-in to your Google Account was detected.</p>"
+            "  <p>Time: Tuesday, 15 April 2025, 09:42 UTC</p>"
+            "  <p>Location: Paris, France</p>"
+            '  <a href="https://accounts.google.com/signin/v2/review">Check activity</a>'
+            '  <a href="https://accounts.google.com/signin/v2/help">Learn more</a>'
+            '  <a href="https://myaccount.google.com/security">Manage account</a>'
+            "</td></tr></table>"
+            "</body></html>"
+        )
+        self.assertFalse(service._is_html_preflight_degraded(html))
+
+
+class TestPreflightDegradationRouteContract(unittest.IsolatedAsyncioTestCase):
+    """
+    Section E (route) — Deterministic proof of the route-level contract when
+    the preflight gate fires and when it does not.
+    """
+
+    # E6 — Preflight triggers: route returns correct fields, helper never called
+    async def test_preflight_degradation_route_contract(self):
+        """
+        When _is_html_preflight_degraded returns True:
+          - _attempt_structured_html_translation must NOT be called
+          - translation_mode        == text_fallback
+          - translation_fidelity    == simplified
+          - translation_reason_code == structured_preflight_degraded
+          - translated_body_html    is None
+          - translated_body_text    is the text-fallback result
+        """
+        large_html = "<p>" + "A" * 30_001 + "</p>"
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        mock_engine.generate_text_async = AsyncMock(return_value="Résultat de la traduction")
+        helper_spy = AsyncMock()
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=large_html),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            stack.enter_context(patch.object(
+                service, '_attempt_structured_html_translation',
+                new=helper_spy,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        # Structured helper must not have been called — preflight short-circuits
+        helper_spy.assert_not_called()
+
+        self.assertEqual(result["translation_mode"], "text_fallback")
+        self.assertEqual(result["translation_fidelity"], "simplified")
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+        self.assertIsNone(result["translated_body_html"])
+        self.assertEqual(result["translated_body_text"], "Résultat de la traduction")
+        self.assertEqual(result["gmail_message_id"], _FAKE_GMAIL_MESSAGE_ID)
+        self.assertEqual(result["target_language"], "fr")
+
+    # E7 — Normal email: preflight does not fire, structured_success is unaffected
+    async def test_structured_success_unaffected_by_preflight(self):
+        """
+        When _is_html_preflight_degraded returns False (normal email):
+          - _attempt_structured_html_translation IS called
+          - Structured-success contract fields are unchanged
+        """
+        normal_html = (
+            "<html><body><p>Security alert from Google.</p>"
+            '<a href="https://accounts.google.com">Review</a>'
+            "</body></html>"
+        )
+        mock_engine = MagicMock()
+        translated_html = "<html><body><p>Alerte de sécurité de Google.</p>" \
+                          '<a href="https://accounts.google.com">Vérifier</a>' \
+                          "</body></html>"
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=normal_html),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            stack.enter_context(patch.object(
+                service, '_attempt_structured_html_translation',
+                new=AsyncMock(return_value=(translated_html, "structured_success")),
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_mode"], "structured_html")
+        self.assertEqual(result["translation_fidelity"], "preserved")
+        self.assertEqual(result["translation_reason_code"], "structured_success")
+        self.assertEqual(result["translated_body_html"], translated_html)
+        self.assertTrue(result["translated_body_text"].strip())
 
 
 if __name__ == "__main__":
