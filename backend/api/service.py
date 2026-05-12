@@ -21,6 +21,12 @@ from pathlib import Path
 import asyncio
 import json
 import re
+
+try:
+    from bs4 import BeautifulSoup as _BeautifulSoup, NavigableString as _NavigableString
+    _BS4_AVAILABLE = True
+except ImportError:
+    _BS4_AVAILABLE = False
 import time
 from datetime import datetime, timezone
 from html import escape
@@ -2875,6 +2881,164 @@ def _build_translation_system_prompt(target_language: str) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# Structured HTML translation helpers — used by the translate-render endpoint
+# ---------------------------------------------------------------------------
+
+# HTML tags whose subtree must not be extracted or translated
+_HTML_SKIP_TAGS = frozenset({
+    "script", "style", "meta", "link", "form", "head",
+    "noscript", "svg", "math", "title",
+})
+
+# Safety cap: fall back to text mode if there are more segments than this.
+# Prevents token explosion and validation fragility on dense HTML bodies.
+_MAX_TRANSLATABLE_SEGMENTS = 150
+
+
+def _collect_translatable_nodes(soup) -> List:
+    """
+    Walk the parse tree in document order and return NavigableString objects
+    that represent visible, non-whitespace text eligible for translation.
+    Nodes inside skip-tag ancestors are excluded.
+    """
+    root = getattr(soup, "body", None) or soup
+    nodes = []
+    for element in root.descendants:
+        if not isinstance(element, _NavigableString):
+            continue
+        if not str(element).strip():
+            continue
+        skip = False
+        parent = element.parent
+        while parent and hasattr(parent, "name"):
+            if parent.name in _HTML_SKIP_TAGS:
+                skip = True
+                break
+            parent = getattr(parent, "parent", None)
+        if not skip:
+            nodes.append(element)
+    return nodes
+
+
+def _build_structured_translation_system_prompt(target_language: str) -> str:
+    target_label = SUPPORTED_LANGUAGES[target_language]["label"]
+    return (
+        f"You are a professional email translator. Translate text segments into {target_label}.\n\n"
+        "You will receive a JSON object with a \"segments\" array of text strings extracted "
+        "from an email HTML body in document order. Return a JSON object with a single "
+        "\"segments\" key containing an array of translated strings.\n\n"
+        "Rules:\n"
+        "- Output array MUST contain exactly the same number of strings as the input array.\n"
+        "- Translate segments in the same order as the input — do not merge, split, or reorder.\n"
+        "- Preserve URLs, email addresses, phone numbers, dates, times, codes, and reference "
+        "numbers exactly unless surrounding prose requires inflection.\n"
+        "- Preserve the professional tone and intent faithfully.\n"
+        "- Return only the JSON object — no commentary and no markdown fences."
+    )
+
+
+async def _attempt_structured_html_translation(
+    body_html: str,
+    target_language: str,
+    engine,
+) -> Optional[str]:
+    """
+    Attempt to translate body_html while preserving its HTML structure.
+
+    Strategy:
+      1. Parse HTML with BeautifulSoup.
+      2. Collect visible text nodes in document order.
+      3. Send segments to the model as a JSON array; request same-length JSON array back.
+      4. Validate exact segment count match and string types.
+      5. Reinsert translated text into a fresh parse of the original HTML.
+      6. Serialize and return the translated HTML body content.
+
+    Returns the translated HTML string on success, or None to signal fallback.
+    All exceptions are caught and return None — the caller decides to fall back.
+    """
+    if not _BS4_AVAILABLE:
+        return None
+
+    soup = _BeautifulSoup(body_html, "html.parser")
+    node_refs = _collect_translatable_nodes(soup)
+
+    if not node_refs:
+        return None
+
+    if len(node_refs) > _MAX_TRANSLATABLE_SEGMENTS:
+        logger.warning(
+            "[TRANSLATE-RENDER] Segment count %d exceeds cap %d — falling back to text mode",
+            len(node_refs),
+            _MAX_TRANSLATABLE_SEGMENTS,
+        )
+        return None
+
+    input_segments = [str(n) for n in node_refs]
+    total_chars = sum(len(s) for s in input_segments)
+    # Allow generous output budget: translated text can be longer than source
+    estimated_output_tokens = max(512, min(8192, total_chars // 3 + 512))
+
+    prompt = (
+        f"Translate the following {len(input_segments)} text segments into "
+        f"{SUPPORTED_LANGUAGES[target_language]['label']}.\n\n"
+        f"{json.dumps({'segments': input_segments}, ensure_ascii=False)}"
+    )
+
+    try:
+        result = await engine.generate_json_async(
+            prompt=prompt,
+            max_tokens=estimated_output_tokens,
+            temperature=0.1,
+            system_prompt=_build_structured_translation_system_prompt(target_language),
+        )
+    except Exception as exc:
+        logger.warning(
+            "[TRANSLATE-RENDER] JSON translation call failed (%s) — falling back",
+            type(exc).__name__,
+        )
+        return None
+
+    if not isinstance(result, dict):
+        logger.warning("[TRANSLATE-RENDER] Response is not a dict — falling back")
+        return None
+
+    translated_segments = result.get("segments")
+    if not isinstance(translated_segments, list):
+        logger.warning("[TRANSLATE-RENDER] Response missing 'segments' list — falling back")
+        return None
+
+    if len(translated_segments) != len(input_segments):
+        logger.warning(
+            "[TRANSLATE-RENDER] Segment count mismatch: expected %d got %d — falling back",
+            len(input_segments),
+            len(translated_segments),
+        )
+        return None
+
+    if not all(isinstance(s, str) for s in translated_segments):
+        logger.warning("[TRANSLATE-RENDER] Non-string segment in response — falling back")
+        return None
+
+    # Re-parse original HTML for mutation (avoids stale descriptor state)
+    soup2 = _BeautifulSoup(body_html, "html.parser")
+    node_refs2 = _collect_translatable_nodes(soup2)
+
+    if len(node_refs2) != len(input_segments):
+        logger.warning(
+            "[TRANSLATE-RENDER] Node re-collection mismatch (%d vs %d) — falling back",
+            len(node_refs2),
+            len(input_segments),
+        )
+        return None
+
+    for node, translated_text in zip(node_refs2, translated_segments):
+        node.replace_with(_NavigableString(translated_text))
+
+    root = getattr(soup2, "body", None) or soup2
+    return root.decode_contents()
+
+
 @app.get("/api/preferences/languages")
 async def list_supported_languages():
     """Return supported AI output languages for frontend selectors."""
@@ -3163,8 +3327,10 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
     """
     Message-bound translation endpoint returning an explicit translated render contract.
 
-    For this slice translation_mode is always "text_fallback" and translated_body_html is null.
-    The contract shape is stable for future HTML-fidelity upgrades.
+    Attempts structure-preserving HTML translation first (translation_mode="structured_html",
+    translation_fidelity="preserved"). Falls back cleanly to plain-text translation
+    (translation_mode="text_fallback", translation_fidelity="simplified") when HTML is absent
+    or any step in the structured path fails.
 
     Contract:
       input  -> {"target_language": "en|fr|ar"}
@@ -3202,45 +3368,77 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
         raise HTTPException(status_code=503, detail="Translation service unavailable")
 
     engine = MistralEngine(api_key=api_key)
-    estimated_output_tokens = max(512, min(4096, engine.count_tokens(body_text) + 256))
 
-    try:
-        translated_body_text = await engine.generate_text_async(
-            prompt=(
-                f"Target language: {normalized_language}\n\n"
-                f"Email body:\n{body_text}"
-            ),
-            max_tokens=estimated_output_tokens,
-            temperature=0.2,
-            system_prompt=_build_translation_system_prompt(normalized_language),
-        )
-    except ValueError:
-        raise HTTPException(status_code=503, detail="Translation service unavailable")
-    except TimeoutError:
-        logger.warning(
-            "[TRANSLATE-RENDER] Timed out for language=%s body_chars=%s",
-            normalized_language,
-            len(body_text),
-        )
-        raise HTTPException(status_code=502, detail="Translation timed out")
-    except Exception as e:
-        logger.error(
-            "[TRANSLATE-RENDER] Failed (language=%s, type=%s)",
-            normalized_language,
-            type(e).__name__,
-        )
-        raise HTTPException(status_code=502, detail="Translation failed")
+    # --- Attempt structure-preserving HTML translation ---
+    translated_body_html: Optional[str] = None
+    translation_mode = "text_fallback"
+    translation_fidelity = "simplified"
 
-    translated_body_text = (translated_body_text or "").strip()
-    if not translated_body_text:
-        raise HTTPException(status_code=502, detail="Translation returned empty content")
+    body_html = (rendered_payload.get("body_html") or "").strip()
+    if body_html:
+        try:
+            translated_body_html = await _attempt_structured_html_translation(
+                body_html, normalized_language, engine
+            )
+        except Exception as exc:
+            logger.warning(
+                "[TRANSLATE-RENDER] Structured HTML attempt raised %s — falling back to text mode",
+                type(exc).__name__,
+            )
+            translated_body_html = None
+
+        if translated_body_html is not None:
+            translation_mode = "structured_html"
+            translation_fidelity = "preserved"
+
+    # --- Text translation: primary when no HTML, explicit fallback otherwise ---
+    translated_body_text: str
+
+    if translation_mode == "text_fallback":
+        estimated_output_tokens = max(512, min(4096, engine.count_tokens(body_text) + 256))
+        try:
+            translated_body_text = await engine.generate_text_async(
+                prompt=(
+                    f"Target language: {normalized_language}\n\n"
+                    f"Email body:\n{body_text}"
+                ),
+                max_tokens=estimated_output_tokens,
+                temperature=0.2,
+                system_prompt=_build_translation_system_prompt(normalized_language),
+            )
+        except ValueError:
+            raise HTTPException(status_code=503, detail="Translation service unavailable")
+        except TimeoutError:
+            logger.warning(
+                "[TRANSLATE-RENDER] Timed out for language=%s body_chars=%s",
+                normalized_language,
+                len(body_text),
+            )
+            raise HTTPException(status_code=502, detail="Translation timed out")
+        except Exception as e:
+            logger.error(
+                "[TRANSLATE-RENDER] Failed (language=%s, type=%s)",
+                normalized_language,
+                type(e).__name__,
+            )
+            raise HTTPException(status_code=502, detail="Translation failed")
+
+        translated_body_text = (translated_body_text or "").strip()
+        if not translated_body_text:
+            raise HTTPException(status_code=502, detail="Translation returned empty content")
+    else:
+        # Derive plain-text from translated HTML for the text field.
+        # translated_body_html is guaranteed non-None here (structured_html mode).
+        assert translated_body_html is not None
+        soup_for_text = _BeautifulSoup(translated_body_html, "html.parser")
+        translated_body_text = soup_for_text.get_text(separator="\n").strip()
 
     return {
         "gmail_message_id": gmail_message_id,
         "target_language": normalized_language,
-        "translation_mode": "text_fallback",
-        "translation_fidelity": "simplified",
-        "translated_body_html": None,
+        "translation_mode": translation_mode,
+        "translation_fidelity": translation_fidelity,
+        "translated_body_html": translated_body_html,
         "translated_body_text": translated_body_text,
         "attachments": rendered_payload.get("attachments") or [],
         "linked_files": rendered_payload.get("linked_files") or [],
