@@ -52,6 +52,51 @@ Deterministic proof for the translate-render contract covering:
          and does NOT call _attempt_structured_html_translation when preflight fires
     E7.  structured_success route remains unaffected for normal emails
 
+  Section F — Chunked simplified translation for large/rich fallback bodies
+               (P3.5-R3E-P1):
+    F1.  large fallback body_text is translated via multiple chunk calls and
+         the results are recombined in order
+    F2.  small fallback body_text still uses a single generate_text_async call
+    F3.  structured_preflight_degraded route contract is correct and uses
+         chunked fallback internally when body_text is large
+    F4.  structured-success route is entirely unaffected by chunking logic
+
+    Helper unit tests:
+    Fh1. _should_chunk_fallback_translation: count_tokens always called;
+         returns False when token count is at or below threshold
+    Fh2. _should_chunk_fallback_translation returns True when token count
+         exceeds _FALLBACK_CHUNK_TOKEN_THRESHOLD
+    Fh3. _split_text_into_translation_chunks splits at paragraph boundaries
+         and preserves order
+
+  Section G — Hard fallback split refinement (P3.5-R3E-P1R):
+    Gh1. _hard_split_segment: segment already within budget returned as-is
+    Gh2. _hard_split_segment: no-punctuation paragraph reaches word-group
+         layer and is split into multiple bounded chunks
+    Gh3. _hard_split_segment: no-whitespace dense string reaches layer 4
+         (token-verified prefix split); every chunk is token-bounded and
+         no text is lost
+    Gh4. route: large no-punctuation body_text produces multiple
+         generate_text_async calls (end-to-end, real helpers not mocked)
+
+  Section H — Token-verified final split guarantee (P3.5-R3E-P1R2):
+    Hi1. _token_verified_prefix_split: empty string returns empty list
+    Hi2. _token_verified_prefix_split: string already within budget
+         returned as single-element list
+    Hi3. _token_verified_prefix_split: CJK-density (1 token/char) dense
+         string is split into chunks where every chunk's actual
+         engine.count_tokens(chunk) <= _FALLBACK_CHUNK_MAX_TOKENS;
+         concatenation recovers original exactly
+    Hi4. route: large dense no-whitespace body_text (1 token/char) still
+         produces multiple generate_text_async calls and correct contract
+
+  Section I — Dense-token chunking decision fix (P3.5-R3E-P1R3):
+    Ii1. _should_chunk_fallback_translation: dense-token body < 3 000 chars
+         with token count > threshold returns True; token count is the sole
+         criterion, character length is not consulted
+    Ii2. route: dense-token body < 3 000 chars with count_tokens > threshold
+         produces multiple generate_text_async calls and correct contract fields
+
 All I/O and model calls are replaced with deterministic mocks.
 No live network, no Mistral API key, no Supabase connection required.
 
@@ -784,6 +829,664 @@ class TestPreflightDegradationRouteContract(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["translation_reason_code"], "structured_success")
         self.assertEqual(result["translated_body_html"], translated_html)
         self.assertTrue(result["translated_body_text"].strip())
+
+
+# ---------------------------------------------------------------------------
+# Section F — Chunked simplified translation (P3.5-R3E-P1)
+# ---------------------------------------------------------------------------
+
+# Large newsletter-class body: three clearly separated paragraphs.
+_LARGE_FALLBACK_PARA_1 = "Paragraph one. " * 60          # ~960 chars
+_LARGE_FALLBACK_PARA_2 = "Paragraph two content. " * 60   # ~1 380 chars
+_LARGE_FALLBACK_PARA_3 = "Paragraph three data. " * 60    # ~1 320 chars
+_LARGE_FALLBACK_BODY = (
+    _LARGE_FALLBACK_PARA_1.strip() + "\n\n"
+    + _LARGE_FALLBACK_PARA_2.strip() + "\n\n"
+    + _LARGE_FALLBACK_PARA_3.strip()
+)
+
+
+class TestChunkFallbackHelpers(unittest.TestCase):
+    """
+    Section F (helper level) — Deterministic proof of the chunking decision
+    and splitting helpers.
+    """
+
+    # Fh1 — any body (even short) has count_tokens called;
+    #        returns False when token count is at or below threshold
+    def test_should_not_chunk_when_tokens_at_or_below_threshold(self):
+        engine = MagicMock()
+        engine.count_tokens.return_value = service._FALLBACK_CHUNK_TOKEN_THRESHOLD
+        short_body = "Short email body."   # well below 3 000 chars
+        result = service._should_chunk_fallback_translation(short_body, engine)
+        self.assertFalse(result)
+        # count_tokens must always be called — no character fast-path
+        engine.count_tokens.assert_called_once_with(short_body)
+
+    # Fh2 — body with token count above threshold returns True
+    def test_should_chunk_large_body(self):
+        engine = MagicMock()
+        engine.count_tokens.return_value = service._FALLBACK_CHUNK_TOKEN_THRESHOLD + 1
+        large_body = "word " * 700   # ~3 500 chars
+        result = service._should_chunk_fallback_translation(large_body, engine)
+        self.assertTrue(result)
+        engine.count_tokens.assert_called_once_with(large_body)
+
+    # Fh2b — large body BUT token count at or below threshold → False
+    def test_should_not_chunk_large_body_low_tokens(self):
+        engine = MagicMock()
+        engine.count_tokens.return_value = service._FALLBACK_CHUNK_TOKEN_THRESHOLD
+        large_body = "word " * 700
+        result = service._should_chunk_fallback_translation(large_body, engine)
+        self.assertFalse(result)
+
+    # Fh3 — paragraph-separated body is split into correct chunks in order
+    def test_split_preserves_paragraph_order(self):
+        # Use a mock engine that returns the token count as len(text) // 5
+        # so paragraph accumulation is predictable.
+        engine = MagicMock()
+        engine.count_tokens.side_effect = lambda t: len(t) // 5
+
+        body = "Alpha paragraph.\n\nBeta paragraph.\n\nGamma paragraph."
+        chunks = service._split_text_into_translation_chunks(body, engine)
+
+        # Must return at least one chunk and preserve all content.
+        self.assertGreater(len(chunks), 0)
+        recombined = "\n\n".join(chunks)
+        self.assertIn("Alpha paragraph.", recombined)
+        self.assertIn("Beta paragraph.", recombined)
+        self.assertIn("Gamma paragraph.", recombined)
+        # Alpha must appear before Beta, Beta before Gamma.
+        self.assertLess(recombined.index("Alpha"), recombined.index("Beta"))
+        self.assertLess(recombined.index("Beta"), recombined.index("Gamma"))
+
+    # Fh3b — empty body returns exactly one chunk equal to the original
+    def test_split_empty_body_returns_original(self):
+        engine = MagicMock()
+        engine.count_tokens.return_value = 0
+        chunks = service._split_text_into_translation_chunks("", engine)
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks[0], "")
+
+    # Fh3c — single paragraph below budget stays in one chunk
+    def test_split_single_small_paragraph_one_chunk(self):
+        engine = MagicMock()
+        engine.count_tokens.return_value = 50   # well below 800
+        chunks = service._split_text_into_translation_chunks(
+            "Just one small paragraph with normal content.", engine
+        )
+        self.assertEqual(len(chunks), 1)
+
+
+class TestChunkFallbackRouteContract(unittest.IsolatedAsyncioTestCase):
+    """
+    Section F (route level) — Deterministic proof that the translate-render
+    route correctly routes large fallback bodies through the chunked path and
+    small ones through the single-call path.
+    """
+
+    # F1 — large fallback body is translated via multiple chunk calls and
+    #      results are recombined in order
+    async def test_large_fallback_uses_chunked_calls_in_order(self):
+        """
+        When _should_chunk_fallback_translation returns True:
+          - generate_text_async must be called once per chunk (not once total)
+          - translated_body_text must be the paragraph-joined translation
+          - translation_mode / fidelity / reason_code remain unchanged
+        """
+        known_chunks = ["chunk_alpha", "chunk_beta", "chunk_gamma"]
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 50  # per-chunk estimate
+        mock_engine.generate_text_async = AsyncMock(
+            side_effect=["tr_alpha", "tr_beta", "tr_gamma"]
+        )
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=_LARGE_FALLBACK_BODY),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html="", body_text=_LARGE_FALLBACK_BODY),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            stack.enter_context(patch.object(
+                service, '_should_chunk_fallback_translation',
+                return_value=True,
+            ))
+            stack.enter_context(patch.object(
+                service, '_split_text_into_translation_chunks',
+                return_value=known_chunks,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        # generate_text_async called exactly once per chunk — not monolithically
+        self.assertEqual(mock_engine.generate_text_async.call_count, 3)
+
+        # Results recombined in chunk order with paragraph spacing
+        self.assertEqual(result["translated_body_text"], "tr_alpha\n\ntr_beta\n\ntr_gamma")
+
+        # Contract fields unchanged
+        self.assertEqual(result["translation_mode"], "text_fallback")
+        self.assertEqual(result["translation_fidelity"], "simplified")
+        self.assertEqual(result["translation_reason_code"], "html_missing")
+        self.assertIsNone(result["translated_body_html"])
+
+    # F2 — small fallback body uses a single generate_text_async call
+    async def test_small_fallback_uses_single_call(self):
+        """
+        When _should_chunk_fallback_translation returns False:
+          - generate_text_async must be called exactly once
+          - translated_body_text is the direct result of that single call
+        """
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        mock_engine.generate_text_async = AsyncMock(return_value="Texte traduit unique")
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=""),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            stack.enter_context(patch.object(
+                service, '_should_chunk_fallback_translation',
+                return_value=False,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(mock_engine.generate_text_async.call_count, 1)
+        self.assertEqual(result["translated_body_text"], "Texte traduit unique")
+        self.assertEqual(result["translation_mode"], "text_fallback")
+        self.assertEqual(result["translation_fidelity"], "simplified")
+
+    # F3 — structured_preflight_degraded route uses chunked fallback internally
+    #      while preserving the contract reason code
+    async def test_preflight_degraded_with_chunked_fallback_preserves_contract(self):
+        """
+        When the preflight gate fires (large HTML) AND the derived body_text is
+        itself large enough to warrant chunking:
+          - translation_reason_code == structured_preflight_degraded
+          - translation_mode        == text_fallback
+          - generate_text_async called once per chunk
+          - translated_body_text is the recombined chunk translation
+        """
+        large_html = "<p>" + "A" * 30_001 + "</p>"
+        known_chunks = ["preflight_chunk_1", "preflight_chunk_2"]
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 50
+        mock_engine.generate_text_async = AsyncMock(
+            side_effect=["traduit_1", "traduit_2"]
+        )
+        helper_spy = AsyncMock()
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=_LARGE_FALLBACK_BODY),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(
+                    body_html=large_html,
+                    body_text=_LARGE_FALLBACK_BODY,
+                ),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            stack.enter_context(patch.object(
+                service, '_attempt_structured_html_translation',
+                new=helper_spy,
+            ))
+            stack.enter_context(patch.object(
+                service, '_should_chunk_fallback_translation',
+                return_value=True,
+            ))
+            stack.enter_context(patch.object(
+                service, '_split_text_into_translation_chunks',
+                return_value=known_chunks,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        # Structured helper must NOT have been called — preflight gates it out
+        helper_spy.assert_not_called()
+
+        # Route-level contract for preflight-degraded path must be intact
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+        self.assertEqual(result["translation_mode"], "text_fallback")
+        self.assertEqual(result["translation_fidelity"], "simplified")
+        self.assertIsNone(result["translated_body_html"])
+
+        # Internally, chunked path was used
+        self.assertEqual(mock_engine.generate_text_async.call_count, 2)
+        self.assertEqual(result["translated_body_text"], "traduit_1\n\ntraduit_2")
+
+    # F4 — structured-success route is entirely unaffected by chunking logic
+    async def test_structured_success_unaffected_by_chunking(self):
+        """
+        When translation succeeds via the structured HTML path:
+          - _should_chunk_fallback_translation must NOT be called
+          - translation_mode     == structured_html
+          - translation_fidelity == preserved
+          - translated_body_html is the translated HTML
+        """
+        mock_engine = MagicMock()
+        chunk_decision_spy = MagicMock(return_value=False)
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(
+                    attachments=_FAKE_ATTACHMENTS,
+                    linked_files=_FAKE_LINKED_FILES,
+                ),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            stack.enter_context(patch.object(
+                service, '_attempt_structured_html_translation',
+                new=AsyncMock(return_value=(_FAKE_TRANSLATED_HTML, "structured_success")),
+            ))
+            stack.enter_context(patch.object(
+                service, '_should_chunk_fallback_translation',
+                new=chunk_decision_spy,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="en"),
+            )
+
+        # Chunking decision must never be consulted on the structured-success path
+        chunk_decision_spy.assert_not_called()
+
+        self.assertEqual(result["translation_mode"], "structured_html")
+        self.assertEqual(result["translation_fidelity"], "preserved")
+        self.assertEqual(result["translation_reason_code"], "structured_success")
+        self.assertEqual(result["translated_body_html"], _FAKE_TRANSLATED_HTML)
+        self.assertTrue(result["translated_body_text"].strip())
+
+
+# ---------------------------------------------------------------------------
+# Section G — Hard fallback split refinement (P3.5-R3E-P1R)
+# ---------------------------------------------------------------------------
+
+class TestHardSplitSegmentHelper(unittest.TestCase):
+    """
+    Section G (helper level) — Deterministic proof that _hard_split_segment
+    handles all edge cases: within-budget pass-through, no-punctuation word
+    batching, and no-whitespace token-verified prefix split (last resort).
+    """
+
+    # Gh1 — segment already within budget is returned unchanged
+    def test_within_budget_returned_as_is(self):
+        engine = MagicMock()
+        engine.count_tokens.return_value = 100   # well within 800
+        text = "This is a short paragraph."
+        result = service._hard_split_segment(text, engine)
+        self.assertEqual(result, [text])
+        # count_tokens called exactly once (initial budget check)
+        engine.count_tokens.assert_called_once_with(text)
+
+    # Gh2 — paragraph with no sentence punctuation reaches layer 3
+    #        (word-group batching) and is split into bounded chunks
+    def test_no_punctuation_paragraph_word_batched(self):
+        """
+        A 900-word paragraph with no .!? or \\n boundaries falls through
+        layers 1 and 2 and is split at layer 3 (word-group batching)
+        into exactly 2 chunks: 800 words + 100 words.
+        """
+        # Token model: count words.  Each "word" = 1 token.
+        engine = MagicMock()
+        engine.count_tokens.side_effect = lambda t: len(t.split()) if t.split() else 1
+
+        no_punct_para = " ".join(["word"] * 900)   # 900 tokens > 800
+
+        chunks = service._hard_split_segment(no_punct_para, engine)
+
+        # Must produce more than one chunk
+        self.assertGreater(len(chunks), 1)
+
+        # Every chunk must be within the budget under the same token model
+        for c in chunks:
+            self.assertLessEqual(len(c.split()), service._FALLBACK_CHUNK_MAX_TOKENS)
+
+        # All original words must be present (no text lost), in order
+        reassembled = " ".join(chunks)
+        self.assertEqual(reassembled.split(), no_punct_para.split())
+
+    # Gh3 — no-whitespace dense string reaches layer 4 (token-verified split)
+    #        and is split with zero text loss; every chunk is token-bounded
+    def test_no_whitespace_dense_string_token_verified_split(self):
+        """
+        A string with no spaces, no punctuation, and no newlines exhausts
+        layers 1–3 and is split by the token-verified prefix-split last resort
+        (P3.5-R3E-P1R2).  Each emitted chunk satisfies
+        engine.count_tokens(chunk) <= _FALLBACK_CHUNK_MAX_TOKENS by construction.
+        """
+        # Token model: any string longer than 800 chars is "oversized" (900 tokens),
+        # any string ≤ 800 chars is within budget (10 tokens).
+        # Binary search converges to cut=800 per iteration → 4 equal chunks.
+        engine = MagicMock()
+        engine.count_tokens.side_effect = lambda t: 900 if len(t) > 800 else 10
+
+        dense_string = "A" * 3200
+
+        chunks = service._hard_split_segment(dense_string, engine)
+
+        # Must be split (layer 4 fired)
+        self.assertGreater(len(chunks), 1)
+
+        # No text lost — concatenation must recover the original string exactly
+        self.assertEqual("".join(chunks), dense_string)
+
+        # Token-verified guarantee: every chunk is within budget under the same model
+        for c in chunks:
+            self.assertLessEqual(
+                engine.count_tokens(c),
+                service._FALLBACK_CHUNK_MAX_TOKENS,
+                f"Chunk of length {len(c)} exceeds token budget",
+            )
+
+
+class TestHardSplitRouteContract(unittest.IsolatedAsyncioTestCase):
+    """
+    Section G (route level) — End-to-end proof that a large, no-punctuation
+    body_text still produces multiple generate_text_async calls through the
+    real (non-mocked) split helpers.
+    """
+
+    # Gh4 — route: large no-punctuation body goes through real helpers
+    #        and still calls generate_text_async multiple times
+    async def test_route_large_no_punct_body_multiple_calls(self):
+        """
+        When body_text is a long, punctuation-free block (no .!? or \\n):
+          - _should_chunk_fallback_translation returns True (real implementation)
+          - _split_text_into_translation_chunks → _hard_split_segment fires
+            word-group batching (layer 3) and produces multiple chunks
+          - generate_text_async is called once per chunk (not once total)
+          - translation contract fields are correct
+        """
+        # 3 000 "word" tokens — exceeds the 1 500-token chunking threshold.
+        no_punct_body = " ".join(["word"] * 3000)
+
+        mock_engine = MagicMock()
+        # Token model: word count.  Clean and deterministic.
+        mock_engine.count_tokens.side_effect = lambda t: len(t.split()) if t.split() else 1
+        mock_engine.generate_text_async = AsyncMock(return_value="traduction")
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=no_punct_body),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                # No HTML — forces html_missing / text_fallback lane.
+                return_value=_make_payload(body_html="", body_text=no_punct_body),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        # Multiple chunks → multiple calls (not one monolithic call)
+        self.assertGreater(mock_engine.generate_text_async.call_count, 1)
+
+        # Contract fields must be correct
+        self.assertEqual(result["translation_mode"], "text_fallback")
+        self.assertEqual(result["translation_fidelity"], "simplified")
+        self.assertEqual(result["translation_reason_code"], "html_missing")
+        self.assertIsNone(result["translated_body_html"])
+
+        # Assembled result contains the translated content
+        self.assertIn("traduction", result["translated_body_text"])
+
+
+# ---------------------------------------------------------------------------
+# Section H — Token-verified final split guarantee (P3.5-R3E-P1R2)
+# ---------------------------------------------------------------------------
+
+class TestTokenVerifiedPrefixSplit(unittest.TestCase):
+    """
+    Section H (helper level) — Deterministic proof that
+    _token_verified_prefix_split guarantees every emitted chunk satisfies
+    engine.count_tokens(chunk) <= _FALLBACK_CHUNK_MAX_TOKENS by construction,
+    regardless of tokeniser density.
+    """
+
+    # Hi1 — empty string returns empty list
+    def test_empty_string_returns_empty_list(self):
+        engine = MagicMock()
+        result = service._token_verified_prefix_split("", engine)
+        self.assertEqual(result, [])
+        engine.count_tokens.assert_not_called()
+
+    # Hi2 — string already within budget returned as single-element list
+    def test_within_budget_returned_as_single_element(self):
+        engine = MagicMock()
+        engine.count_tokens.return_value = 50   # well within 800
+        text = "Short segment within budget."
+        result = service._token_verified_prefix_split(text, engine)
+        self.assertEqual(result, [text])
+        # Only the initial budget check should have been made
+        engine.count_tokens.assert_called_once_with(text)
+
+    # Hi3 — CJK-density: 1 token per character
+    #        Every chunk token-bounded; concatenation recovers original exactly
+    def test_cjk_density_all_chunks_token_bounded(self):
+        """
+        With a 1-token-per-character tokeniser, each emitted chunk must have
+        at most _FALLBACK_CHUNK_MAX_TOKENS characters.  Binary-search prefix
+        fitting must find the exact per-character boundary.
+        """
+        engine = MagicMock()
+        # Exact CJK-worst-case: every character is one token.
+        engine.count_tokens.side_effect = lambda t: len(t)
+
+        # 2 500 chars → 2 500 tokens.  Expected chunks: ⌈2500/800⌉ = 4
+        # (800 + 800 + 800 + 100)
+        dense = "A" * 2500
+
+        chunks = service._token_verified_prefix_split(dense, engine)
+
+        # No text lost
+        self.assertEqual("".join(chunks), dense)
+
+        # Multiple chunks emitted
+        self.assertGreater(len(chunks), 1)
+
+        # KEY INVARIANT: every chunk is within budget under the actual tokeniser
+        for c in chunks:
+            self.assertLessEqual(
+                engine.count_tokens(c),
+                service._FALLBACK_CHUNK_MAX_TOKENS,
+                f"Chunk of length {len(c)} exceeds token budget",
+            )
+
+        # With count_tokens == len, binary search finds exactly 800 chars/chunk.
+        self.assertEqual(len(chunks), 4)
+        self.assertTrue(all(len(c) <= service._FALLBACK_CHUNK_MAX_TOKENS for c in chunks))
+
+
+class TestTokenVerifiedRouteContract(unittest.IsolatedAsyncioTestCase):
+    """
+    Section H (route level) — End-to-end proof that a large dense
+    no-whitespace body (CJK-density tokeniser) still produces multiple
+    generate_text_async calls and correct contract fields.
+    """
+
+    # Hi4 — route: dense 1-token/char body triggers chunking via real helpers
+    async def test_route_dense_body_token_verified_multiple_calls(self):
+        """
+        With a 1-token-per-character tokeniser (CJK worst case) and a
+        no-whitespace body of 3 000 chars:
+          - _should_chunk_fallback_translation returns True (3 000 > 1 500 threshold)
+          - _hard_split_segment fires layer 4 (_token_verified_prefix_split)
+          - generate_text_async called multiple times (one per chunk)
+          - translation contract fields are correct
+        """
+        # 3 000-char no-whitespace body, no punctuation, no line breaks.
+        dense_body = "X" * 3000
+
+        mock_engine = MagicMock()
+        # 1 token per character — worst-case dense tokenisation.
+        mock_engine.count_tokens.side_effect = lambda t: len(t)
+        mock_engine.generate_text_async = AsyncMock(return_value="traduction")
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=dense_body),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                # No HTML → html_missing / text_fallback lane.
+                return_value=_make_payload(body_html="", body_text=dense_body),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        # Multiple chunks → multiple calls (not one monolithic call).
+        # 3 000 tokens / 800 budget = ⌈3000/800⌉ = 4 chunks expected.
+        self.assertGreater(mock_engine.generate_text_async.call_count, 1)
+
+        # Contract fields correct
+        self.assertEqual(result["translation_mode"], "text_fallback")
+        self.assertEqual(result["translation_fidelity"], "simplified")
+        self.assertEqual(result["translation_reason_code"], "html_missing")
+        self.assertIsNone(result["translated_body_html"])
+
+        # Translated content present in assembled result
+        self.assertIn("traduction", result["translated_body_text"])
+
+
+# ---------------------------------------------------------------------------
+# Section I — Dense-token chunking decision fix (P3.5-R3E-P1R3)
+# ---------------------------------------------------------------------------
+
+class TestDenseTokenChunkingDecision(unittest.TestCase):
+    """
+    Section I (helper level) — Proves that the chunking decision is based
+    purely on token count, with no character-length fast-path that could
+    suppress chunking for dense-token bodies.
+    """
+
+    # Ii1 — dense body: < 3 000 chars, token count > threshold → True
+    def test_should_chunk_dense_short_body(self):
+        """
+        A dense-token body shorter than 3 000 characters with token count
+        above _FALLBACK_CHUNK_TOKEN_THRESHOLD must return True.  Token count
+        is the sole decision criterion — character length is not consulted,
+        ensuring CJK and other dense-token scripts are handled correctly.
+        """
+        engine = MagicMock()
+        engine.count_tokens.return_value = service._FALLBACK_CHUNK_TOKEN_THRESHOLD + 1
+        dense_short = "X" * 2000   # 2 000 chars — dense in tokens, short in characters
+        result = service._should_chunk_fallback_translation(dense_short, engine)
+        self.assertTrue(result)
+        # count_tokens must be called regardless of body length
+        engine.count_tokens.assert_called_once_with(dense_short)
+
+
+class TestDenseTokenChunkingRouteContract(unittest.IsolatedAsyncioTestCase):
+    """
+    Section I (route level) — End-to-end proof that a dense-token body
+    shorter than 3 000 characters still triggers chunking and produces
+    multiple generate_text_async calls.
+    """
+
+    # Ii2 — route: dense short body < 3 000 chars, multiple calls, correct contract
+    async def test_route_dense_short_body_below_3000_chars_chunked(self):
+        """
+        body_text = 'X' * 2 000 with a 1-token-per-character tokeniser:
+          - len(body_text) = 2 000  (short in characters)
+          - count_tokens   = 2 000  >  1 500  (above threshold)
+
+        _should_chunk_fallback_translation returns True because token count
+        drives the decision, not character length.  The route must call
+        generate_text_async multiple times and contract fields must be correct.
+        """
+        dense_short_body = "X" * 2000   # 2 000 chars — short in characters, above token threshold
+
+        mock_engine = MagicMock()
+        # 1 token per character: 2 000 tokens > 1 500 threshold.
+        mock_engine.count_tokens.side_effect = lambda t: len(t)
+        mock_engine.generate_text_async = AsyncMock(return_value="traduction")
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=dense_short_body),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                # No HTML → html_missing / text_fallback lane.
+                return_value=_make_payload(body_html="", body_text=dense_short_body),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        # Chunking must have fired: multiple calls, not one monolithic call.
+        # With count_tokens==len and budget=800: ⌈2000/800⌉ = 3 chunks expected.
+        self.assertGreater(mock_engine.generate_text_async.call_count, 1)
+
+        # Contract fields correct
+        self.assertEqual(result["translation_mode"], "text_fallback")
+        self.assertEqual(result["translation_fidelity"], "simplified")
+        self.assertEqual(result["translation_reason_code"], "html_missing")
+        self.assertIsNone(result["translated_body_html"])
+        self.assertIn("traduction", result["translated_body_text"])
 
 
 if __name__ == "__main__":

@@ -2923,6 +2923,20 @@ _PREFLIGHT_MAX_IMG_COUNT = 5         # <img elements (newsletter image density)
 _PREFLIGHT_MAX_LINK_COUNT = 20       # href= attributes (CTA / nav link density)
 _PREFLIGHT_MAX_TABLE_COUNT = 5       # <table elements (layout complexity)
 
+# Chunked text-fallback thresholds.
+# When body_text token count exceeds _FALLBACK_CHUNK_TOKEN_THRESHOLD the
+# monolithic single-call fallback is replaced with sequential per-chunk calls,
+# eliminating the server-side 502 / "Translation timed out" on large newsletter
+# plain-text bodies (e.g. Supabase-class emails).
+#
+# Evidence basis:
+#   - Mistral endpoint timeout observed on bodies >= ~1 500 tokens (plain text)
+#   - 800 tokens/chunk keeps each call well within the safe-zone and leaves
+#     enough output budget (max_tokens = chunk_tokens + 128, capped at 2 048)
+#   - Decision is based solely on engine.count_tokens(), covering all scripts
+_FALLBACK_CHUNK_TOKEN_THRESHOLD = 1_500   # tokens above which chunking is used
+_FALLBACK_CHUNK_MAX_TOKENS = 800          # target max tokens per individual chunk
+
 
 def _is_html_preflight_degraded(body_html: str) -> bool:
     """
@@ -2952,6 +2966,273 @@ def _is_html_preflight_degraded(body_html: str) -> bool:
     if html_lower.count("<table") > _PREFLIGHT_MAX_TABLE_COUNT:
         return True
     return False
+
+
+def _should_chunk_fallback_translation(body_text: str, engine) -> bool:
+    """
+    Decide whether the text-fallback path should use chunked translation.
+
+    Returns True when engine.count_tokens(body_text) exceeds
+    _FALLBACK_CHUNK_TOKEN_THRESHOLD.
+
+    Always uses the actual token count — no character-length fast-path.
+    A character shortcut would silently skip chunking for dense-token bodies
+    (e.g. CJK or other scripts where one character ≈ one token) that are
+    short in bytes but large in tokens and would still timeout server-side.
+    """
+    return engine.count_tokens(body_text) > _FALLBACK_CHUNK_TOKEN_THRESHOLD
+
+
+def _batch_within_budget(parts: List[str], joiner: str, engine) -> List[str]:
+    """
+    Greedily accumulate non-empty parts into joined batches within token budget.
+
+    Token cost is summed per-part (not on the joined result), which
+    intentionally undercounts joiner overhead — the token-verified prefix split
+    in _hard_split_segment layer 4 absorbs any residual overrun by construction.
+    A single part that individually exceeds the budget is emitted as a
+    one-item batch so the caller's next layer can handle it.
+    """
+    batches: List[str] = []
+    batch: List[str] = []
+    batch_tokens: int = 0
+
+    for part in parts:
+        if not part:
+            continue
+        t = engine.count_tokens(part)
+        if batch_tokens + t > _FALLBACK_CHUNK_MAX_TOKENS and batch:
+            batches.append(joiner.join(batch))
+            batch = [part]
+            batch_tokens = t
+        else:
+            batch.append(part)
+            batch_tokens += t
+
+    if batch:
+        batches.append(joiner.join(batch))
+
+    return batches
+
+
+def _token_verified_prefix_split(seg: str, engine) -> List[str]:
+    """
+    Split *seg* into token-verified chunks via binary-search prefix fitting.
+
+    For each iteration the binary search finds the longest character prefix
+    of the remaining string that satisfies:
+        engine.count_tokens(prefix) <= _FALLBACK_CHUNK_MAX_TOKENS
+
+    Complexity: O(log(len(seg))) count_tokens calls per emitted chunk —
+    cheaper than a linear scan and guaranteed to converge regardless of how
+    the tokeniser distributes tokens across character boundaries.
+
+    Invariants enforced:
+      - Every emitted chunk: count_tokens(chunk) <= _FALLBACK_CHUNK_MAX_TOKENS
+      - Concatenation of all emitted chunks == seg (no text lost)
+      - No empty chunks emitted
+      - At least one character is consumed per iteration (loop always terminates)
+
+    Called from _hard_split_segment layer 4 as the absolute last resort.
+    Also used directly when the calling context needs a token-exact split.
+    """
+    if not seg:
+        return []
+
+    result: List[str] = []
+    remaining = seg
+
+    while remaining:
+        if engine.count_tokens(remaining) <= _FALLBACK_CHUNK_MAX_TOKENS:
+            result.append(remaining)
+            break
+
+        # Binary search for the longest prefix within budget.
+        # Invariant: remaining[:lo] always fits; remaining[:hi+1] does not.
+        # Upper-midpoint formula ((lo+hi+1)//2) prevents lo from stagnating.
+        lo, hi = 1, len(remaining)
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if engine.count_tokens(remaining[:mid]) <= _FALLBACK_CHUNK_MAX_TOKENS:
+                lo = mid
+            else:
+                hi = mid - 1
+
+        # lo is the longest prefix length guaranteed within budget.
+        # Clamp to at least 1 to guarantee progress even when a single
+        # character tokenises above the budget (pathological but safe).
+        cut = max(1, lo)
+        result.append(remaining[:cut])
+        remaining = remaining[cut:]
+
+    return [r for r in result if r]
+
+
+def _hard_split_segment(text: str, engine) -> List[str]:
+    """
+    Guarantee-bounded split for any text segment that exceeds
+    _FALLBACK_CHUNK_MAX_TOKENS.
+
+    Applies four progressively finer strategies in strict cascade.  At each
+    layer, segments that fall within budget are moved to the result list;
+    still-oversized segments carry forward to the next layer.  Order is
+    always preserved — within each layer, segments are processed
+    left-to-right and their sub-parts are emitted in order before the next
+    segment is processed.
+
+    Layer 1 — sentence boundaries (.!?)    most structure-preserving
+    Layer 2 — line boundaries (\\n)        useful for lists / footers
+    Layer 3 — word-group batching          whitespace-split words
+    Layer 4 — token-verified prefix split  absolute last resort:
+               binary-search on character prefix length; every emitted
+               chunk is token-bounded by construction via
+               engine.count_tokens() verification, regardless of
+               tokeniser density (CJK, URL blobs, base64, etc.)
+
+    Guarantees: at least one result; no text lost; no empty chunks emitted;
+    every emitted chunk satisfies count_tokens(chunk) <= _FALLBACK_CHUNK_MAX_TOKENS.
+    """
+    if engine.count_tokens(text) <= _FALLBACK_CHUNK_MAX_TOKENS:
+        return [text]
+
+    done: List[str] = []
+    pending: List[str] = [text]
+
+    # Layer 1: sentence boundaries
+    next_pending: List[str] = []
+    for seg in pending:
+        if engine.count_tokens(seg) <= _FALLBACK_CHUNK_MAX_TOKENS:
+            done.append(seg)
+            continue
+        for b in _batch_within_budget(re.split(r"(?<=[.!?])\s+", seg), " ", engine):
+            if engine.count_tokens(b) <= _FALLBACK_CHUNK_MAX_TOKENS:
+                done.append(b)
+            else:
+                next_pending.append(b)
+    pending = next_pending
+
+    # Layer 2: line boundaries
+    next_pending = []
+    for seg in pending:
+        lines = [ln for ln in seg.splitlines() if ln.strip()]
+        if not lines:
+            done.append(seg) if seg.strip() else None
+            continue
+        for b in _batch_within_budget(lines, "\n", engine):
+            if engine.count_tokens(b) <= _FALLBACK_CHUNK_MAX_TOKENS:
+                done.append(b)
+            else:
+                next_pending.append(b)
+    pending = next_pending
+
+    # Layer 3: word-group batching
+    next_pending = []
+    for seg in pending:
+        words = seg.split()
+        if not words:
+            done.append(seg) if seg else None
+            continue
+        for b in _batch_within_budget(words, " ", engine):
+            if engine.count_tokens(b) <= _FALLBACK_CHUNK_MAX_TOKENS:
+                done.append(b)
+            else:
+                next_pending.append(b)
+    pending = next_pending
+
+    # Layer 4: token-verified prefix split — absolute last resort.
+    # Binary-search prefix fitting guarantees every emitted chunk satisfies
+    # engine.count_tokens(chunk) <= _FALLBACK_CHUNK_MAX_TOKENS by construction,
+    # regardless of tokeniser density (CJK, URL blobs, base64, etc.).
+    for seg in pending:
+        done.extend(_token_verified_prefix_split(seg, engine))
+
+    return [s for s in done if s] or [text]
+
+
+def _split_text_into_translation_chunks(body_text: str, engine) -> List[str]:
+    """
+    Split plain text into bounded, paragraph-preserving chunks for sequential
+    translation.
+
+    Strategy (in priority order):
+      1. Split on blank-line boundaries (\\n\\n+) — preserves reading structure.
+      2. Accumulate consecutive paragraphs into one chunk until the token
+         budget (_FALLBACK_CHUNK_MAX_TOKENS) is reached, then flush.
+      3. If a single paragraph individually exceeds the budget, delegate to
+         _hard_split_segment which applies sentence → line → word →
+         token-verified prefix split in cascade, guaranteeing all emitted
+         segments are bounded.
+
+    Returns at least one chunk.  Order is always preserved.
+    """
+    raw_paras = re.split(r"\n\n+", body_text)
+    paragraphs = [p.strip() for p in raw_paras if p.strip()]
+
+    chunks: List[str] = []
+    current_parts: List[str] = []
+    current_tokens: int = 0
+
+    for para in paragraphs:
+        para_tokens = engine.count_tokens(para)
+
+        if para_tokens > _FALLBACK_CHUNK_MAX_TOKENS:
+            # Flush current accumulator before handling the oversized paragraph.
+            if current_parts:
+                chunks.append("\n\n".join(current_parts))
+                current_parts = []
+                current_tokens = 0
+
+            # Hard-fallback split guarantees all emitted segments are bounded.
+            chunks.extend(_hard_split_segment(para, engine))
+
+        elif current_tokens + para_tokens > _FALLBACK_CHUNK_MAX_TOKENS:
+            # Budget exceeded — flush and start a new accumulator.
+            if current_parts:
+                chunks.append("\n\n".join(current_parts))
+            current_parts = [para]
+            current_tokens = para_tokens
+
+        else:
+            current_parts.append(para)
+            current_tokens += para_tokens
+
+    if current_parts:
+        chunks.append("\n\n".join(current_parts))
+
+    return chunks if chunks else [body_text]
+
+
+async def _translate_text_chunks_async(
+    chunks: List[str],
+    target_language: str,
+    engine,
+    system_prompt: str,
+) -> str:
+    """
+    Translate each chunk sequentially and reassemble in the original order.
+
+    Sequential (not concurrent) to avoid parallel timeout pressure and to
+    guarantee deterministic ordering of translated segments.  Each chunk gets
+    its own bounded max_tokens estimate so no single call overshoots the
+    model's safe output window.
+
+    Returns a single paragraph-spaced string with empty parts filtered out.
+    """
+    translated_parts: List[str] = []
+    for chunk in chunks:
+        estimated_tokens = max(256, min(2048, engine.count_tokens(chunk) + 128))
+        translated_chunk = await engine.generate_text_async(
+            prompt=(
+                f"Target language: {target_language}\n\n"
+                f"Email body:\n{chunk}"
+            ),
+            max_tokens=estimated_tokens,
+            temperature=0.2,
+            system_prompt=system_prompt,
+        )
+        translated_parts.append((translated_chunk or "").strip())
+
+    return "\n\n".join(p for p in translated_parts if p)
 
 
 def _is_hidden_element(element) -> bool:
@@ -3527,17 +3808,30 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
     translated_body_text: str
 
     if translation_mode == "text_fallback":
-        estimated_output_tokens = max(512, min(4096, engine.count_tokens(body_text) + 256))
+        _translation_system_prompt = _build_translation_system_prompt(normalized_language)
         try:
-            translated_body_text = await engine.generate_text_async(
-                prompt=(
-                    f"Target language: {normalized_language}\n\n"
-                    f"Email body:\n{body_text}"
-                ),
-                max_tokens=estimated_output_tokens,
-                temperature=0.2,
-                system_prompt=_build_translation_system_prompt(normalized_language),
-            )
+            if _should_chunk_fallback_translation(body_text, engine):
+                _chunks = _split_text_into_translation_chunks(body_text, engine)
+                logger.info(
+                    "[TRANSLATE-RENDER] chunked_fallback chunks=%d body_chars=%d language=%s",
+                    len(_chunks),
+                    len(body_text),
+                    normalized_language,
+                )
+                translated_body_text = await _translate_text_chunks_async(
+                    _chunks, normalized_language, engine, _translation_system_prompt,
+                )
+            else:
+                estimated_output_tokens = max(512, min(4096, engine.count_tokens(body_text) + 256))
+                translated_body_text = await engine.generate_text_async(
+                    prompt=(
+                        f"Target language: {normalized_language}\n\n"
+                        f"Email body:\n{body_text}"
+                    ),
+                    max_tokens=estimated_output_tokens,
+                    temperature=0.2,
+                    system_prompt=_translation_system_prompt,
+                )
         except ValueError:
             raise HTTPException(status_code=503, detail="Translation service unavailable")
         except TimeoutError:
