@@ -146,6 +146,8 @@ export function EmailDetailModal({
   const [translatedBodyHtml, setTranslatedBodyHtml] = useState<string | null>(null);
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [translationTargetLanguage, setTranslationTargetLanguage] = useState<AILanguage | null>(null);
+  const [translationMode, setTranslationMode] = useState<'structured_html' | 'text_fallback' | null>(null);
+  const [translationFidelity, setTranslationFidelity] = useState<'preserved' | 'simplified' | null>(null);
 
   useEffect(() => {
     setTranslationPending(false);
@@ -154,6 +156,8 @@ export function EmailDetailModal({
     setTranslatedBodyHtml(null);
     setTranslationError(null);
     setTranslationTargetLanguage(null);
+    setTranslationMode(null);
+    setTranslationFidelity(null);
   }, [emailIdentity, normalizedTranslationLanguage]);
 
   const handleTranslateToggle = async () => {
@@ -187,6 +191,8 @@ export function EmailDetailModal({
       setTranslationTargetLanguage(null);
       setTranslationActive(false);
       setTranslationError(msg);
+      setTranslationMode(null);
+      setTranslationFidelity(null);
     };
 
     try {
@@ -206,6 +212,8 @@ export function EmailDetailModal({
         }
         setTranslatedBody(translated);
         setTranslatedBodyHtml(result.translated_body_html ?? null);
+        setTranslationMode(result.translation_mode);
+        setTranslationFidelity(result.translation_fidelity);
         setTranslationTargetLanguage(normalizedTranslationLanguage);
         setTranslationActive(true);
       } else {
@@ -391,6 +399,8 @@ export function EmailDetailModal({
                   translationActive={translationActive}
                   translatedBody={translatedBody}
                   translatedBodyHtml={translatedBodyHtml}
+                  translationMode={translationMode ?? undefined}
+                  translationFidelity={translationFidelity ?? undefined}
                   translationTargetLanguage={translationTargetLanguage}
                   translationError={translationError}
                   showRefreshSummary={showSummarizeButton}

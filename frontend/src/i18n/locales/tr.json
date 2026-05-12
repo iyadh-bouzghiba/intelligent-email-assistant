@@ -133,7 +133,9 @@
         "no_preview": "Önizleme yok.",
         "ask_ai_assistant": "YZ Asistanına sor",
         "mark_read_failed": "Okundu olarak işaretlenemedi.",
-        "mark_unread_failed": "Okunmadı olarak işaretlenemedi."
+        "mark_unread_failed": "Okunmadı olarak işaretlenemedi.",
+        "fallback_translation_title": "Basitleştirilmiş çeviri görünümü",
+        "fallback_translation_notice": "Özgün biçimlendirmenin bir kısmı korunamadı."
     },
     "auth": {
         "add_account": "+ Hesap ekle",

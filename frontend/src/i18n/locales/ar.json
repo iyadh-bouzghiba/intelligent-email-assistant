@@ -133,7 +133,9 @@
         "no_preview": "لا توجد معاينة متاحة.",
         "ask_ai_assistant": "اسأل المساعد الذكي",
         "mark_read_failed": "تعذّر التعليم كمقروء.",
-        "mark_unread_failed": "تعذّر التعليم كغير مقروء."
+        "mark_unread_failed": "تعذّر التعليم كغير مقروء.",
+        "fallback_translation_title": "عرض مُبسَّط للترجمة",
+        "fallback_translation_notice": "تعذّر الحفاظ على بعض التنسيق الأصلي."
     },
     "auth": {
         "add_account": "+ إضافة حساب",

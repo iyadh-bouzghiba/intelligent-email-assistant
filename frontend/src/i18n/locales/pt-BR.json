@@ -133,7 +133,9 @@
         "no_preview": "Nenhuma prévia disponível.",
         "ask_ai_assistant": "Perguntar ao Assistente de IA",
         "mark_read_failed": "Falha ao marcar como lido.",
-        "mark_unread_failed": "Falha ao marcar como não lido."
+        "mark_unread_failed": "Falha ao marcar como não lido.",
+        "fallback_translation_title": "Visão traduzida simplificada",
+        "fallback_translation_notice": "Parte da formatação original não pôde ser preservada."
     },
     "auth": {
         "add_account": "+ Adicionar conta",
