@@ -232,6 +232,33 @@ Deterministic proof for the translate-render contract covering:
     Q2.  retry TimeoutError -> HTTPException 502 "Translation timed out"
     Q3.  retry generic Exception -> HTTPException 502 "Translation failed"
 
+  Section R — Canonical plain-text first + HTML assistance (P3.5-R3F-R1):
+    R1.  _score_source_noise: clean text scores 0.0
+    R2.  _score_source_noise: footer/unsubscribe lines produce positive penalty
+    R3.  _score_source_noise: link-cloud lines produce positive penalty
+    R4.  _score_source_noise: separator-only lines produce positive penalty
+    R5.  _score_source_noise: duplicate paragraph fingerprint produces penalty
+    R6.  _select_canonical_translation_source: prefers body_text when clearly
+         cleaner (body has 0 noise, derived has noise > gap threshold)
+    R7.  _select_canonical_translation_source: falls through to "shorter"
+         criterion when both sources have similar noise scores
+    R8.  _select_canonical_translation_source: derived empty -> False ("derived_empty")
+    R9.  _select_canonical_translation_source: body_text empty -> True ("body_text_empty")
+    R10. _enrich_body_text_with_assists: adds meaningful URL missing from body_text
+    R11. _enrich_body_text_with_assists: does NOT add URL from footer-context line
+    R12. _enrich_body_text_with_assists: does NOT add URL already in body_text
+    R13. _trim_footer_tail: cuts footer region when >= 3 signals in last 35%
+    R14. _trim_footer_tail: returns text unchanged when footer signals < 3
+    R15. _trim_footer_tail: returns text unchanged when head < 200 chars after cut
+    R16. _dedup_repeated_blocks: deduplicates repeated paragraphs, preserves order
+    R17. _dedup_repeated_blocks: text with no duplicates returned unchanged
+    R18. route: Supabase-like fixture — canonical body_text preferred over noisier
+         derived HTML source (body has 0 noise, derived has footer contamination)
+    R19. route: footer tail and repeated-block dedup applied for
+         structured_preflight_degraded output
+    R20. route: structured-success unaffected by new source-selection and
+         post-processing logic
+
 All I/O and model calls are replaced with deterministic mocks.
 No live network, no Mistral API key, no Supabase connection required.
 
@@ -3668,6 +3695,444 @@ class TestRetryFailureContractParity(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.status_code, 502)
         self.assertIn("failed", ctx.exception.detail.lower())
         self.assertEqual(call_count[0], 2)
+
+
+# ---------------------------------------------------------------------------
+# Section R — Canonical plain-text first + HTML assistance (P3.5-R3F-R1)
+# ---------------------------------------------------------------------------
+
+# Supabase-like newsletter HTML: noisier derived source with footer contamination
+# and a duplicated separator section.
+_R_SUPABASE_LIKE_CONTENT_HTML = (
+    "<html><body>"
+    "<h1>What's new in Supabase</h1>"
+    "<p>This week we shipped Edge Functions v2, improved the dashboard, "
+    "and published a new tutorial on Row Level Security.</p>"
+    "<h2>Edge Functions v2</h2>"
+    "<p>Faster cold starts, Node.js compat, and native npm support.</p>"
+    "<h2>Dashboard improvements</h2>"
+    "<p>Redesigned SQL editor with autocomplete and improved table editor.</p>"
+    "<div class='footer'>"
+    "<p>You are receiving this because you signed up at supabase.com.</p>"
+    "<p>Unsubscribe | Privacy Policy | Terms of Service</p>"
+    "<p>Follow us on Twitter | LinkedIn | GitHub</p>"
+    "<p>Copyright 2026 Supabase Inc. All rights reserved.</p>"
+    "<p>Supabase Inc. 970 Toa Payoh North, Singapore 318992</p>"
+    "</div>"
+    "</body></html>"
+)
+
+# Canonical plain-text body_text for the same email — clean and ordered.
+_R_SUPABASE_CANONICAL_BODY_TEXT = """\
+What's new in Supabase
+
+This week we shipped Edge Functions v2, improved the dashboard, \
+and published a new tutorial on Row Level Security.
+
+Edge Functions v2
+
+Faster cold starts, Node.js compat, and native npm support.
+
+Dashboard improvements
+
+Redesigned SQL editor with autocomplete and improved table editor.\
+"""
+
+
+class TestCanonicalSourceSelectionAndPostProcessing(unittest.TestCase):
+    """
+    Deterministic proof for P3.5-R3F-R1: canonical plain-text first + HTML assistance.
+
+    R1–R5:   _score_source_noise unit tests
+    R6–R9:   _select_canonical_translation_source unit tests
+    R10–R12: _enrich_body_text_with_assists unit tests
+    R13–R15: _trim_footer_tail unit tests
+    R16–R17: _dedup_repeated_blocks unit tests
+    """
+
+    # R1 — clean text scores 0.0
+    def test_score_source_noise_clean_text(self):
+        """Clean newsletter body with no footer markers scores exactly 0.0."""
+        text = _R_SUPABASE_CANONICAL_BODY_TEXT
+        score = service._score_source_noise(text)
+        self.assertEqual(score, 0.0)
+
+    # R2 — footer/unsubscribe lines produce penalty
+    def test_score_source_noise_footer_lines(self):
+        """Lines with unsubscribe/follow-us/privacy-policy markers produce >0 penalty."""
+        text = (
+            "Good content here.\n\n"
+            "Unsubscribe from this list.\n"
+            "Follow us on Twitter.\n"
+            "Privacy Policy | Terms of Service"
+        )
+        score = service._score_source_noise(text)
+        self.assertGreater(score, 0.0)
+        # Three footer-signal lines: 3 * 5.0 = 15.0 minimum
+        self.assertGreaterEqual(score, 15.0)
+
+    # R3 — link-cloud lines produce penalty
+    def test_score_source_noise_link_cloud(self):
+        """Lines containing 2+ bare URLs and nothing else produce link-cloud penalty."""
+        text = (
+            "Intro paragraph.\n\n"
+            "https://example.com/a https://example.com/b\n"
+            "https://example.com/c https://example.com/d"
+        )
+        score = service._score_source_noise(text)
+        self.assertGreater(score, 0.0)
+
+    # R4 — separator-only lines produce penalty
+    def test_score_source_noise_separator_lines(self):
+        """Lines of repeated dashes/equals/asterisks produce a positive penalty."""
+        text = "Section A.\n\n---\n\nSection B.\n\n===\n\nSection C."
+        score = service._score_source_noise(text)
+        self.assertGreater(score, 0.0)
+        # Two separator lines: 2 * 2.0 = 4.0
+        self.assertGreaterEqual(score, 4.0)
+
+    # R5 — duplicate paragraph fingerprint produces penalty
+    def test_score_source_noise_duplicate_paragraphs(self):
+        """Duplicate paragraph fingerprints (same first 120 normalised chars) produce penalty."""
+        repeated = "This is the section header line that appears more than once in the email body."
+        text = f"{repeated}\n\nUnique middle content.\n\n{repeated}"
+        score = service._score_source_noise(text)
+        self.assertGreater(score, 0.0)
+        # One duplicate: +4.0
+        self.assertGreaterEqual(score, 4.0)
+
+    # R6 — body_text clearly cleaner: prefer body_text
+    def test_select_canonical_source_prefers_body_when_clearly_cleaner(self):
+        """When body_text has 0 noise and derived has noise > gap, body_text is preferred."""
+        clean_body = _R_SUPABASE_CANONICAL_BODY_TEXT
+        noisy_derived = (
+            "Edge Functions v2\n\n"
+            "Faster cold starts.\n\n"
+            "Unsubscribe from this newsletter.\n"
+            "Follow us on Twitter | LinkedIn.\n"
+            "Privacy Policy | Terms of Service | Copyright 2026"
+        )
+        prefer_derived, reason = service._select_canonical_translation_source(
+            clean_body, noisy_derived
+        )
+        self.assertFalse(prefer_derived)
+        self.assertEqual(reason, "body_text_canonical")
+
+    # R7 — similar noise: falls through to "shorter" criterion
+    def test_select_canonical_source_falls_through_to_shorter_when_similar_noise(self):
+        """When both sources have similar (low) noise, derived is preferred only if materially shorter."""
+        body = "A" * 600
+        short_derived = "Invoice summary: Total due $42.00." * 2  # ~68 chars, < 600*0.9=540
+        prefer_derived, reason = service._select_canonical_translation_source(body, short_derived)
+        self.assertTrue(prefer_derived)
+        self.assertEqual(reason, "derived_shorter")
+
+        long_derived = "B" * 580  # 580 > 600*0.9=540 — NOT materially shorter
+        prefer_derived2, reason2 = service._select_canonical_translation_source(body, long_derived)
+        self.assertFalse(prefer_derived2)
+        self.assertEqual(reason2, "body_text_canonical")
+
+    # R8 — derived empty → False
+    def test_select_canonical_source_derived_empty_returns_false(self):
+        """Empty or below-minimum derived source always returns False."""
+        prefer, reason = service._select_canonical_translation_source("body content here", "")
+        self.assertFalse(prefer)
+        self.assertEqual(reason, "derived_empty")
+
+        prefer2, reason2 = service._select_canonical_translation_source("body content here", "tiny")
+        self.assertFalse(prefer2)
+        self.assertEqual(reason2, "derived_empty")
+
+    # R9 — body_text empty → True
+    def test_select_canonical_source_body_empty_returns_true(self):
+        """Empty body_text forces derived source selection (provided substance check passes)."""
+        derived = "Substantial derived content here for translation purposes."  # >= 50 chars
+        prefer, reason = service._select_canonical_translation_source("", derived)
+        self.assertTrue(prefer)
+        self.assertEqual(reason, "body_text_empty")
+
+    # R10 — enrichment adds missing URL
+    def test_enrich_adds_missing_meaningful_url(self):
+        """URL present in derived source but absent from body_text is appended."""
+        body = "Edge Functions v2 is now available."
+        derived = "Edge Functions v2 (https://supabase.com/blog/edge-functions-v2) is now available."
+        enriched = service._enrich_body_text_with_assists(body, derived)
+        self.assertIn("https://supabase.com/blog/edge-functions-v2", enriched)
+        # Original body must remain at the start
+        self.assertTrue(enriched.startswith(body.rstrip()))
+
+    # R11 — enrichment does NOT add URL from footer-context line
+    def test_enrich_does_not_add_footer_context_url(self):
+        """URL on a line containing footer/unsubscribe signals is not injected."""
+        body = "Main content here."
+        derived = (
+            "Main content here.\n\n"
+            "Unsubscribe here: https://example.com/unsubscribe"
+        )
+        enriched = service._enrich_body_text_with_assists(body, derived)
+        self.assertNotIn("https://example.com/unsubscribe", enriched)
+
+    # R12 — enrichment does NOT add duplicate URL
+    def test_enrich_does_not_add_url_already_in_body(self):
+        """URL already present in body_text is not duplicated by enrichment."""
+        body = "See https://supabase.com/blog/edge-functions-v2 for details."
+        derived = "Edge Functions v2 (https://supabase.com/blog/edge-functions-v2) is out."
+        enriched = service._enrich_body_text_with_assists(body, derived)
+        self.assertEqual(enriched.count("https://supabase.com/blog/edge-functions-v2"), 1)
+
+    # R13 — footer tail is cut when >= 3 signals in last 35%
+    def test_trim_footer_tail_cuts_when_enough_signals(self):
+        """_trim_footer_tail removes the footer region when >= 3 signals appear in last 35%."""
+        content = (
+            "Edge Functions v2 is now available.\n\n"
+            "Faster cold starts, Node.js compat, and native npm support.\n\n"
+            "Redesigned SQL editor with autocomplete and improved table editor.\n\n"
+            "Dashboard improvements are live now.\n\n"
+            "Many teams have already migrated.\n\n"
+            "We are excited about these changes.\n\n"
+            "The future looks bright for serverless.\n\n"
+        )
+        footer = (
+            "Unsubscribe from this newsletter.\n"
+            "Follow us on Twitter and LinkedIn.\n"
+            "Privacy Policy | Terms of Service\n"
+            "Copyright 2026 Supabase Inc. All rights reserved.\n"
+        )
+        text = content + footer
+        result = service._trim_footer_tail(text)
+        self.assertNotIn("Unsubscribe", result)
+        self.assertNotIn("Follow us", result)
+        self.assertNotIn("Copyright 2026", result)
+        self.assertIn("Edge Functions", result)
+
+    # R14 — no cut when footer signals < 3
+    def test_trim_footer_tail_no_cut_when_few_signals(self):
+        """_trim_footer_tail leaves text unchanged when fewer than 3 footer signals in tail."""
+        text = (
+            "Content line one.\n"
+            "Content line two.\n"
+            "Content line three.\n"
+            "Content line four.\n"
+            "Unsubscribe.\n"
+            "More content five.\n"
+            "More content six.\n"
+        )
+        result = service._trim_footer_tail(text)
+        self.assertEqual(result, text)
+
+    # R15 — no cut when head would be < 200 chars
+    def test_trim_footer_tail_no_cut_when_head_too_short(self):
+        """_trim_footer_tail leaves text unchanged when remaining head < 200 chars."""
+        short_head = "Short head.\n"
+        footer = (
+            "Unsubscribe here.\n"
+            "Follow us on Twitter.\n"
+            "Privacy Policy applies.\n"
+            "Copyright 2026 Inc.\n"
+        )
+        text = short_head + footer
+        result = service._trim_footer_tail(text)
+        # head would be < 200 chars so no cut
+        self.assertEqual(result, text)
+
+    # R16 — dedup preserves canonical order and removes duplicates
+    def test_dedup_repeated_blocks_removes_duplicates_preserves_order(self):
+        """Duplicate paragraph blocks are removed; first canonical occurrence is kept."""
+        para_a = "Edge Functions v2 is now available."
+        para_b = "Dashboard improvements are live."
+        text = f"{para_a}\n\n{para_b}\n\n{para_a}"
+        result = service._dedup_repeated_blocks(text)
+        self.assertIn(para_a, result)
+        self.assertIn(para_b, result)
+        # Should appear only once
+        self.assertEqual(result.count(para_a), 1)
+        # para_a must come before para_b (canonical order)
+        self.assertLess(result.index(para_a), result.index(para_b))
+
+    # R17 — no duplicates: text unchanged
+    def test_dedup_repeated_blocks_no_change_when_no_duplicates(self):
+        """Text with no duplicate paragraphs is returned unchanged (content-wise)."""
+        text = "Paragraph one.\n\nParagraph two.\n\nParagraph three."
+        result = service._dedup_repeated_blocks(text)
+        self.assertIn("Paragraph one.", result)
+        self.assertIn("Paragraph two.", result)
+        self.assertIn("Paragraph three.", result)
+        self.assertEqual(len(result.split("\n\n")), 3)
+
+
+class TestCanonicalSourceSelectionRouteLevel(unittest.IsolatedAsyncioTestCase):
+    """
+    Route-level async proofs for Section R (R18–R20).
+    Requires BS4 for R18/R19 (skipped if unavailable).
+    """
+
+    def _skip_if_no_bs4(self):
+        if not service._BS4_AVAILABLE:
+            self.skipTest("BeautifulSoup4 not available")
+
+    # R18 — Supabase-like fixture: canonical body_text preferred over noisy derived HTML
+    async def test_route_prefers_canonical_body_text_over_noisy_derived_html(self):
+        """Runtime-like Supabase newsletter fixture:
+        - canonical body_text is clean and ordered (0 noise)
+        - derived HTML source is footer-contaminated (high noise)
+        - route must choose the canonical body_text path
+
+        The translation prompt must contain the canonical body_text
+        and must NOT be replaced by the noisy derived source content.
+        """
+        self._skip_if_no_bs4()
+
+        # HTML is preflight-degraded (>30000 chars with padding)
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"{_R_SUPABASE_LIKE_CONTENT_HTML[:-7]}{padding}</body></html>"
+
+        # Canonical plain-text body — clean, ordered, no footer noise.
+        canonical_body = _R_SUPABASE_CANONICAL_BODY_TEXT
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        captured_prompts: list = []
+
+        async def _capture(*, prompt, **kwargs):
+            captured_prompts.append(prompt)
+            return "translated output"
+
+        mock_engine.generate_text_async = _capture
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=canonical_body),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=canonical_body),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_mode"], "text_fallback")
+        self.assertEqual(result["translation_fidelity"], "simplified")
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+
+        combined = "\n".join(captured_prompts)
+        # Canonical body content must be in the translation prompt
+        self.assertIn("Edge Functions v2", combined)
+        self.assertIn("Dashboard improvements", combined)
+        # Footer noise must NOT be in the translation prompt
+        self.assertNotIn("Unsubscribe", combined)
+        self.assertNotIn("Copyright 2026", combined)
+        self.assertNotIn("Follow us on Twitter", combined)
+
+    # R19 — footer tail and repeated-block dedup applied for preflight-degraded output
+    async def test_route_applies_trim_and_dedup_for_preflight_degraded(self):
+        """_trim_footer_tail and _dedup_repeated_blocks are applied to the
+        translated output for the structured_preflight_degraded path."""
+        # Simple rich HTML (preflight-degraded by size)
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body><p>Content.</p>{padding}</body></html>"
+        body_text = "Canonical body."
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+
+        # Translation output with a duplicated paragraph and a footer tail
+        noisy_translation = (
+            "Translated content A.\n\n"
+            "Translated content B.\n\n"
+            "Translated content A.\n\n"  # duplicate — must be removed
+            "Translated content C.\n\n"
+            "Translated content D.\n\n"
+            "Translated content E.\n\n"
+            "Translated content F.\n\n"
+            "Se désabonner de cette liste.\n"       # footer signal 1
+            "Nous suivre sur Twitter et LinkedIn.\n"  # footer signal 2
+            "Politique de confidentialité | CGU\n"   # footer signal 3 (CGU = terms)
+            "Copyright 2026 Inc.\n"
+        )
+
+        mock_engine.generate_text_async = AsyncMock(return_value=noisy_translation)
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            # Patch _trim_footer_tail and _dedup_repeated_blocks to assert they are called
+            trim_spy = stack.enter_context(patch.object(
+                service, '_trim_footer_tail', wraps=service._trim_footer_tail,
+            ))
+            dedup_spy = stack.enter_context(patch.object(
+                service, '_dedup_repeated_blocks', wraps=service._dedup_repeated_blocks,
+            ))
+
+            await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        trim_spy.assert_called_once()
+        dedup_spy.assert_called_once()
+
+    # R20 — structured-success is entirely unaffected
+    async def test_route_structured_success_unaffected_by_canonical_selection(self):
+        """structured_success path must not call _select_canonical_translation_source,
+        _trim_footer_tail, or _dedup_repeated_blocks."""
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            stack.enter_context(patch.object(
+                service, '_attempt_structured_html_translation',
+                return_value=(_FAKE_TRANSLATED_HTML, "structured_success"),
+            ))
+            mock_select = stack.enter_context(patch.object(
+                service, '_select_canonical_translation_source',
+            ))
+            mock_trim = stack.enter_context(patch.object(
+                service, '_trim_footer_tail',
+            ))
+            mock_dedup = stack.enter_context(patch.object(
+                service, '_dedup_repeated_blocks',
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_mode"], "structured_html")
+        self.assertEqual(result["translation_reason_code"], "structured_success")
+        mock_select.assert_not_called()
+        mock_trim.assert_not_called()
+        mock_dedup.assert_not_called()
 
 
 if __name__ == "__main__":
