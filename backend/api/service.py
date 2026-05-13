@@ -2997,6 +2997,12 @@ _PREFLIGHT_MAX_TABLE_COUNT = 5       # <table elements (layout complexity)
 #   - Decision is based solely on engine.count_tokens(), covering all scripts
 _FALLBACK_CHUNK_TOKEN_THRESHOLD = 1_500   # tokens above which chunking is used
 _FALLBACK_CHUNK_MAX_TOKENS = 800          # target max tokens per individual chunk
+# Rate-limit resilience for chunked translation.
+# Per-chunk bounded retry on provider 429 / rate-limit errors with exponential backoff.
+# Delays: attempt 0→1: 1 s; attempt 1→2: 2 s.  Total extra wait ≤ 3 s per chunk.
+# A small inter-chunk pause reduces burst rate-limit probability on dense chunks.
+_CHUNK_RATE_LIMIT_MAX_RETRIES = 2  # max additional attempts per chunk on provider 429
+_CHUNK_INTER_DELAY_S = 0.2         # inter-chunk pause (s) to reduce burst rate-limit risk
 
 
 def _is_html_preflight_degraded(body_html: str) -> bool:
@@ -3277,6 +3283,24 @@ def _split_text_into_translation_chunks(body_text: str, engine) -> List[str]:
     return chunks if chunks else [body_text]
 
 
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """
+    Deterministic check: True when exc signals a provider rate-limit (HTTP 429).
+
+    Inspects the stringified exception for signals emitted by the engine wrapper
+    (MistralEngine.generate_text_async raises RuntimeError whose message contains
+    the HTTP status code or "Too Many Requests" / "rate limit" text).
+    Conservative: only returns True for known 429-class signals.
+    """
+    msg = str(exc).lower()
+    return (
+        "429" in msg
+        or "too many requests" in msg
+        or "rate limit" in msg
+        or "rate_limit" in msg
+    )
+
+
 async def _translate_text_chunks_async(
     chunks: List[str],
     target_language: str,
@@ -3291,21 +3315,37 @@ async def _translate_text_chunks_async(
     its own bounded max_tokens estimate so no single call overshoots the
     model's safe output window.
 
+    Rate-limit resilience: each chunk is retried up to _CHUNK_RATE_LIMIT_MAX_RETRIES
+    times on provider 429 / rate-limit errors with bounded exponential backoff
+    (1 s, 2 s).  Non-rate-limit exceptions propagate immediately without retry.
+    A small inter-chunk pause (_CHUNK_INTER_DELAY_S) reduces burst rate-limit risk.
+
     Returns a single paragraph-spaced string with empty parts filtered out.
     """
     translated_parts: List[str] = []
-    for chunk in chunks:
+    for chunk_idx, chunk in enumerate(chunks):
         estimated_tokens = max(256, min(2048, engine.count_tokens(chunk) + 128))
-        translated_chunk = await engine.generate_text_async(
-            prompt=(
-                f"Target language: {target_language}\n\n"
-                f"Email body:\n{chunk}"
-            ),
-            max_tokens=estimated_tokens,
-            temperature=0.2,
-            system_prompt=system_prompt,
-        )
+        translated_chunk: Optional[str] = None
+        for attempt in range(_CHUNK_RATE_LIMIT_MAX_RETRIES + 1):
+            try:
+                translated_chunk = await engine.generate_text_async(
+                    prompt=(
+                        f"Target language: {target_language}\n\n"
+                        f"Email body:\n{chunk}"
+                    ),
+                    max_tokens=estimated_tokens,
+                    temperature=0.2,
+                    system_prompt=system_prompt,
+                )
+                break
+            except Exception as exc:
+                if _is_rate_limit_error(exc) and attempt < _CHUNK_RATE_LIMIT_MAX_RETRIES:
+                    await asyncio.sleep(2.0 ** attempt)
+                else:
+                    raise
         translated_parts.append((translated_chunk or "").strip())
+        if chunk_idx < len(chunks) - 1:
+            await asyncio.sleep(_CHUNK_INTER_DELAY_S)
 
     return "\n\n".join(p for p in translated_parts if p)
 
@@ -3720,6 +3760,38 @@ def _dedup_repeated_blocks(text: str) -> str:
             seen.add(key)
             unique.append(stripped)
     return "\n\n".join(unique)
+
+
+def _normalize_canonical_body_pre_translation(text: str) -> str:
+    """
+    Conservative pre-translation normalization of canonical plain-text body.
+
+    Applied in the structured_preflight_degraded lane BEFORE source selection
+    and translation so that footer/social/unsubscribe tail and link-cloud
+    residue are removed from the canonical candidate before it enters the
+    chunk-size decision and translation prompt.
+
+    Steps applied in order (each is conservative and a no-op when not triggered):
+      1. Footer-tail trim — cuts obvious footer/social/unsubscribe tail via
+         the same bounded heuristic as _trim_footer_tail (>= 3 signals in the
+         last 35% of lines; retained head >= 200 chars).
+      2. Link-cloud collapse — removes lines that consist entirely of bare URLs
+         (social icon / button clusters invisible in plain-text clients).
+      3. Blank-line normalization — collapses runs of 3+ blank lines to one.
+      4. Repeated-block dedup — removes duplicate paragraphs via fingerprint match.
+
+    Preserves legitimate newsletter sections (announcements, highlights, jobs)
+    because they do not match footer-signal or link-cloud patterns.
+    Returns the original text unchanged when it is empty or already clean.
+    """
+    if not text:
+        return text
+    text = _trim_footer_tail(text)
+    lines = text.splitlines()
+    cleaned = [ln for ln in lines if not (ln.strip() and _LINK_CLOUD_LINE_RE.match(ln))]
+    text = _MULTI_BLANK_LINE_RE.sub("\n\n", "\n".join(cleaned)).strip()
+    text = _dedup_repeated_blocks(text)
+    return text
 
 
 def _derive_plain_text_from_html(html: str) -> str:
@@ -4248,14 +4320,18 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
             )
             translation_reason_code = "structured_preflight_degraded"
             _protected_source, _placeholder_map = _derive_protected_fallback_source(body_html)
+            # Normalize canonical body before source selection to remove footer/noise
+            # so both the source comparison and the translation prompt use the cleaned body.
+            _normalized_body_text = _normalize_canonical_body_pre_translation(body_text)
             _prefer_derived, _src_reason = _select_canonical_translation_source(
-                body_text, _protected_source
+                _normalized_body_text, _protected_source
             )
             if _prefer_derived:
                 body_text = _protected_source
                 _use_protected_source = True
             else:
-                # body_text is canonical: enrich with any meaningful URLs from HTML.
+                # Normalized canonical body wins: use it as the translation input.
+                body_text = _normalized_body_text
                 _simplified_assist = _derive_simplified_fallback_source(body_html)
                 body_text = _enrich_body_text_with_assists(body_text, _simplified_assist)
         else:

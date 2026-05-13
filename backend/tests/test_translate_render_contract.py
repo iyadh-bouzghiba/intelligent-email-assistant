@@ -259,6 +259,40 @@ Deterministic proof for the translate-render contract covering:
     R20. route: structured-success unaffected by new source-selection and
          post-processing logic
 
+  Section S — Pre-translation canonical body normalization + rate-limit-aware
+              chunk retry (P3.5-R3F-R2):
+
+    Helper unit tests (sync):
+    Sh1. _normalize_canonical_body_pre_translation: noisy Supabase-shaped body with
+         footer/social/link-cloud tail → output materially smaller; footer absent;
+         meaningful content sections preserved
+    Sh2. _normalize_canonical_body_pre_translation: clean body returns content
+         unchanged (no meaningful content loss)
+    Sh3. _normalize_canonical_body_pre_translation: link-cloud lines (URL-only
+         clusters) removed; surrounding content preserved
+    Sh4. _is_rate_limit_error: "429" in exception message → True
+    Sh5. _is_rate_limit_error: "Too Many Requests" in exception message → True
+    Sh6. _is_rate_limit_error: "rate limit" in exception message → True
+    Sh7. _is_rate_limit_error: generic RuntimeError / TimeoutError / ValueError → False
+
+    Helper unit tests (async):
+    Sh8. _translate_text_chunks_async: first chunk call raises 429, second call
+         succeeds — exactly 2 engine calls, result is correct
+    Sh9. _translate_text_chunks_async: non-rate-limit RuntimeError propagates
+         immediately — exactly 1 engine call, no retry
+    Sh10. _translate_text_chunks_async: 429 persists through all retries — raises
+          after _CHUNK_RATE_LIMIT_MAX_RETRIES + 1 total attempts
+
+    Route-level tests:
+    S1.  route: pre-translation normalization applied in preflight-degraded path;
+         footer content NOT in translation prompt after normalization
+    S2.  route: Supabase production-shaped body (noisy footer/link-cloud tail);
+         _normalize_canonical_body_pre_translation called and reduces body size;
+         footer not leaked into prompt; contract fields correct
+    S3.  route: chunked preflight-degraded path retries on provider 429 and
+         succeeds when retry succeeds; exactly 2 engine calls
+    S4.  route: structured-success path is entirely unaffected by pre-normalization
+
 All I/O and model calls are replaced with deterministic mocks.
 No live network, no Mistral API key, no Supabase connection required.
 
@@ -4086,8 +4120,12 @@ class TestCanonicalSourceSelectionRouteLevel(unittest.IsolatedAsyncioTestCase):
                 TranslateRenderRequest(target_language="fr"),
             )
 
-        trim_spy.assert_called_once()
-        dedup_spy.assert_called_once()
+        # Since P3.5-R3F-R2 added pre-translation normalization, _trim_footer_tail and
+        # _dedup_repeated_blocks are called at least once pre-translation (via
+        # _normalize_canonical_body_pre_translation) and at least once post-translation
+        # (existing cleanup step).  Assert called at least once each.
+        trim_spy.assert_called()
+        dedup_spy.assert_called()
 
     # R20 — structured-success is entirely unaffected
     async def test_route_structured_success_unaffected_by_canonical_selection(self):
@@ -4133,6 +4171,371 @@ class TestCanonicalSourceSelectionRouteLevel(unittest.IsolatedAsyncioTestCase):
         mock_select.assert_not_called()
         mock_trim.assert_not_called()
         mock_dedup.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Section S fixtures — Pre-translation normalization + rate-limit chunk retry
+# (P3.5-R3F-R2)
+# ---------------------------------------------------------------------------
+
+# Noisy Supabase-shaped body: meaningful content followed by social link-cloud
+# lines and an obvious footer/unsubscribe tail.  Mirrors the production shape
+# reported in the runtime blocker (body_chars=17 779 before normalization).
+_S_SUPABASE_NOISY_BODY_TEXT = (
+    "What's new in Supabase\n\n"
+    "This week we shipped Edge Functions v2, improved the dashboard, "
+    "and published a new tutorial on Row Level Security.\n\n"
+    "Edge Functions v2\n\n"
+    "Faster cold starts, Node.js compat, and native npm support.\n\n"
+    "Dashboard improvements\n\n"
+    "Redesigned SQL editor with autocomplete and improved table editor.\n\n"
+    "Community Highlights\n\n"
+    "Hundreds of projects migrated to the new auth system this month.\n\n"
+    "Jobs at Supabase\n\n"
+    "We are hiring engineers across multiple teams worldwide.\n\n"
+    # Link-cloud lines (social icon clusters — URL-only, no surrounding prose)
+    "https://twitter.com/supabase https://linkedin.com/company/supabase\n"
+    "https://github.com/supabase https://discord.gg/supabase\n\n"
+    # Footer / social / unsubscribe tail
+    "Unsubscribe from this newsletter.\n"
+    "Follow us on Twitter and LinkedIn.\n"
+    "Privacy Policy | Terms of Service\n"
+    "Copyright 2026 Supabase Inc. All rights reserved.\n"
+    "Supabase Inc. 970 Toa Payoh North, Singapore 318992\n"
+)
+
+
+class TestPreTranslationNormalization(unittest.TestCase):
+    """
+    Section S (Sh1–Sh7): Pre-translation canonical body normalization and
+    rate-limit error detection helpers — all synchronous unit tests.
+    """
+
+    # Sh1 — noisy body materially smaller/cleaner after normalization
+    def test_normalize_reduces_noisy_body_and_removes_footer(self):
+        """Noisy Supabase-shaped body: footer and link-cloud removed; content preserved."""
+        result = service._normalize_canonical_body_pre_translation(_S_SUPABASE_NOISY_BODY_TEXT)
+        self.assertLess(len(result), len(_S_SUPABASE_NOISY_BODY_TEXT))
+        self.assertNotIn("Unsubscribe", result)
+        self.assertNotIn("Copyright 2026", result)
+        self.assertNotIn("Follow us", result)
+        self.assertNotIn(
+            "https://twitter.com/supabase https://linkedin.com/company/supabase",
+            result,
+        )
+        # Meaningful content sections must be preserved
+        self.assertIn("Edge Functions v2", result)
+        self.assertIn("Dashboard improvements", result)
+        self.assertIn("Community Highlights", result)
+        self.assertIn("Jobs at Supabase", result)
+
+    # Sh2 — clean body: content preserved
+    def test_normalize_clean_body_preserves_content(self):
+        """Clean Supabase body with no footer noise: meaningful content preserved."""
+        clean = _R_SUPABASE_CANONICAL_BODY_TEXT
+        result = service._normalize_canonical_body_pre_translation(clean)
+        self.assertIn("Edge Functions v2", result)
+        self.assertIn("Dashboard improvements", result)
+
+    # Sh3 — link-cloud lines specifically removed
+    def test_normalize_removes_link_cloud_lines(self):
+        """Lines consisting only of bare URLs (social clusters) are removed."""
+        body = (
+            "Main content paragraph.\n\n"
+            "https://example.com/a https://example.com/b\n"
+            "https://example.com/c https://example.com/d\n\n"
+            "Closing paragraph."
+        )
+        result = service._normalize_canonical_body_pre_translation(body)
+        self.assertNotIn("https://example.com/a https://example.com/b", result)
+        self.assertIn("Main content paragraph.", result)
+        self.assertIn("Closing paragraph.", result)
+
+    # Sh4 — _is_rate_limit_error: "429" in message
+    def test_is_rate_limit_error_429_signal(self):
+        self.assertTrue(service._is_rate_limit_error(RuntimeError("HTTP 429 Too Many Requests")))
+        self.assertTrue(service._is_rate_limit_error(RuntimeError("status code 429")))
+
+    # Sh5 — _is_rate_limit_error: "Too Many Requests"
+    def test_is_rate_limit_error_too_many_requests(self):
+        self.assertTrue(service._is_rate_limit_error(RuntimeError("Too Many Requests")))
+
+    # Sh6 — _is_rate_limit_error: "rate limit" / "rate_limit"
+    def test_is_rate_limit_error_rate_limit_text(self):
+        self.assertTrue(service._is_rate_limit_error(RuntimeError("upstream rate limit exceeded")))
+        self.assertTrue(service._is_rate_limit_error(RuntimeError("rate_limit error from provider")))
+
+    # Sh7 — _is_rate_limit_error: generic errors → False
+    def test_is_rate_limit_error_generic_false(self):
+        self.assertFalse(service._is_rate_limit_error(RuntimeError("upstream API error")))
+        self.assertFalse(service._is_rate_limit_error(TimeoutError("request timed out")))
+        self.assertFalse(service._is_rate_limit_error(ValueError("invalid API key")))
+
+
+class TestRateLimitAwareChunkRetry(unittest.IsolatedAsyncioTestCase):
+    """
+    Section S (Sh8–Sh10): Rate-limit-aware chunk retry in _translate_text_chunks_async.
+    asyncio.sleep is patched so tests run without wall-clock delays.
+    """
+
+    # Sh8 — first call 429, succeeds on retry
+    async def test_chunk_retries_on_rate_limit_and_succeeds(self):
+        """Single chunk: first call raises 429, second call succeeds — 2 engine calls total."""
+        calls: list = []
+
+        async def _flaky(*, prompt, **kwargs):
+            calls.append(prompt)
+            if len(calls) == 1:
+                raise RuntimeError("HTTP 429 Too Many Requests")
+            return "translated chunk"
+
+        engine = MagicMock()
+        engine.count_tokens.return_value = 10
+        engine.generate_text_async = _flaky
+
+        with patch("asyncio.sleep", new=AsyncMock()):
+            result = await service._translate_text_chunks_async(
+                ["chunk one"], "fr", engine, "system prompt"
+            )
+
+        self.assertEqual(result, "translated chunk")
+        self.assertEqual(len(calls), 2)
+
+    # Sh9 — non-rate-limit exception propagates immediately, no retry
+    async def test_chunk_non_rate_limit_exception_not_retried(self):
+        """Non-429 RuntimeError propagates immediately — exactly 1 engine call."""
+        calls: list = []
+
+        async def _fail(*, prompt, **kwargs):
+            calls.append(1)
+            raise RuntimeError("upstream API error")
+
+        engine = MagicMock()
+        engine.count_tokens.return_value = 10
+        engine.generate_text_async = _fail
+
+        with self.assertRaises(RuntimeError):
+            await service._translate_text_chunks_async(
+                ["chunk one"], "fr", engine, "system prompt"
+            )
+        self.assertEqual(len(calls), 1)
+
+    # Sh10 — 429 persists all retries → raises after max total attempts
+    async def test_chunk_rate_limit_exhausted_raises_after_max_retries(self):
+        """429 on every attempt: raises after _CHUNK_RATE_LIMIT_MAX_RETRIES + 1 total calls."""
+        calls: list = []
+
+        async def _always_429(*, prompt, **kwargs):
+            calls.append(1)
+            raise RuntimeError("HTTP 429 Too Many Requests")
+
+        engine = MagicMock()
+        engine.count_tokens.return_value = 10
+        engine.generate_text_async = _always_429
+
+        with patch("asyncio.sleep", new=AsyncMock()):
+            with self.assertRaises(RuntimeError):
+                await service._translate_text_chunks_async(
+                    ["chunk one"], "fr", engine, "system prompt"
+                )
+        self.assertEqual(len(calls), service._CHUNK_RATE_LIMIT_MAX_RETRIES + 1)
+
+
+class TestPreNormalizationRouteLevel(unittest.IsolatedAsyncioTestCase):
+    """
+    Section S route-level proofs (S1–S4) for P3.5-R3F-R2.
+    """
+
+    # S1 — pre-translation normalization excludes footer from translation prompt
+    async def test_route_normalization_excludes_footer_from_prompt(self):
+        """Noisy body_text: after pre-translation normalization, footer tail is NOT
+        included in the translation prompt even when canonical body wins source selection."""
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body><p>Content.</p>{padding}</body></html>"
+
+        captured_prompts: list = []
+
+        async def _capture(*, prompt, **kwargs):
+            captured_prompts.append(prompt)
+            return "translated"
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10  # below chunk threshold → single call
+        mock_engine.generate_text_async = _capture
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=_S_SUPABASE_NOISY_BODY_TEXT),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(
+                    body_html=rich_html,
+                    body_text=_S_SUPABASE_NOISY_BODY_TEXT,
+                ),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+        combined = "\n".join(captured_prompts)
+        # Meaningful content must reach the translation prompt
+        self.assertIn("Edge Functions v2", combined)
+        # Footer noise must NOT appear in the prompt after pre-normalization
+        self.assertNotIn("Unsubscribe", combined)
+        self.assertNotIn("Copyright 2026", combined)
+
+    # S2 — Supabase production-shaped body: normalization reduces size + success
+    async def test_route_supabase_production_shape_normalization_and_success(self):
+        """Supabase-shaped noisy body: pre-normalization reduces body size before translation,
+        footer not leaked into prompt, route contract fields correct."""
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = (
+            "<html><body>"
+            "<h1>What's new in Supabase</h1>"
+            f"{padding}"
+            "</body></html>"
+        )
+
+        normalized_sizes: list = []
+        captured_prompts: list = []
+        original_normalize = service._normalize_canonical_body_pre_translation
+
+        def _spy_normalize(text):
+            result = original_normalize(text)
+            normalized_sizes.append(len(result))
+            return result
+
+        async def _capture_translate(*, prompt, **kwargs):
+            captured_prompts.append(prompt)
+            return "translated content"
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        mock_engine.generate_text_async = _capture_translate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=_S_SUPABASE_NOISY_BODY_TEXT),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(
+                    body_html=rich_html,
+                    body_text=_S_SUPABASE_NOISY_BODY_TEXT,
+                ),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+            stack.enter_context(patch.object(
+                service, '_normalize_canonical_body_pre_translation',
+                side_effect=_spy_normalize,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_mode"], "text_fallback")
+        self.assertEqual(result["translation_fidelity"], "simplified")
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+        # Normalization must have been called and must have reduced body size
+        self.assertTrue(normalized_sizes, "_normalize_canonical_body_pre_translation not called")
+        self.assertLess(normalized_sizes[0], len(_S_SUPABASE_NOISY_BODY_TEXT))
+        # Footer tail must not appear in any translation prompt
+        combined = "\n".join(captured_prompts)
+        self.assertNotIn("Unsubscribe", combined)
+        self.assertNotIn("Copyright 2026", combined)
+
+    # S3 — chunked path retries 429 at route level and succeeds
+    async def test_route_chunked_path_retries_on_provider_429(self):
+        """Preflight-degraded chunked path: first chunk call raises 429, retry succeeds.
+        Route returns correct contract; exactly 2 engine calls recorded."""
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body><p>Content.</p>{padding}</body></html>"
+        body_text = "Paragraph one.\n\nParagraph two."
+
+        call_count = 0
+
+        async def _flaky(*, prompt, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("HTTP 429 Too Many Requests")
+            return "translated"
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        mock_engine.generate_text_async = _flaky
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+            # Force the chunked path with a single chunk for determinism
+            stack.enter_context(patch.object(
+                service, '_should_chunk_fallback_translation', return_value=True,
+            ))
+            stack.enter_context(patch.object(
+                service, '_split_text_into_translation_chunks', return_value=["chunk one"],
+            ))
+            stack.enter_context(patch("asyncio.sleep", new=AsyncMock()))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_mode"], "text_fallback")
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+        self.assertEqual(call_count, 2)  # one rate-limit failure + one successful retry
+
+    # S4 — structured-success is entirely unaffected by pre-normalization
+    async def test_route_structured_success_unaffected_by_pre_normalization(self):
+        """structured_success path must not call _normalize_canonical_body_pre_translation."""
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id', return_value=_make_record(),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload', return_value=_make_payload(),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+            stack.enter_context(patch.object(
+                service, '_attempt_structured_html_translation',
+                return_value=(_FAKE_TRANSLATED_HTML, "structured_success"),
+            ))
+            mock_normalize = stack.enter_context(patch.object(
+                service, '_normalize_canonical_body_pre_translation',
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_mode"], "structured_html")
+        self.assertEqual(result["translation_reason_code"], "structured_success")
+        mock_normalize.assert_not_called()
 
 
 if __name__ == "__main__":
