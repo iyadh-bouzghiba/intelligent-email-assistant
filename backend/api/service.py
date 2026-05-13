@@ -2865,8 +2865,19 @@ def _get_preferences_store() -> SupabaseStore:
     return SupabaseStore()
 
 
-def _build_translation_system_prompt(target_language: str) -> str:
+def _build_translation_system_prompt(
+    target_language: str,
+    protected_tokens: Optional[List[str]] = None,
+) -> str:
     target_label = SUPPORTED_LANGUAGES[target_language]["label"]
+    protected_rule = ""
+    if protected_tokens:
+        token_list = " ".join(protected_tokens)
+        protected_rule = (
+            f"\n- Preserve ALL placeholder tokens of the form [[PROT_N]] EXACTLY as-is "
+            f"without any modification, translation, or removal. "
+            f"Current tokens: {token_list}"
+        )
     return (
         "You are a professional email translator.\n\n"
         f"Translate the provided email body into {target_label}.\n\n"
@@ -2877,7 +2888,7 @@ def _build_translation_system_prompt(target_language: str) -> str:
         "- Preserve names, email addresses, URLs, phone numbers, dates, times, codes, "
         "and reference numbers exactly unless ordinary surrounding prose requires inflection.\n"
         "- Preserve the professional tone and intent faithfully.\n"
-        "- Translate body content only."
+        f"- Translate body content only.{protected_rule}"
     )
 
 
@@ -2908,6 +2919,36 @@ _HIDDEN_CLASS_ID_PATTERN = re.compile(r"\bpreheader\b", re.IGNORECASE)
 
 # For collapsing excessive blank lines in derived plain text.
 _MULTI_BLANK_LINE_RE = re.compile(r"\n{3,}")
+
+# Placeholder token pattern used in the protected-token derivation path.
+# Tokens of the form [[PROT_N]] stand for protected visible content that must
+# not be translated.  The double-bracket prefix is rare in email prose and
+# makes the instruction to the model unambiguous.
+_PROTECTED_PLACEHOLDER_RE = re.compile(r"\[\[PROT_\d+\]\]")
+
+# Class/ID fragments that identify footer/social/unsubscribe noise in rich HTML.
+# Used only in the preflight-degraded path to derive a cleaner fallback source.
+_SIMPLIFIED_NOISE_CLASS_ID_RE = re.compile(
+    r"\b(footer|social|unsubscribe|unsub|opt[-_]?out|"
+    r"view[-_]?(?:in[-_]?)?(?:browser|online)|"
+    r"mailing[-_]?address|copyright[-_]?notice|"
+    r"manage[-_]?(?:prefs?|preferences|subscriptions?))\b",
+    re.IGNORECASE,
+)
+
+# Preference guard thresholds for the simplified fallback source selection.
+# The derived source must be at least this many characters (substance check)
+# and must shrink the existing body by at least (1 - ratio) to be preferred.
+_SIMPLIFIED_SOURCE_MIN_CHARS = 50
+_SIMPLIFIED_SOURCE_MAX_RATIO = 0.9
+
+# Block-level HTML tags that receive blank-line separation in the simplified
+# source derivation so headings, paragraphs, and list items stay readable.
+# Div is intentionally excluded — too ubiquitous in email layouts.
+_BLOCK_TAGS_FOR_SIMPLIFIED_SOURCE = frozenset({
+    "p", "h1", "h2", "h3", "h4", "h5", "h6",
+    "li", "blockquote", "section", "article",
+})
 
 # Safety cap: fall back to text mode if there are more segments than this.
 # Prevents token explosion and validation fragility on dense HTML bodies.
@@ -3062,6 +3103,20 @@ def _token_verified_prefix_split(seg: str, engine) -> List[str]:
         # Clamp to at least 1 to guarantee progress even when a single
         # character tokenises above the budget (pathological but safe).
         cut = max(1, lo)
+
+        # Do not cut inside a [[PROT_N]] placeholder token.  The binary
+        # search operates on raw character positions and can land mid-token
+        # (e.g. splitting "[[PROT_0]]" into "[[PROT_" / "0]]").  Walk all
+        # placeholder spans in the current window; if the cut falls inside
+        # one, retract to the placeholder's start (keeping it whole in the
+        # next chunk).  Use _ps > 0 guard: if the placeholder starts at 0
+        # there is nowhere to retract — advance past the whole token instead.
+        for _m in _PROTECTED_PLACEHOLDER_RE.finditer(remaining):
+            _ps, _pe = _m.start(), _m.end()
+            if _ps < cut < _pe:
+                cut = _ps if _ps > 0 else _pe
+                break
+
         result.append(remaining[:cut])
         remaining = remaining[cut:]
 
@@ -3258,6 +3313,208 @@ def _is_hidden_element(element) -> bool:
     if elem_id and _HIDDEN_CLASS_ID_PATTERN.search(elem_id):
         return True
     return False
+
+
+def _is_noise_element_for_simplified_source(element) -> bool:
+    """
+    Conservative noise filter for the simplified fallback source derivation.
+    Flags elements with explicit footer/social/unsubscribe class or ID only.
+    """
+    if not hasattr(element, "get"):
+        return False
+    classes = element.get("class") or []
+    if isinstance(classes, str):
+        classes = classes.split()
+    if classes and _SIMPLIFIED_NOISE_CLASS_ID_RE.search(" ".join(classes)):
+        return True
+    elem_id = (element.get("id") or "").strip()
+    if elem_id and _SIMPLIFIED_NOISE_CLASS_ID_RE.search(elem_id):
+        return True
+    return False
+
+
+def _derive_fallback_source_impl(
+    body_html: str,
+    *,
+    protect_mode: bool,
+) -> Tuple[str, Dict[str, str]]:
+    """
+    Shared derivation engine for the simplified fallback source pipeline.
+
+    Both public helpers delegate here; the only behavioral difference is
+    controlled by protect_mode:
+
+      protect_mode=False  (unwrap mode)
+        Layer 3 unwraps translate="no" / class="notranslate" elements so
+        their visible text flows into the translation stream.  Useful when
+        the model should translate surrounding context and can see the
+        protected values verbatim.
+
+      protect_mode=True   (placeholder mode)
+        Layer 3 replaces each protected element with a [[PROT_N]] token and
+        records the original visible text in placeholder_map.  The map is
+        returned so the caller can restore the originals after translation.
+        When protect_mode=False the returned map is always {}.
+
+    Layers (applied in order):
+      1. Hidden/preheader elements (CSS hiding, mso-hide, preheader class/ID)
+         — decomposed.
+      2. Footer/social/unsubscribe containers (class/ID pattern match)
+         — decomposed.
+      3. Non-translatable markers (translate="no" / class="notranslate")
+         — unwrapped (unwrap mode) or token-replaced (placeholder mode).
+      4. Meaningful content-link destinations injected inline:
+           http/https -> "Label (https://...)"
+           mailto:    -> "Label (address@example.com)"
+           tel:       -> "Label (+123456789)"
+         Compact rule: label == destination omits the parenthetical.
+         Fragment (#) and href-less anchors become plain text.
+      5. Block-level elements surrounded by blank-line markers for readable
+         paragraph/heading separation.
+
+    Returns ("", {}) when BS4 is unavailable.
+    """
+    if not _BS4_AVAILABLE:
+        return "", {}
+    soup = _BeautifulSoup(body_html, "html.parser")
+    placeholder_map: Dict[str, str] = {}
+
+    # Layer 1: hidden / preheader
+    for tag in list(soup.find_all(True)):
+        if tag.parent is not None and _is_hidden_element(tag):
+            tag.decompose()
+
+    # Layer 2: footer / social / unsubscribe noise
+    for tag in list(soup.find_all(True)):
+        if tag.parent is not None and _is_noise_element_for_simplified_source(tag):
+            tag.decompose()
+
+    # Layer 3: non-translatable markers
+    for tag in list(soup.find_all(True)):
+        if tag.parent is None:
+            continue
+        is_protected = tag.get("translate") == "no"
+        if not is_protected:
+            classes = tag.get("class") or []
+            if isinstance(classes, str):
+                classes = classes.split()
+            is_protected = any(c.lower() == "notranslate" for c in classes)
+        if not is_protected:
+            continue
+        if protect_mode:
+            visible_text = tag.get_text(separator=" ", strip=True)
+            if visible_text:
+                token = f"[[PROT_{len(placeholder_map)}]]"
+                placeholder_map[token] = visible_text
+                tag.replace_with(token)
+            else:
+                tag.decompose()
+        else:
+            tag.unwrap()
+
+    # Layer 4: inject content-link destinations inline
+    for a_tag in list(soup.find_all("a")):
+        if a_tag.parent is None:
+            continue
+        href = str(a_tag.get("href") or "").strip()
+        label = a_tag.get_text(strip=True)
+        if not label:
+            continue
+        if href.startswith(("http://", "https://")):
+            dest = href
+            a_tag.replace_with(label if label == dest else f"{label} ({dest})")
+        elif href.startswith("mailto:"):
+            dest = href[len("mailto:"):].split("?")[0].strip()
+            a_tag.replace_with(label if label == dest else f"{label} ({dest})")
+        elif href.startswith("tel:"):
+            dest = href[len("tel:"):].strip()
+            a_tag.replace_with(label if label == dest else f"{label} ({dest})")
+
+    # Layer 5: blank-line markers around block elements
+    for tag in list(soup.find_all(list(_BLOCK_TAGS_FOR_SIMPLIFIED_SOURCE))):
+        if tag.parent is not None:
+            tag.insert_before("\n\n")
+            tag.insert_after("\n\n")
+
+    raw = soup.get_text(separator="\n")
+    lines = [line.rstrip() for line in raw.splitlines()]
+    normalized = _MULTI_BLANK_LINE_RE.sub("\n\n", "\n".join(lines))
+    return normalized.strip(), placeholder_map
+
+
+def _derive_simplified_fallback_source(body_html: str) -> str:
+    """
+    Derive clean visible-order plain-text source from rich HTML (unwrap mode).
+
+    Protected elements (translate="no" / class="notranslate") are unwrapped
+    so their visible text flows into the translation stream.  All other
+    suppression, link-annotation, and structure layers are applied identically
+    to _derive_protected_fallback_source.
+
+    Returns "" when BS4 is unavailable or extraction yields nothing.
+    """
+    result, _ = _derive_fallback_source_impl(body_html, protect_mode=False)
+    return result
+
+
+def _derive_protected_fallback_source(
+    body_html: str,
+) -> Tuple[str, Dict[str, str]]:
+    """
+    Derive the simplified fallback source with placeholder-token substitution.
+
+    Protected elements (translate="no" / class="notranslate") are replaced
+    with deterministic [[PROT_N]] tokens; the original visible text is
+    returned in placeholder_map so it can be restored after translation via
+    _restore_protected_tokens.
+
+    Returns ("", {}) when BS4 is unavailable.
+    """
+    return _derive_fallback_source_impl(body_html, protect_mode=True)
+
+
+def _restore_protected_tokens(text: str, placeholder_map: Dict[str, str]) -> str:
+    """
+    Restore placeholder tokens inserted by _derive_protected_fallback_source.
+
+    For each [[PROT_N]] token in placeholder_map, replaces its occurrence in
+    text with the original visible content.
+
+    Conservative fallback: if a token is absent from text (the model dropped
+    it) or was mangled beyond simple string matching, the replacement is a
+    no-op — the translated text is returned as-is for that token.  This
+    avoids injecting protected content at an incorrect position.
+    """
+    for token, original in placeholder_map.items():
+        text = text.replace(token, original)
+    return text
+
+
+def _should_prefer_simplified_source(
+    existing_body_text: str, derived_source: str
+) -> bool:
+    """
+    Conservative guard: returns True only when the derived simplified source
+    is plausibly a better translation input than the existing body_text.
+
+    Two conditions must both hold:
+      1. Substance: derived_source has at least _SIMPLIFIED_SOURCE_MIN_CHARS
+         non-empty characters — trivially short extractions are rejected.
+      2. Compression: derived_source is shorter than
+         existing_body_text * _SIMPLIFIED_SOURCE_MAX_RATIO — the HTML
+         noise removal must have materially reduced the content, not
+         expanded it.  A derived source that is equal to or larger than
+         the existing body signals that extraction inflated rather than
+         cleaned the content.
+
+    Special case: when existing_body_text is empty the derived source
+    is always preferred (provided it passes the substance check).
+    """
+    if len(derived_source) < _SIMPLIFIED_SOURCE_MIN_CHARS:
+        return False
+    if not existing_body_text:
+        return True
+    return len(derived_source) < len(existing_body_text) * _SIMPLIFIED_SOURCE_MAX_RATIO
 
 
 def _derive_plain_text_from_html(html: str) -> str:
@@ -3769,19 +4026,26 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
     translation_reason_code = "text_fallback_used"
 
     body_html = (rendered_payload.get("body_html") or "").strip()
+    _payload_body_text = body_text  # original payload body_text before any substitution
+    _placeholder_map: Dict[str, str] = {}
+    _use_protected_source: bool = False
     if body_html:
         if _is_html_preflight_degraded(body_html):
             # HTML is clearly too large/rich for reliable structured translation.
             # Skip the expensive JSON path entirely and go straight to text fallback.
             logger.info(
                 "[TRANSLATE-RENDER] structured_preflight_degraded html_chars=%d "
-                "imgs=%d hrefs=%d tables=%d — routing directly to text fallback",
+                "imgs=%d hrefs=%d tables=%d -> routing directly to text fallback",
                 len(body_html),
                 body_html.lower().count("<img"),
                 body_html.lower().count("href="),
                 body_html.lower().count("<table"),
             )
             translation_reason_code = "structured_preflight_degraded"
+            _protected_source, _placeholder_map = _derive_protected_fallback_source(body_html)
+            if _should_prefer_simplified_source(body_text, _protected_source):
+                body_text = _protected_source
+                _use_protected_source = True
         else:
             try:
                 translated_body_html, html_reason_code = await _attempt_structured_html_translation(
@@ -3789,7 +4053,7 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
                 )
             except Exception as exc:
                 logger.warning(
-                    "[TRANSLATE-RENDER] Structured HTML attempt raised %s — falling back to text mode",
+                    "[TRANSLATE-RENDER] Structured HTML attempt raised %s -> falling back to text mode",
                     type(exc).__name__,
                 )
                 translated_body_html = None
@@ -3808,7 +4072,10 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
     translated_body_text: str
 
     if translation_mode == "text_fallback":
-        _translation_system_prompt = _build_translation_system_prompt(normalized_language)
+        _translation_system_prompt = _build_translation_system_prompt(
+            normalized_language,
+            protected_tokens=list(_placeholder_map.keys()) if _use_protected_source else None,
+        )
         try:
             if _should_chunk_fallback_translation(body_text, engine):
                 _chunks = _split_text_into_translation_chunks(body_text, engine)
@@ -3854,6 +4121,57 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
             raise HTTPException(status_code=502, detail="Translation failed")
 
         translated_body_text = (translated_body_text or "").strip()
+        if _use_protected_source and _placeholder_map:
+            _missing_tokens = [t for t in _placeholder_map if t not in translated_body_text]
+            if not _missing_tokens:
+                translated_body_text = _restore_protected_tokens(translated_body_text, _placeholder_map)
+            else:
+                # One or more [[PROT_N]] tokens were dropped or mangled by the model.
+                # Silently returning partial content would lose protected values (amounts,
+                # reference numbers, brand names). Retry once with the simplified unwrap
+                # source so the model sees protected content verbatim — no placeholder risk.
+                logger.warning(
+                    "[TRANSLATE-RENDER] protected_token_loss tokens_missing=%d "
+                    "-> retrying without placeholder mode",
+                    len(_missing_tokens),
+                )
+                _retry_source = _derive_simplified_fallback_source(body_html) or _payload_body_text
+                _retry_sys = _build_translation_system_prompt(normalized_language)
+                try:
+                    if _should_chunk_fallback_translation(_retry_source, engine):
+                        _retry_chunks = _split_text_into_translation_chunks(_retry_source, engine)
+                        translated_body_text = await _translate_text_chunks_async(
+                            _retry_chunks, normalized_language, engine, _retry_sys,
+                        )
+                    else:
+                        translated_body_text = await engine.generate_text_async(
+                            prompt=(
+                                f"Target language: {normalized_language}\n\n"
+                                f"Email body:\n{_retry_source}"
+                            ),
+                            max_tokens=max(512, min(4096, engine.count_tokens(_retry_source) + 256)),
+                            temperature=0.2,
+                            system_prompt=_retry_sys,
+                        )
+                except ValueError:
+                    raise HTTPException(status_code=503, detail="Translation service unavailable")
+                except TimeoutError:
+                    translation_reason_code = "text_translation_timeout"
+                    logger.warning(
+                        "[TRANSLATE-RENDER] retry_timeout language=%s body_chars=%s",
+                        normalized_language,
+                        len(_retry_source),
+                    )
+                    raise HTTPException(status_code=502, detail="Translation timed out")
+                except Exception as _retry_exc:
+                    translation_reason_code = "text_translation_failed"
+                    logger.error(
+                        "[TRANSLATE-RENDER] retry_failed language=%s type=%s",
+                        normalized_language,
+                        type(_retry_exc).__name__,
+                    )
+                    raise HTTPException(status_code=502, detail="Translation failed")
+                translated_body_text = (translated_body_text or "").strip()
         if not translated_body_text:
             raise HTTPException(status_code=502, detail="Translation returned empty content")
     else:

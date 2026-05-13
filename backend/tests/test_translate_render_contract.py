@@ -97,6 +97,141 @@ Deterministic proof for the translate-render contract covering:
     Ii2. route: dense-token body < 3 000 chars with count_tokens > threshold
          produces multiple generate_text_async calls and correct contract fields
 
+  Section J — Simplified fallback source fidelity (P3.5-R3F-P1 / P3.5-R3F-P1R1):
+    J1.  _is_noise_element_for_simplified_source: footer class detected
+    J2.  _is_noise_element_for_simplified_source: unsubscribe class detected
+    J3.  _is_noise_element_for_simplified_source: social class detected
+    J4.  _is_noise_element_for_simplified_source: unsub class detected
+    J5.  _is_noise_element_for_simplified_source: view-in-browser class
+         detected
+    J6.  _is_noise_element_for_simplified_source: id=footer detected
+    J7.  _is_noise_element_for_simplified_source: legitimate content element
+         is NOT flagged as noise
+    J8.  _derive_simplified_fallback_source: footer/unsubscribe containers
+         suppressed, body content preserved in output
+    J9.  _derive_simplified_fallback_source: preheader/hidden elements
+         suppressed
+    J10. _derive_simplified_fallback_source: returns "" when BS4 unavailable
+    J11. route: preflight-degraded path uses derived simplified source when
+         the guard approves (derived is materially shorter than existing body)
+    J12. route: preflight-degraded path preserves original body_text when
+         derived source is empty
+    J13. structured-success route is unaffected by simplified source logic
+    J14. _should_prefer_simplified_source: returns False when derived is
+         empty or below minimum substance threshold
+    J15. _should_prefer_simplified_source: returns False when derived is
+         not materially shorter than existing body_text (guard rejects)
+    J16. _should_prefer_simplified_source: returns True when derived is
+         materially shorter than existing body_text (guard approves)
+    J17. _should_prefer_simplified_source: returns True when existing
+         body_text is empty and derived has sufficient substance
+    J18. route: preflight-degraded path preserves original body_text when
+         guard rejects because derived source is not materially shorter
+
+  Section K — Anchor- and structure-preserving simplified source (P3.5-R3F-P1R2):
+    K1.  _derive_simplified_fallback_source: meaningful content link preserved
+         as "Label (URL)" in the derived text
+    K2.  _derive_simplified_fallback_source: noise-zone anchor (in unsubscribe
+         div) is suppressed — link text and URL absent from output
+    K3.  _derive_simplified_fallback_source: fragment (#) and href-less anchors
+         preserved as plain text; mailto: annotated with address; https: URL inline
+    K4.  _derive_simplified_fallback_source: block-level elements (h1, p, li)
+         produce blank-line separation in the assembled text
+    K5.  _derive_simplified_fallback_source: translate="no" element text
+         preserved in the derived source (tag unwrapped, visible text kept)
+    K6.  _derive_simplified_fallback_source: class="notranslate" element text
+         preserved in the derived source (tag unwrapped, visible text kept)
+    K7.  route: end-to-end preflight-degraded path with real derivation —
+         content-link URL appears in translation prompt (guard approves)
+    K8.  route: end-to-end preflight-degraded path with real derivation —
+         guard rejects when derived source is larger; original body_text used
+
+  Section L — Protected-content and actionable-target fidelity (P3.5-R3F-P1R3):
+    L1.  _derive_simplified_fallback_source: translate="no" content visible
+         in derived simplified source
+    L2.  _derive_simplified_fallback_source: class="notranslate" content visible
+         in derived simplified source
+    L3.  _derive_simplified_fallback_source: mailto: annotated as "Label (addr)"
+    L4.  _derive_simplified_fallback_source: tel: annotated as "Label (number)"
+    L5.  _derive_simplified_fallback_source: compact rule — label == destination
+         yields plain label only (no duplicate parenthetical)
+    L6.  _derive_simplified_fallback_source: noise-zone mailto: remains suppressed
+    L7.  route: protected translate="no" content replaced by [[PROT_N]] placeholder
+         in translation prompt; raw value NOT exposed to model; restored in output
+    L8.  route: guard-reject path preserves original body_text with new derivation
+    L9.  route: structured-success is not affected by protected-content changes
+
+  Section M — Protected token preservation for simplified fallback (P3.5-R3F-P1R4):
+    M1.  _derive_protected_fallback_source: translate="no" text replaced by
+         [[PROT_N]] placeholder; original text absent from derived source
+    M2.  _derive_protected_fallback_source: class="notranslate" text replaced
+         by [[PROT_N]] placeholder; original text absent from derived source
+    M3.  _derive_protected_fallback_source: placeholder_map contains correct
+         original text for each token
+    M4.  _derive_protected_fallback_source: multiple protected elements get
+         distinct [[PROT_N]] tokens; map entries are independent
+    M5.  _derive_protected_fallback_source: non-protected content passes
+         through unchanged
+    M6.  _derive_protected_fallback_source: noise-zone protected element
+         remains suppressed (noise layer runs before placeholder layer)
+    M7.  _derive_protected_fallback_source: actionable links annotated
+         correctly (mailto:/tel:/https: not affected by placeholder logic)
+    M8.  _derive_protected_fallback_source: returns ("", {}) when BS4
+         unavailable
+    M9.  _restore_protected_tokens: replaces placeholder with original text
+    M10. _restore_protected_tokens: conservative no-op when placeholder
+         absent from translated text (model dropped it)
+    M11. _restore_protected_tokens: multiple tokens restored independently
+    M12. _build_translation_system_prompt: includes placeholder preservation
+         rule when protected_tokens list is non-empty
+    M13. _build_translation_system_prompt: no placeholder rule when
+         protected_tokens is None or empty
+    M14. route: system prompt contains [[PROT_N]] preservation rule when
+         placeholder map is non-empty
+    M15. route: final translated_body_text has original protected value
+         after restoration (end-to-end, real BS4)
+    M16. route: no placeholder rule in system prompt when no protected content
+    M17. route: structured-success unaffected by placeholder machinery
+
+  Section N — Placeholder activation guard + restore ordering (P3.5-R3F-P1R4R1):
+    N1.  route: guard rejects derived source → system prompt has NO [[PROT_N]] rule
+    N2.  route: guard rejects derived source → _restore_protected_tokens NOT called
+    N3.  route: guard approves derived source → system prompt HAS [[PROT_N]] rule
+    N4.  route: guard approves derived source → restoration called, final text correct
+    N5.  route: restoration runs before empty-content check for protected-source path
+
+  Section O — Protected-token chunking integrity (P3.5-R3F-P1R4R2):
+    O1.  _token_verified_prefix_split: placeholder NOT split when binary-search cut
+         lands inside [[PROT_N]] — cut retracted to placeholder start
+    O2.  _split_text_into_translation_chunks: multi-paragraph body with embedded
+         [[PROT_N]] tokens produces chunks that each contain the placeholder whole
+    O3.  route end-to-end (chunked path): protected-source body that requires
+         chunking restores correctly — original protected value in final output
+    O4.  _token_verified_prefix_split: placeholder-at-position-0 edge case —
+         when placeholder starts at 0, cut advances past the whole token
+
+  Section P — Fail-safe protected-token handling + helper dedup (P3.5-R3F-P1R4R3):
+    P1.  route: when all [[PROT_N]] tokens survive translation, restoration is
+         applied normally — no retry, original protected value in output
+    P2.  route: when a [[PROT_N]] token is dropped by the model, the route does
+         NOT silently lose protected content — retry path is taken, output
+         contains no raw placeholder fragment
+    P3.  route: when a [[PROT_N]] token is mangled (partial), treated as missing —
+         retry path triggered, no placeholder fragment in output
+    P4.  _derive_fallback_source_impl: unwrap mode (protect_mode=False) produces
+         output identical to the previous _derive_simplified_fallback_source
+         behavior (visible text preserved, no placeholder tokens)
+    P5.  _derive_fallback_source_impl: placeholder mode (protect_mode=True)
+         produces output identical to the previous _derive_protected_fallback_source
+         behavior (placeholder in source, map populated)
+    P6.  route: structured-success path is entirely unaffected by the fail-safe
+         and helper dedup changes
+
+  Section Q — Retry failure contract parity (P3.5-R3F-P1R4R4):
+    Q1.  retry ValueError -> HTTPException 503 "Translation service unavailable"
+    Q2.  retry TimeoutError -> HTTPException 502 "Translation timed out"
+    Q3.  retry generic Exception -> HTTPException 502 "Translation failed"
+
 All I/O and model calls are replaced with deterministic mocks.
 No live network, no Mistral API key, no Supabase connection required.
 
@@ -1487,6 +1622,2052 @@ class TestDenseTokenChunkingRouteContract(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["translation_reason_code"], "html_missing")
         self.assertIsNone(result["translated_body_html"])
         self.assertIn("traduction", result["translated_body_text"])
+
+
+# ---------------------------------------------------------------------------
+# Section J — Simplified fallback source fidelity (P3.5-R3F-P1)
+# ---------------------------------------------------------------------------
+
+# Rich HTML fixture used across Section J tests.
+_RICH_PREFLIGHT_HTML = (
+    "<html><body>"
+    "<p id='preheader' style='display:none'>Preview text hidden</p>"
+    "<p>Hello, here is your invoice summary.</p>"
+    "<p>Total due: $42.00</p>"
+    "<div class='footer'>Company Inc. | 123 Main St</div>"
+    "<div class='unsubscribe'>Click here to unsubscribe</div>"
+    "<div class='social'>Follow us on Twitter</div>"
+    "</body></html>"
+)
+
+
+class TestSimplifiedFallbackSourceFidelity(unittest.TestCase):
+    """
+    Deterministic proof that noise elements are suppressed in the simplified
+    fallback source (helper-level tests J1–J10).
+    """
+
+    # --- _is_noise_element_for_simplified_source ---
+
+    # J1
+    def test_noise_footer_class_detected(self):
+        elem = MagicMock()
+        elem.get = lambda attr, default=None: (
+            ["footer"] if attr == "class" else (default or "")
+        )
+        self.assertTrue(service._is_noise_element_for_simplified_source(elem))
+
+    # J2
+    def test_noise_unsubscribe_class_detected(self):
+        elem = MagicMock()
+        elem.get = lambda attr, default=None: (
+            ["unsubscribe"] if attr == "class" else (default or "")
+        )
+        self.assertTrue(service._is_noise_element_for_simplified_source(elem))
+
+    # J3
+    def test_noise_social_class_detected(self):
+        elem = MagicMock()
+        elem.get = lambda attr, default=None: (
+            ["social"] if attr == "class" else (default or "")
+        )
+        self.assertTrue(service._is_noise_element_for_simplified_source(elem))
+
+    # J4
+    def test_noise_unsub_class_detected(self):
+        elem = MagicMock()
+        elem.get = lambda attr, default=None: (
+            ["unsub"] if attr == "class" else (default or "")
+        )
+        self.assertTrue(service._is_noise_element_for_simplified_source(elem))
+
+    # J5
+    def test_noise_view_in_browser_class_detected(self):
+        elem = MagicMock()
+        elem.get = lambda attr, default=None: (
+            ["view-in-browser"] if attr == "class" else (default or "")
+        )
+        self.assertTrue(service._is_noise_element_for_simplified_source(elem))
+
+    # J6
+    def test_noise_footer_id_detected(self):
+        elem = MagicMock()
+        elem.get = lambda attr, default=None: (
+            [] if attr == "class" else ("footer" if attr == "id" else (default or ""))
+        )
+        self.assertTrue(service._is_noise_element_for_simplified_source(elem))
+
+    # J7
+    def test_legitimate_content_element_not_noise(self):
+        elem = MagicMock()
+        elem.get = lambda attr, default=None: (
+            ["main-content"] if attr == "class" else (default or "")
+        )
+        self.assertFalse(service._is_noise_element_for_simplified_source(elem))
+
+    # --- _derive_simplified_fallback_source ---
+
+    # J8
+    def test_derive_simplified_source_suppresses_footer_unsubscribe(self):
+        if not service._BS4_AVAILABLE:
+            self.skipTest("BeautifulSoup4 not available")
+        result = service._derive_simplified_fallback_source(_RICH_PREFLIGHT_HTML)
+        self.assertIn("invoice summary", result)
+        self.assertIn("Total due", result)
+        self.assertNotIn("unsubscribe", result.lower())
+        self.assertNotIn("Follow us on Twitter", result)
+        self.assertNotIn("Company Inc.", result)
+
+    # J9
+    def test_derive_simplified_source_suppresses_preheader_hidden(self):
+        if not service._BS4_AVAILABLE:
+            self.skipTest("BeautifulSoup4 not available")
+        result = service._derive_simplified_fallback_source(_RICH_PREFLIGHT_HTML)
+        self.assertNotIn("Preview text hidden", result)
+
+    # J10
+    def test_derive_simplified_source_returns_empty_when_bs4_unavailable(self):
+        with patch.object(service, '_BS4_AVAILABLE', False):
+            result = service._derive_simplified_fallback_source(_RICH_PREFLIGHT_HTML)
+        self.assertEqual(result, "")
+
+
+class TestSimplifiedFallbackSourceRouteIntegration(unittest.IsolatedAsyncioTestCase):
+    """
+    Route-level proofs for simplified fallback source (J11–J13).
+    """
+
+    # J11
+    async def test_route_preflight_degraded_uses_derived_source(self):
+        """Route uses derived source when guard approves it.
+        Guard approves when derived is materially shorter (< 90%) than existing body_text.
+        """
+        # Build an HTML that is preflight-degraded by char count.
+        rich_html = _RICH_PREFLIGHT_HTML + ("x" * 40_000)
+        # Large noisy body (600 chars) — simulates MIME plain-text with marketing noise.
+        original_body_text = "Noisy marketing body. " * 27  # ~594 chars
+        # Clean derived source (~52 chars >= 50 min, well under 90% of 594) — guard approves.
+        derived_source_content = "Invoice summary: Total due $42.00. Please review it."
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10  # below chunk threshold
+        captured_prompts: list = []
+
+        async def _capture_generate(*, prompt, **kwargs):
+            captured_prompts.append(prompt)
+            return "translated"
+
+        mock_engine.generate_text_async = _capture_generate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=original_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=original_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            stack.enter_context(patch.object(
+                service, '_derive_protected_fallback_source',
+                return_value=(derived_source_content, {}),
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+        self.assertEqual(result["translation_mode"], "text_fallback")
+        # The derived source must have been used — original body text must not appear.
+        combined_prompts = "\n".join(captured_prompts)
+        self.assertIn(derived_source_content, combined_prompts)
+        self.assertNotIn(original_body_text, combined_prompts)
+
+    # J12
+    async def test_route_preflight_degraded_falls_back_to_body_text_when_derivation_empty(self):
+        """Route falls back to original body_text when BS4 is unavailable and
+        derivation returns ""."""
+        rich_html = _RICH_PREFLIGHT_HTML + ("x" * 40_000)
+        original_body_text = "fallback body text used when no derivation"
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        captured_prompts: list = []
+
+        async def _capture_generate(*, prompt, **kwargs):
+            captured_prompts.append(prompt)
+            return "translated"
+
+        mock_engine.generate_text_async = _capture_generate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=original_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=original_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            stack.enter_context(patch.object(
+                service, '_derive_protected_fallback_source',
+                return_value=("", {}),
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+        combined_prompts = "\n".join(captured_prompts)
+        self.assertIn(original_body_text, combined_prompts)
+
+    # J13
+    async def test_structured_success_unaffected_by_simplified_source_logic(self):
+        """structured_success route must not call _derive_protected_fallback_source."""
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            stack.enter_context(patch.object(
+                service, '_attempt_structured_html_translation',
+                return_value=(_FAKE_TRANSLATED_HTML, "structured_success"),
+            ))
+            mock_derive = stack.enter_context(patch.object(
+                service, '_derive_protected_fallback_source',
+                return_value=("should not be called", {}),
+            ))
+            mock_engine.generate_text_async = AsyncMock(return_value="translated text")
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        mock_derive.assert_not_called()
+        self.assertEqual(result["translation_mode"], "structured_html")
+        self.assertEqual(result["translation_reason_code"], "structured_success")
+
+
+class TestSimplifiedSourcePreferenceGuard(unittest.TestCase):
+    """
+    Unit tests for _should_prefer_simplified_source (J14–J17).
+    """
+
+    # J14
+    def test_guard_rejects_empty_derived(self):
+        self.assertFalse(service._should_prefer_simplified_source("some body text", ""))
+
+    def test_guard_rejects_tiny_derived(self):
+        # Below _SIMPLIFIED_SOURCE_MIN_CHARS even if shorter than existing.
+        tiny = "short"  # 5 chars < 50 minimum
+        existing = "A" * 500
+        self.assertFalse(service._should_prefer_simplified_source(existing, tiny))
+
+    # J15
+    def test_guard_rejects_derived_not_materially_shorter(self):
+        # Derived is 95% of existing — not a material reduction.
+        existing = "X" * 1000
+        derived = "X" * 950  # 95% — above the 90% threshold, guard rejects
+        self.assertFalse(service._should_prefer_simplified_source(existing, derived))
+
+    def test_guard_rejects_derived_larger_than_existing(self):
+        existing = "A" * 300
+        derived = "B" * 400  # larger — extraction inflated content
+        self.assertFalse(service._should_prefer_simplified_source(existing, derived))
+
+    def test_guard_rejects_derived_same_size_as_existing(self):
+        body = "C" * 200
+        self.assertFalse(service._should_prefer_simplified_source(body, body))
+
+    # J16
+    def test_guard_approves_derived_materially_shorter(self):
+        # Derived is 50% of existing — clear noise removal.
+        existing = "Z" * 1000
+        derived = "Z" * 500  # 50% — well below the 90% threshold
+        self.assertTrue(service._should_prefer_simplified_source(existing, derived))
+
+    def test_guard_approves_derived_just_below_threshold(self):
+        # Derived is 89% of existing — just under the 90% cut-off.
+        existing = "W" * 1000
+        derived = "W" * 889  # 88.9% — guard approves
+        self.assertTrue(service._should_prefer_simplified_source(existing, derived))
+
+    # J17
+    def test_guard_approves_when_existing_body_empty(self):
+        # Empty existing: any substantial derived source should be used.
+        derived = "Invoice summary: Total due $42.00. Please review now."
+        self.assertTrue(service._should_prefer_simplified_source("", derived))
+
+    def test_guard_rejects_when_existing_body_empty_but_derived_tiny(self):
+        self.assertFalse(service._should_prefer_simplified_source("", "tiny"))
+
+
+class TestSimplifiedSourcePreferenceGuardRouteIntegration(unittest.IsolatedAsyncioTestCase):
+    """
+    Route-level proof that the guard blocks regressions (J18).
+    """
+
+    # J18
+    async def test_route_preflight_degraded_preserves_body_text_when_guard_rejects(self):
+        """Guard rejects when derived source is not materially shorter.
+        Route must preserve the original body_text and NOT use the derived source.
+        """
+        rich_html = _RICH_PREFLIGHT_HTML + ("x" * 40_000)
+        # Short, clean existing body_text — guard will reject any derived
+        # source that is not smaller by at least 10%.
+        original_body_text = "Clean invoice summary. Total due $42.00."  # 41 chars
+        # Derived source is longer than existing — guard rejects it.
+        derived_source_bloated = "B" * 500  # 500 chars > 41 * 0.9 = 36.9
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        captured_prompts: list = []
+
+        async def _capture_generate(*, prompt, **kwargs):
+            captured_prompts.append(prompt)
+            return "translated"
+
+        mock_engine.generate_text_async = _capture_generate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=original_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=original_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            stack.enter_context(patch.object(
+                service, '_derive_protected_fallback_source',
+                return_value=(derived_source_bloated, {}),
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+        combined_prompts = "\n".join(captured_prompts)
+        # Original body_text must have been used, not the bloated derived source.
+        self.assertIn(original_body_text, combined_prompts)
+        self.assertNotIn(derived_source_bloated, combined_prompts)
+
+
+# ---------------------------------------------------------------------------
+# Section K — Anchor- and structure-preserving simplified source (P3.5-R3F-P1R2)
+# ---------------------------------------------------------------------------
+
+# HTML fixture for K unit tests — small enough to inspect output exactly.
+_K_CONTENT_HTML = (
+    "<html><body>"
+    "<h1>Invoice Summary</h1>"
+    "<p>Please review <a href='https://example.com/invoice'>your invoice</a> attached.</p>"
+    "<ul>"
+    "<li>Item A: $10.00</li>"
+    "<li>Item B: $32.00</li>"
+    "</ul>"
+    "<div class='unsubscribe'>"
+    "<a href='https://example.com/unsub'>Unsubscribe</a>"
+    "</div>"
+    "<p>Thank you.</p>"
+    "</body></html>"
+)
+
+
+class TestAnchorAndStructurePreservingSource(unittest.TestCase):
+    """
+    Deterministic unit tests for the anchor/structure improvements in
+    _derive_simplified_fallback_source (K1–K6).
+    Skipped when BS4 is not available.
+    """
+
+    def setUp(self):
+        if not service._BS4_AVAILABLE:
+            self.skipTest("BeautifulSoup4 not available")
+
+    # K1
+    def test_meaningful_content_link_preserved(self):
+        result = service._derive_simplified_fallback_source(_K_CONTENT_HTML)
+        self.assertIn("your invoice (https://example.com/invoice)", result)
+
+    # K2
+    def test_noise_zone_anchor_suppressed(self):
+        result = service._derive_simplified_fallback_source(_K_CONTENT_HTML)
+        self.assertNotIn("Unsubscribe", result)
+        self.assertNotIn("https://example.com/unsub", result)
+
+    # K3
+    def test_fragment_hrefless_plain_mailto_annotated(self):
+        html = (
+            "<html><body><p>"
+            "<a href='#section'>Jump link</a> | "
+            "<a href='mailto:info@example.com'>Email us</a> | "
+            "<a>No href</a> | "
+            "<a href='https://real.com/page'>Real link</a>"
+            "</p></body></html>"
+        )
+        result = service._derive_simplified_fallback_source(html)
+        # Fragment anchor: plain text only, no URL annotation
+        self.assertIn("Jump link", result)
+        self.assertNotIn("Jump link (#", result)
+        # mailto: anchor: annotated with address
+        self.assertIn("Email us (info@example.com)", result)
+        self.assertNotIn("Email us (mailto", result)
+        # Href-less anchor: plain text
+        self.assertIn("No href", result)
+        # http/https: URL inline
+        self.assertIn("Real link (https://real.com/page)", result)
+
+    # K4
+    def test_block_element_structure_blank_line_separation(self):
+        result = service._derive_simplified_fallback_source(_K_CONTENT_HTML)
+        # Headings, paragraphs, and list items must be separated by blank lines.
+        self.assertIn("Invoice Summary", result)
+        self.assertIn("Thank you.", result)
+        # Blank line between at least two block-level siblings.
+        self.assertIn("\n\n", result)
+        # Items are present
+        self.assertIn("Item A: $10.00", result)
+        self.assertIn("Item B: $32.00", result)
+
+    # K5 — updated: translate="no" tag unwrapped; visible text now preserved
+    def test_translate_no_element_preserved(self):
+        html = (
+            "<html><body>"
+            "<p>Translate this <span translate='no'>BrandName</span> text.</p>"
+            "</body></html>"
+        )
+        result = service._derive_simplified_fallback_source(html)
+        self.assertIn("BrandName", result)
+        self.assertIn("Translate this", result)
+        self.assertIn("text.", result)
+
+    # K6 — updated: notranslate tag unwrapped; visible text now preserved
+    def test_notranslate_class_element_preserved(self):
+        html = (
+            "<html><body>"
+            "<p>Amount: <span class='notranslate'>USD 42.00</span></p>"
+            "</body></html>"
+        )
+        result = service._derive_simplified_fallback_source(html)
+        self.assertIn("USD 42.00", result)
+        self.assertIn("Amount:", result)
+
+
+class TestAnchorAndStructurePreservingSourceRoute(unittest.IsolatedAsyncioTestCase):
+    """
+    End-to-end route tests for the improved derivation (K7–K8).
+    Use real _derive_simplified_fallback_source — skipped if BS4 unavailable.
+    """
+
+    def _skip_if_no_bs4(self):
+        if not service._BS4_AVAILABLE:
+            self.skipTest("BeautifulSoup4 not available")
+
+    # K7
+    async def test_route_content_link_url_in_translation_prompt(self):
+        """Content-link URL from derived source appears in the translation prompt."""
+        self._skip_if_no_bs4()
+        content_html = (
+            "<p>See <a href='https://example.com/invoice'>your invoice</a> "
+            "for the full breakdown.</p>"
+        )
+        # Hidden padding: stripped by Layer 1, keeps HTML > 30 000 chars for preflight.
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body>{content_html}{padding}</body></html>"
+        # Long enough that the short derived source passes the guard.
+        existing_body_text = "A" * 500
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        captured_prompts: list = []
+
+        async def _capture(*, prompt, **kwargs):
+            captured_prompts.append(prompt)
+            return "translated"
+
+        mock_engine.generate_text_async = _capture
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=existing_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+        combined = "\n".join(captured_prompts)
+        self.assertIn("https://example.com/invoice", combined)
+        self.assertNotIn("A" * 500, combined)
+
+    # K8
+    async def test_route_guard_rejects_bloated_derived_uses_original_body(self):
+        """Guard rejects when derived source is larger than existing body_text;
+        original body_text must be used for translation."""
+        self._skip_if_no_bs4()
+        # Short content → derived source will be ~35 chars.
+        content_html = "<p>Hello from the newsletter!</p>"
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body>{content_html}{padding}</body></html>"
+        # Very short existing body — guard rejects any derived > 15 chars.
+        existing_body_text = "Short clean body."  # 17 chars
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        captured_prompts: list = []
+
+        async def _capture(*, prompt, **kwargs):
+            captured_prompts.append(prompt)
+            return "translated"
+
+        mock_engine.generate_text_async = _capture
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=existing_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+        combined = "\n".join(captured_prompts)
+        self.assertIn(existing_body_text, combined)
+        self.assertNotIn("newsletter", combined)
+
+
+# ---------------------------------------------------------------------------
+# Section L — Protected-content and actionable-target fidelity (P3.5-R3F-P1R3)
+# ---------------------------------------------------------------------------
+
+class TestProtectedContentAndActionableTargetFidelity(unittest.TestCase):
+    """
+    Deterministic unit tests proving the R3F-P1R3 fidelity fixes (L1–L6):
+      - translate="no" / class="notranslate" visible text is preserved
+      - mailto: and tel: anchors are annotated with the extracted contact target
+      - compact rule: label == destination → plain label only
+      - noise-zone contact anchors remain suppressed
+    Skipped when BS4 is unavailable.
+    """
+
+    def setUp(self):
+        if not service._BS4_AVAILABLE:
+            self.skipTest("BeautifulSoup4 not available")
+
+    # L1
+    def test_translate_no_content_visible_in_derived_source(self):
+        html = (
+            "<html><body>"
+            "<p>Reference: <span translate='no'>INV-2026-0042</span></p>"
+            "<p>Please pay the amount shown.</p>"
+            "</body></html>"
+        )
+        result = service._derive_simplified_fallback_source(html)
+        self.assertIn("INV-2026-0042", result)
+        self.assertIn("Reference:", result)
+        self.assertIn("Please pay", result)
+
+    # L2
+    def test_notranslate_class_content_visible_in_derived_source(self):
+        html = (
+            "<html><body>"
+            "<p>Total: <span class='notranslate'>EUR 199.99</span></p>"
+            "<p>Due by 2026-06-01.</p>"
+            "</body></html>"
+        )
+        result = service._derive_simplified_fallback_source(html)
+        self.assertIn("EUR 199.99", result)
+        self.assertIn("Total:", result)
+        self.assertIn("Due by 2026-06-01.", result)
+
+    # L3
+    def test_mailto_anchor_annotated_with_address(self):
+        html = (
+            "<html><body>"
+            "<p>Questions? <a href='mailto:support@example.com'>Contact support</a></p>"
+            "</body></html>"
+        )
+        result = service._derive_simplified_fallback_source(html)
+        self.assertIn("Contact support (support@example.com)", result)
+        self.assertNotIn("mailto:", result)
+
+    # L3b — mailto: with query params: only address part preserved
+    def test_mailto_query_params_stripped(self):
+        html = (
+            "<html><body>"
+            "<p><a href='mailto:info@example.com?subject=Hello'>Email us</a></p>"
+            "</body></html>"
+        )
+        result = service._derive_simplified_fallback_source(html)
+        self.assertIn("Email us (info@example.com)", result)
+        self.assertNotIn("subject=Hello", result)
+
+    # L4
+    def test_tel_anchor_annotated_with_number(self):
+        html = (
+            "<html><body>"
+            "<p>Call us: <a href='tel:+18005551234'>+1 800 555 1234</a></p>"
+            "</body></html>"
+        )
+        result = service._derive_simplified_fallback_source(html)
+        self.assertIn("+1 800 555 1234 (+18005551234)", result)
+        self.assertNotIn("tel:", result)
+
+    # L5 — compact rule: label already equals destination → no duplication
+    def test_compact_rule_label_equals_mailto_address(self):
+        html = (
+            "<html><body>"
+            "<p>Reply to <a href='mailto:noreply@example.com'>noreply@example.com</a>.</p>"
+            "</body></html>"
+        )
+        result = service._derive_simplified_fallback_source(html)
+        self.assertIn("noreply@example.com", result)
+        self.assertNotIn("noreply@example.com (noreply@example.com)", result)
+
+    def test_compact_rule_label_equals_https_url(self):
+        html = (
+            "<html><body>"
+            "<p>Visit <a href='https://example.com'>https://example.com</a>.</p>"
+            "</body></html>"
+        )
+        result = service._derive_simplified_fallback_source(html)
+        self.assertIn("https://example.com", result)
+        self.assertNotIn("https://example.com (https://example.com)", result)
+
+    # L6 — noise-zone contact anchors remain suppressed
+    def test_noise_zone_mailto_suppressed(self):
+        html = (
+            "<html><body>"
+            "<p>Main content here.</p>"
+            "<div class='unsubscribe'>"
+            "<a href='mailto:unsub@example.com'>Unsubscribe</a>"
+            "</div>"
+            "</body></html>"
+        )
+        result = service._derive_simplified_fallback_source(html)
+        self.assertIn("Main content here.", result)
+        self.assertNotIn("Unsubscribe", result)
+        self.assertNotIn("unsub@example.com", result)
+
+
+class TestProtectedContentFidelityRoute(unittest.IsolatedAsyncioTestCase):
+    """
+    Route-level integration proofs for R3F-P1R3 (L7–L9).
+    Use real _derive_simplified_fallback_source — skipped if BS4 unavailable.
+    """
+
+    def _skip_if_no_bs4(self):
+        if not service._BS4_AVAILABLE:
+            self.skipTest("BeautifulSoup4 not available")
+
+    # L7
+    async def test_route_placeholder_in_prompt_not_raw_protected_text(self):
+        """Protected translate='no' content is replaced with a [[PROT_N]] placeholder
+        in the translation prompt; the raw protected value is not exposed to the model."""
+        self._skip_if_no_bs4()
+        content_html = (
+            "<h1>Invoice</h1>"
+            "<p>Total: <span translate='no'>USD 42.00</span></p>"
+            "<p>Contact: <a href='mailto:billing@example.com'>billing@example.com</a></p>"
+        )
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body>{content_html}{padding}</body></html>"
+        existing_body_text = "A" * 500  # long so guard approves derived
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        captured_prompts: list = []
+
+        async def _capture(*, prompt, **kwargs):
+            captured_prompts.append(prompt)
+            # Model preserves the placeholder faithfully in the "translated" output.
+            return "Facture\n\nTotal: [[PROT_0]]\n\nContact: billing@example.com"
+
+        mock_engine.generate_text_async = _capture
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=existing_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+        combined = "\n".join(captured_prompts)
+        # Placeholder must appear in the prompt — raw protected value must NOT.
+        self.assertIn("[[PROT_0]]", combined)
+        self.assertNotIn("USD 42.00", combined)
+        # Non-protected annotation (mailto:) still appears in the prompt.
+        self.assertIn("billing@example.com", combined)
+        self.assertNotIn("A" * 500, combined)
+        # After restoration the final translated_body_text must have original value.
+        self.assertIn("USD 42.00", result["translated_body_text"])
+        self.assertNotIn("[[PROT_0]]", result["translated_body_text"])
+
+    # L8
+    async def test_route_guard_reject_preserves_original_body_text(self):
+        """Guard rejects derived source that is not materially shorter;
+        original body_text must be used even when derivation contains protected content."""
+        self._skip_if_no_bs4()
+        content_html = (
+            "<p>Hello. <span translate='no'>REF-001</span></p>"
+        )
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body>{content_html}{padding}</body></html>"
+        # Very short existing body — derived source will be larger, guard rejects.
+        existing_body_text = "Short body."  # 11 chars; any derived >= 10 chars rejects
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        captured_prompts: list = []
+
+        async def _capture(*, prompt, **kwargs):
+            captured_prompts.append(prompt)
+            return "translated"
+
+        mock_engine.generate_text_async = _capture
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=existing_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+        combined = "\n".join(captured_prompts)
+        self.assertIn(existing_body_text, combined)
+
+    # L9
+    async def test_structured_success_unaffected_by_protected_content_changes(self):
+        """structured_success path must not invoke _derive_protected_fallback_source."""
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            stack.enter_context(patch.object(
+                service, '_attempt_structured_html_translation',
+                return_value=(_FAKE_TRANSLATED_HTML, "structured_success"),
+            ))
+            mock_derive = stack.enter_context(patch.object(
+                service, '_derive_protected_fallback_source',
+                return_value=("should not be reached", {}),
+            ))
+            mock_engine.generate_text_async = AsyncMock(return_value="translated text")
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        mock_derive.assert_not_called()
+        self.assertEqual(result["translation_mode"], "structured_html")
+        self.assertEqual(result["translation_reason_code"], "structured_success")
+
+
+# ---------------------------------------------------------------------------
+# Section M — Protected token preservation (P3.5-R3F-P1R4)
+# ---------------------------------------------------------------------------
+
+class TestDeriveProtectedFallbackSource(unittest.TestCase):
+    """
+    Deterministic unit tests for _derive_protected_fallback_source (M1–M8).
+    Skipped when BS4 is unavailable.
+    """
+
+    def setUp(self):
+        if not service._BS4_AVAILABLE:
+            self.skipTest("BeautifulSoup4 not available")
+
+    # M1
+    def test_translate_no_replaced_by_placeholder(self):
+        html = (
+            "<html><body>"
+            "<p>Total: <span translate='no'>USD 42.00</span></p>"
+            "</body></html>"
+        )
+        source, pmap = service._derive_protected_fallback_source(html)
+        self.assertNotIn("USD 42.00", source)
+        self.assertIn("[[PROT_0]]", source)
+        self.assertIn("Total:", source)
+
+    # M2
+    def test_notranslate_class_replaced_by_placeholder(self):
+        html = (
+            "<html><body>"
+            "<p>Ref: <span class='notranslate'>INV-2026-9999</span></p>"
+            "</body></html>"
+        )
+        source, pmap = service._derive_protected_fallback_source(html)
+        self.assertNotIn("INV-2026-9999", source)
+        self.assertIn("[[PROT_0]]", source)
+
+    # M3
+    def test_placeholder_map_contains_original_text(self):
+        html = (
+            "<html><body>"
+            "<p>Amount: <span translate='no'>EUR 199.99</span></p>"
+            "</body></html>"
+        )
+        source, pmap = service._derive_protected_fallback_source(html)
+        self.assertIn("[[PROT_0]]", pmap)
+        self.assertEqual(pmap["[[PROT_0]]"], "EUR 199.99")
+
+    # M4
+    def test_multiple_protected_elements_get_distinct_tokens(self):
+        html = (
+            "<html><body>"
+            "<p><span translate='no'>Alpha</span> and "
+            "<span class='notranslate'>Beta</span></p>"
+            "</body></html>"
+        )
+        source, pmap = service._derive_protected_fallback_source(html)
+        self.assertIn("[[PROT_0]]", pmap)
+        self.assertIn("[[PROT_1]]", pmap)
+        original_values = set(pmap.values())
+        self.assertIn("Alpha", original_values)
+        self.assertIn("Beta", original_values)
+        self.assertNotIn("Alpha", source)
+        self.assertNotIn("Beta", source)
+
+    # M5
+    def test_non_protected_content_passes_through(self):
+        html = (
+            "<html><body>"
+            "<p>Invoice summary. Total due: $42.00.</p>"
+            "</body></html>"
+        )
+        source, pmap = service._derive_protected_fallback_source(html)
+        self.assertIn("Invoice summary", source)
+        self.assertIn("$42.00", source)
+        self.assertEqual(pmap, {})
+
+    # M6
+    def test_noise_zone_protected_element_suppressed(self):
+        html = (
+            "<html><body>"
+            "<p>Main content.</p>"
+            "<div class='footer'>"
+            "<span translate='no'>Company Inc.</span>"
+            "</div>"
+            "</body></html>"
+        )
+        source, pmap = service._derive_protected_fallback_source(html)
+        self.assertIn("Main content.", source)
+        # Footer is suppressed in Layer 2 before placeholder Layer 3 runs.
+        self.assertNotIn("Company Inc.", source)
+        self.assertEqual(pmap, {})
+
+    # M7
+    def test_actionable_links_annotated_correctly(self):
+        html = (
+            "<html><body>"
+            "<p>Contact: <a href='mailto:support@example.com'>support@example.com</a></p>"
+            "<p>Ref: <span translate='no'>CASE-001</span></p>"
+            "</body></html>"
+        )
+        source, pmap = service._derive_protected_fallback_source(html)
+        # mailto: compact rule: label == address → plain label
+        self.assertIn("support@example.com", source)
+        # Protected span replaced by placeholder
+        self.assertNotIn("CASE-001", source)
+        self.assertIn("[[PROT_0]]", source)
+        self.assertEqual(pmap["[[PROT_0]]"], "CASE-001")
+
+    # M8
+    def test_returns_empty_tuple_when_bs4_unavailable(self):
+        with patch.object(service, '_BS4_AVAILABLE', False):
+            source, pmap = service._derive_protected_fallback_source("<p>Hello</p>")
+        self.assertEqual(source, "")
+        self.assertEqual(pmap, {})
+
+
+class TestRestoreProtectedTokens(unittest.TestCase):
+    """
+    Deterministic unit tests for _restore_protected_tokens (M9–M11).
+    """
+
+    # M9
+    def test_restores_single_placeholder(self):
+        pmap = {"[[PROT_0]]": "USD 42.00"}
+        text = "Bonjour. Montant: [[PROT_0]]."
+        result = service._restore_protected_tokens(text, pmap)
+        self.assertEqual(result, "Bonjour. Montant: USD 42.00.")
+
+    # M10
+    def test_conservative_noop_when_placeholder_absent(self):
+        pmap = {"[[PROT_0]]": "USD 42.00"}
+        text = "Bonjour. Montant non indiqué."  # placeholder dropped by model
+        result = service._restore_protected_tokens(text, pmap)
+        # No injection — text returned as-is.
+        self.assertEqual(result, "Bonjour. Montant non indiqué.")
+        self.assertNotIn("USD 42.00", result)
+
+    # M11
+    def test_multiple_tokens_restored_independently(self):
+        pmap = {"[[PROT_0]]": "EUR 199.99", "[[PROT_1]]": "INV-2026-0042"}
+        text = "Montant: [[PROT_0]]. Référence: [[PROT_1]]."
+        result = service._restore_protected_tokens(text, pmap)
+        self.assertEqual(result, "Montant: EUR 199.99. Référence: INV-2026-0042.")
+
+
+class TestBuildTranslationSystemPromptProtected(unittest.TestCase):
+    """
+    Unit tests for _build_translation_system_prompt with protected_tokens (M12–M13).
+    """
+
+    # M12
+    def test_system_prompt_includes_placeholder_rule_when_tokens_present(self):
+        prompt = service._build_translation_system_prompt(
+            "fr", protected_tokens=["[[PROT_0]]", "[[PROT_1]]"]
+        )
+        self.assertIn("[[PROT_0]]", prompt)
+        self.assertIn("[[PROT_1]]", prompt)
+        self.assertIn("[[PROT_N]]", prompt)
+        self.assertIn("EXACTLY", prompt)
+
+    # M13
+    def test_system_prompt_no_placeholder_rule_when_tokens_none(self):
+        prompt_none = service._build_translation_system_prompt("fr", protected_tokens=None)
+        prompt_empty = service._build_translation_system_prompt("fr", protected_tokens=[])
+        for prompt in (prompt_none, prompt_empty):
+            self.assertNotIn("[[PROT_", prompt)
+            self.assertNotIn("PROT_N", prompt)
+
+
+class TestProtectedTokenPreservationRoute(unittest.IsolatedAsyncioTestCase):
+    """
+    Route-level integration proofs for P1R4 (M14–M17).
+    Use real _derive_protected_fallback_source — skipped if BS4 unavailable.
+    """
+
+    def _skip_if_no_bs4(self):
+        if not service._BS4_AVAILABLE:
+            self.skipTest("BeautifulSoup4 not available")
+
+    # M14
+    async def test_system_prompt_contains_placeholder_rule_when_protected_content(self):
+        """When guard approves derived source with placeholders, system prompt
+        contains [[PROT_N]] rule.  HTML must produce >= 50-char derived source
+        so the substance check passes and _use_protected_source is set."""
+        self._skip_if_no_bs4()
+        content_html = (
+            "<h1>Support Case</h1>"
+            "<p>Please review the details for reference "
+            "<span translate='no'>CASE-001</span>.</p>"
+            "<p>Contact our team if you need further information.</p>"
+        )
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body>{content_html}{padding}</body></html>"
+        existing_body_text = "A" * 500
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        captured_system_prompts: list = []
+
+        async def _capture(*, prompt, system_prompt=None, **kwargs):
+            captured_system_prompts.append(system_prompt or "")
+            return "Ref: [[PROT_0]]"
+
+        mock_engine.generate_text_async = _capture
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=existing_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        combined_sys = "\n".join(captured_system_prompts)
+        self.assertIn("[[PROT_0]]", combined_sys)
+        self.assertIn("[[PROT_N]]", combined_sys)
+
+    # M15
+    async def test_final_translated_body_text_has_restored_protected_value(self):
+        """After translation the final translated_body_text contains the original
+        protected value, not the [[PROT_N]] placeholder.  HTML must produce
+        >= 50-char derived source so the guard approves and restoration is active."""
+        self._skip_if_no_bs4()
+        content_html = (
+            "<h1>Invoice</h1>"
+            "<p>Amount due: <span translate='no'>USD 99.00</span></p>"
+            "<p>Please settle by the due date shown on your invoice.</p>"
+        )
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body>{content_html}{padding}</body></html>"
+        existing_body_text = "A" * 500
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+
+        async def _translate(*, prompt, **kwargs):
+            # Simulate model preserving the placeholder faithfully.
+            return "Montant: [[PROT_0]]."
+
+        mock_engine.generate_text_async = _translate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=existing_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertIn("USD 99.00", result["translated_body_text"])
+        self.assertNotIn("[[PROT_0]]", result["translated_body_text"])
+
+    # M16
+    async def test_no_placeholder_rule_in_system_prompt_when_no_protected_content(self):
+        """When HTML has no protected elements, system prompt has no [[PROT_N]] rule."""
+        self._skip_if_no_bs4()
+        content_html = "<p>No protected content here.</p>"
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body>{content_html}{padding}</body></html>"
+        existing_body_text = "A" * 500
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        captured_system_prompts: list = []
+
+        async def _capture(*, prompt, system_prompt=None, **kwargs):
+            captured_system_prompts.append(system_prompt or "")
+            return "translated"
+
+        mock_engine.generate_text_async = _capture
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=existing_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        combined_sys = "\n".join(captured_system_prompts)
+        self.assertNotIn("[[PROT_", combined_sys)
+
+    # M17
+    async def test_structured_success_unaffected_by_placeholder_machinery(self):
+        """structured_success path must not call _derive_protected_fallback_source."""
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            stack.enter_context(patch.object(
+                service, '_attempt_structured_html_translation',
+                return_value=(_FAKE_TRANSLATED_HTML, "structured_success"),
+            ))
+            mock_derive = stack.enter_context(patch.object(
+                service, '_derive_protected_fallback_source',
+                return_value=("should not be reached", {}),
+            ))
+            mock_engine.generate_text_async = AsyncMock(return_value="translated text")
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        mock_derive.assert_not_called()
+        self.assertEqual(result["translation_mode"], "structured_html")
+        self.assertEqual(result["translation_reason_code"], "structured_success")
+
+
+# ---------------------------------------------------------------------------
+# Section N — Placeholder activation guard + restore ordering (P3.5-R3F-P1R4R1)
+# ---------------------------------------------------------------------------
+
+# Shared HTML fixture: short content so the guard REJECTS the derived source.
+# derived source is < 50 chars (below substance threshold) — guard rejects.
+_N_GUARD_REJECT_CONTENT_HTML = (
+    "<p>Hello. <span translate='no'>REF-001</span></p>"
+)
+
+# Shared HTML fixture: rich enough that the guard APPROVES the derived source
+# (derived source >= 50 chars and materially shorter than "A" * 500).
+_N_GUARD_APPROVE_CONTENT_HTML = (
+    "<h1>Invoice</h1>"
+    "<p>Amount due: <span translate='no'>USD 42.00</span></p>"
+    "<p>Please settle by the due date shown on your invoice.</p>"
+)
+
+
+class TestPlaceholderActivationGuard(unittest.IsolatedAsyncioTestCase):
+    """
+    Route-level proofs for the P1R4R1 activation guard and restore ordering
+    (N1–N5). Uses real _derive_protected_fallback_source — skipped if BS4
+    unavailable.  existing_body_text is tuned per test to force guard approval
+    or rejection as required.
+    """
+
+    def _skip_if_no_bs4(self):
+        if not service._BS4_AVAILABLE:
+            self.skipTest("BeautifulSoup4 not available")
+
+    # N1 — guard rejects: no [[PROT_N]] rule in system prompt
+    async def test_guard_reject_no_placeholder_rule_in_system_prompt(self):
+        """When the guard rejects the protected derived source, the translation
+        system prompt must NOT contain any [[PROT_N]] placeholder rule."""
+        self._skip_if_no_bs4()
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body>{_N_GUARD_REJECT_CONTENT_HTML}{padding}</body></html>"
+        # Very short existing body forces guard rejection (any derived > existing * 0.9)
+        existing_body_text = "Short."
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        captured_system_prompts: list = []
+
+        async def _capture(*, prompt, system_prompt=None, **kwargs):
+            captured_system_prompts.append(system_prompt or "")
+            return "translated"
+
+        mock_engine.generate_text_async = _capture
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(
+                    body_html=rich_html, body_text=existing_body_text,
+                ),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        combined_sys = "\n".join(captured_system_prompts)
+        self.assertNotIn("[[PROT_", combined_sys)
+
+    # N2 — guard rejects: _restore_protected_tokens not called
+    async def test_guard_reject_restore_not_called(self):
+        """When the guard rejects the protected derived source, restoration
+        must NOT be attempted regardless of placeholder_map contents."""
+        self._skip_if_no_bs4()
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body>{_N_GUARD_REJECT_CONTENT_HTML}{padding}</body></html>"
+        existing_body_text = "Short."
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        mock_engine.generate_text_async = AsyncMock(return_value="translated output")
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(
+                    body_html=rich_html, body_text=existing_body_text,
+                ),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+            mock_restore = stack.enter_context(patch.object(
+                service, '_restore_protected_tokens',
+            ))
+
+            await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        mock_restore.assert_not_called()
+
+    # N3 — guard approves: [[PROT_N]] rule present in system prompt
+    async def test_guard_approve_placeholder_rule_in_system_prompt(self):
+        """When the guard approves the protected derived source, the translation
+        system prompt MUST contain the [[PROT_N]] placeholder preservation rule."""
+        self._skip_if_no_bs4()
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body>{_N_GUARD_APPROVE_CONTENT_HTML}{padding}</body></html>"
+        existing_body_text = "A" * 500  # long — guard approves short derived source
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        captured_system_prompts: list = []
+
+        async def _capture(*, prompt, system_prompt=None, **kwargs):
+            captured_system_prompts.append(system_prompt or "")
+            return "Facture\n\nMontant dû: [[PROT_0]]\n\nMerci."
+
+        mock_engine.generate_text_async = _capture
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(
+                    body_html=rich_html, body_text=existing_body_text,
+                ),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        combined_sys = "\n".join(captured_system_prompts)
+        self.assertIn("[[PROT_0]]", combined_sys)
+        self.assertIn("[[PROT_N]]", combined_sys)
+
+    # N4 — guard approves: restoration applied, final text has original value
+    async def test_guard_approve_restoration_applied_final_text_correct(self):
+        """When the guard approves, restoration replaces the placeholder in
+        translated_body_text with the original protected value."""
+        self._skip_if_no_bs4()
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body>{_N_GUARD_APPROVE_CONTENT_HTML}{padding}</body></html>"
+        existing_body_text = "A" * 500
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+
+        async def _translate(*, prompt, **kwargs):
+            return "Facture\n\nMontant dû: [[PROT_0]]\n\nMerci."
+
+        mock_engine.generate_text_async = _translate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(
+                    body_html=rich_html, body_text=existing_body_text,
+                ),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertIn("USD 42.00", result["translated_body_text"])
+        self.assertNotIn("[[PROT_0]]", result["translated_body_text"])
+
+    # N5 — restoration runs before the empty-content check
+    async def test_restoration_before_empty_content_check(self):
+        """Restoration runs before the final empty-content validation, so the
+        post-restoration text (not the pre-restoration placeholder string) is
+        what is evaluated for emptiness.  Proved by having the mock return only
+        the placeholder; after restoration the text is non-empty and no 502
+        exception is raised."""
+        self._skip_if_no_bs4()
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body>{_N_GUARD_APPROVE_CONTENT_HTML}{padding}</body></html>"
+        existing_body_text = "A" * 500
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+
+        async def _translate(*, prompt, **kwargs):
+            # Model returns ONLY the placeholder — after restoration this becomes
+            # "USD 42.00" which is non-empty.  If the empty check ran before
+            # restoration, the placeholder itself is non-empty too, so the test
+            # would not distinguish the ordering.  We verify the correct value
+            # is in the final output, confirming restoration preceded any check.
+            return "[[PROT_0]]"
+
+        mock_engine.generate_text_async = _translate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(
+                    body_html=rich_html, body_text=existing_body_text,
+                ),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            # Must not raise HTTPException 502 — restoration gives non-empty text.
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translated_body_text"], "USD 42.00")
+        self.assertNotIn("[[PROT_0]]", result["translated_body_text"])
+
+
+# ---------------------------------------------------------------------------
+# Section O — Protected-token chunking integrity (P3.5-R3F-P1R4R2)
+# ---------------------------------------------------------------------------
+
+class TestProtectedTokenChunkingIntegrity(unittest.IsolatedAsyncioTestCase):
+    """
+    Proofs that [[PROT_N]] placeholder tokens survive chunked fallback
+    translation intact (O1–O4).
+
+    O1/O4 test _token_verified_prefix_split directly with a len-based
+    count_tokens stand-in so character positions are deterministic.
+    O2 tests _split_text_into_translation_chunks end-to-end with injected
+    count_tokens to force chunking at known boundaries.
+    O3 is a route-level integration test with real BS4 derivation and a
+    chunked mock translation engine.
+    """
+
+    # O1 — binary-search cut inside placeholder: cut retracted to placeholder start
+    def test_prefix_split_does_not_cut_inside_placeholder(self):
+        """
+        Concrete scenario: 'a' * 795 + ' [[PROT_0]] b' with count_tokens = len.
+
+        Without the fix the binary search produces cut = 800, which lands
+        inside [[PROT_0]] (chars 796-805), splitting it into
+        'a'*795 + ' [[PROT_' and '0]] b'.
+
+        With the fix the cut retracts to 796 (the start of [[PROT_0]]) so
+        chunk 1 is 'a'*795 + ' ' and the placeholder begins chunk 2 intact.
+        """
+        engine = MagicMock()
+        engine.count_tokens.side_effect = len  # 1 token per character
+
+        seg = "a" * 795 + " [[PROT_0]] b"
+        chunks = service._token_verified_prefix_split(seg, engine)
+
+        # Every chunk must be within the 800-token budget.
+        for chunk in chunks:
+            self.assertLessEqual(
+                len(chunk),
+                service._FALLBACK_CHUNK_MAX_TOKENS,
+                f"Chunk exceeds budget: {chunk!r}",
+            )
+
+        # The placeholder must NOT be split across chunks.
+        combined = "".join(chunks)
+        self.assertEqual(combined, seg, "Concatenation must recover original string")
+        self.assertIn("[[PROT_0]]", combined)
+
+        # Verify the placeholder is whole in exactly one chunk.
+        containing = [c for c in chunks if "[[PROT_0]]" in c]
+        self.assertEqual(
+            len(containing), 1,
+            "[[PROT_0]] must appear intact in exactly one chunk",
+        )
+
+    # O2 — _split_text_into_translation_chunks preserves placeholder across paragraphs
+    def test_split_chunks_preserves_placeholder_per_paragraph(self):
+        """
+        A body with two paragraphs, each embedding a [[PROT_N]] token, that
+        together exceed the threshold.  Every chunk must contain any placeholder
+        it carries as a whole token — no partial matches like '[[PROT_' or '0]]'.
+        """
+        import re as _re
+
+        # Two paragraphs, each ~900 chars + placeholder.  With count_tokens = len
+        # each paragraph is well above _FALLBACK_CHUNK_MAX_TOKENS (800) on its
+        # own, so the splitter must handle them individually.
+        para1 = "x" * 790 + " [[PROT_0]] end."
+        para2 = "y" * 790 + " [[PROT_1]] fin."
+        body = para1 + "\n\n" + para2
+
+        engine = MagicMock()
+        engine.count_tokens.side_effect = len
+
+        chunks = service._split_text_into_translation_chunks(body, engine)
+
+        combined = "".join(chunks)
+        # All text recovered.
+        self.assertIn("[[PROT_0]]", combined)
+        self.assertIn("[[PROT_1]]", combined)
+
+        # No partial placeholder fragments in any chunk.
+        partial_re = _re.compile(r"\[\[PROT_|\d+\]\]")
+        for chunk in chunks:
+            # Remove complete placeholders first, then look for leftover fragments.
+            stripped = service._PROTECTED_PLACEHOLDER_RE.sub("", chunk)
+            self.assertNotRegex(
+                stripped,
+                r"\[\[PROT_|\d+\]\]",
+                f"Partial placeholder fragment found in chunk: {chunk!r}",
+            )
+
+    # O3 — route end-to-end: chunked protected-source body restores correctly
+    async def test_route_chunked_protected_source_restores_correctly(self):
+        """
+        End-to-end: a preflight-degraded HTML body with a translate='no' span
+        is passed through the protected-source path.  count_tokens is wired to
+        return a value above the chunk threshold for any body-text call so that
+        the chunked path is exercised.  The mock translation engine echoes
+        placeholders back; after restoration the original protected value must
+        appear in translated_body_text.
+        """
+        if not service._BS4_AVAILABLE:
+            self.skipTest("BeautifulSoup4 not available")
+
+        # Rich HTML: large enough to fire preflight, contains protected span.
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        content_html = (
+            "<h1>Order Confirmation</h1>"
+            "<p>Reference: <span translate='no'>ORD-9988</span></p>"
+            "<p>Your order has been received and is being processed.</p>"
+            "<p>Thank you for choosing our service.</p>"
+        )
+        rich_html = f"<html><body>{content_html}{padding}</body></html>"
+        # Large existing body so the guard approves the shorter derived source.
+        existing_body_text = "B" * 600
+
+        mock_engine = MagicMock()
+
+        call_count = [0]
+
+        def _count(text):
+            call_count[0] += 1
+            # Return a value that triggers chunking for long strings.
+            if len(text) > 100:
+                return service._FALLBACK_CHUNK_TOKEN_THRESHOLD + 100
+            return 10
+
+        mock_engine.count_tokens.side_effect = _count
+
+        async def _translate(*, prompt, system_prompt=None, **kwargs):
+            # Echo placeholders back verbatim (simulates model preserving them).
+            import re as _re
+            tokens_found = _re.findall(r"\[\[PROT_\d+\]\]", prompt)
+            if tokens_found:
+                return f"Confirmation de commande {tokens_found[0]}"
+            return "Confirmation de commande"
+
+        mock_engine.generate_text_async = _translate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(
+                    body_html=rich_html, body_text=existing_body_text,
+                ),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(
+                service, 'MistralEngine', return_value=mock_engine,
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        translated = result["translated_body_text"]
+        # Original protected value must be restored.
+        self.assertIn("ORD-9988", translated)
+        # No raw placeholder token should survive in the final output.
+        self.assertNotIn("[[PROT_", translated)
+
+    # O4 — placeholder at position 0: cut advances past whole token
+    def test_prefix_split_placeholder_at_position_zero(self):
+        """
+        Edge case: the remaining window starts with [[PROT_0]] followed by
+        a long dense string.  The binary search will find a cut inside the
+        placeholder (cut < len('[[PROT_0]]') = 10).  Because _ps == 0, the
+        fix must advance the cut to _pe (past the whole token) rather than
+        retracting to 0 (which would make no progress).
+
+        Verified: chunk 1 contains the complete [[PROT_0]] token; all text
+        is recovered.
+        """
+        engine = MagicMock()
+        engine.count_tokens.side_effect = len  # 1 token per character
+
+        # [[PROT_0]] (10 chars) + 795 'z' chars = 805 chars total > budget 800.
+        # Binary search cut will be 800 — inside the placeholder (chars 0-9).
+        seg = "[[PROT_0]]" + "z" * 795
+        chunks = service._token_verified_prefix_split(seg, engine)
+
+        for chunk in chunks:
+            self.assertLessEqual(len(chunk), service._FALLBACK_CHUNK_MAX_TOKENS)
+
+        combined = "".join(chunks)
+        self.assertEqual(combined, seg)
+
+        # Placeholder must be whole in the first chunk.
+        self.assertTrue(
+            chunks[0].startswith("[[PROT_0]]"),
+            f"First chunk must start with [[PROT_0]]: {chunks[0]!r}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Section P — Fail-safe protected-token handling + helper dedup (P3.5-R3F-P1R4R3)
+# ---------------------------------------------------------------------------
+
+# Shared HTML fixture used for P1/P2/P3/P6 — rich enough to fire preflight
+# and for the guard to approve the shorter derived source.
+_P_CONTENT_HTML = (
+    "<h1>Order Summary</h1>"
+    "<p>Order number: <span translate='no'>ORD-77412</span></p>"
+    "<p>Your order has been confirmed and will ship within two business days.</p>"
+    "<p>Thank you for your purchase.</p>"
+)
+
+
+class TestFailSafeProtectedHandlingAndHelperDedup(unittest.IsolatedAsyncioTestCase):
+    """
+    Proofs for the P1R4R3 fail-safe and dedup changes (P1–P6).
+
+    P1/P2/P3 are route-level async tests using real BS4 derivation.
+    P4/P5 are synchronous unit tests against _derive_fallback_source_impl.
+    P6 is a route-level async test confirming structured-success is unaffected.
+    """
+
+    def _skip_if_no_bs4(self):
+        if not service._BS4_AVAILABLE:
+            self.skipTest("BeautifulSoup4 not available")
+
+    def _make_rich_html(self):
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        return f"<html><body>{_P_CONTENT_HTML}{padding}</body></html>"
+
+    # P1 — all tokens survive: restoration applied, no retry
+    async def test_all_tokens_survive_restoration_applied_no_retry(self):
+        """When every [[PROT_N]] token is echoed back by the model, restoration
+        runs normally; no retry engine call is made beyond the primary one."""
+        self._skip_if_no_bs4()
+        rich_html = self._make_rich_html()
+        existing_body_text = "C" * 600
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        call_count = [0]
+
+        async def _translate(*, prompt, system_prompt=None, **kwargs):
+            call_count[0] += 1
+            # Echo every placeholder intact — restoration must happen on first call.
+            import re as _re
+            tokens = _re.findall(r"\[\[PROT_\d+\]\]", prompt)
+            body = "Résumé de la commande\n\nNuméro: "
+            body += tokens[0] if tokens else "?"
+            body += "\n\nVotre commande est confirmée."
+            return body
+
+        mock_engine.generate_text_async = _translate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=existing_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        # Exactly one translation call — no retry.
+        self.assertEqual(call_count[0], 1)
+        # Protected value restored in output.
+        self.assertIn("ORD-77412", result["translated_body_text"])
+        self.assertNotIn("[[PROT_", result["translated_body_text"])
+
+    # P2 — token dropped: retry path taken, no placeholder fragment in output
+    async def test_dropped_token_triggers_retry_no_placeholder_in_output(self):
+        """When the model drops a [[PROT_N]] token entirely, the route must not
+        silently accept the partial result.  Instead it retries without placeholder
+        mode; the final output must contain no [[PROT_ fragment."""
+        self._skip_if_no_bs4()
+        rich_html = self._make_rich_html()
+        existing_body_text = "D" * 600
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        call_count = [0]
+
+        async def _translate(*, prompt, system_prompt=None, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # First call: model drops the placeholder entirely.
+                return "Résumé de la commande\n\nVotre commande est confirmée."
+            # Retry call: model translates the unwrap source, no placeholders present.
+            return "Résumé de la commande\n\nNuméro: ORD-77412\n\nConfirmée."
+
+        mock_engine.generate_text_async = _translate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=existing_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        # Two calls: primary (dropped) + retry.
+        self.assertEqual(call_count[0], 2)
+        translated = result["translated_body_text"]
+        # No raw [[PROT_ fragment may remain.
+        self.assertNotIn("[[PROT_", translated)
+        # Output is non-empty and sensible.
+        self.assertTrue(translated)
+
+    # P3 — mangled token (partial string): treated as missing, retry triggered
+    async def test_mangled_token_treated_as_missing_retry_triggered(self):
+        """A mangled placeholder like '[[PROT_0]' (missing closing bracket) is
+        not present as a whole string, so it is treated as missing — the retry
+        path must be taken."""
+        self._skip_if_no_bs4()
+        rich_html = self._make_rich_html()
+        existing_body_text = "E" * 600
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        call_count = [0]
+
+        async def _translate(*, prompt, system_prompt=None, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # Model returns a mangled placeholder (one bracket missing).
+                return "Commande: [[PROT_0]"
+            return "Commande: ORD-77412 confirmée."
+
+        mock_engine.generate_text_async = _translate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=existing_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(call_count[0], 2)
+        self.assertNotIn("[[PROT_0]]", result["translated_body_text"])
+
+    # P4 — _derive_fallback_source_impl unwrap mode == _derive_simplified_fallback_source
+    def test_derive_fallback_impl_unwrap_mode_matches_simplified_behavior(self):
+        """_derive_fallback_source_impl with protect_mode=False must produce the
+        same output as the public _derive_simplified_fallback_source wrapper —
+        protected visible text is preserved, no [[PROT_N]] tokens present."""
+        self._skip_if_no_bs4()
+        html = (
+            "<h1>Report</h1>"
+            "<p>Amount: <span translate='no'>$1,234.56</span></p>"
+            "<p>Please review and confirm.</p>"
+        )
+        impl_result, impl_map = service._derive_fallback_source_impl(html, protect_mode=False)
+        wrapper_result = service._derive_simplified_fallback_source(html)
+
+        self.assertEqual(impl_result, wrapper_result)
+        self.assertEqual(impl_map, {})
+        self.assertIn("$1,234.56", impl_result)
+        self.assertNotIn("[[PROT_", impl_result)
+
+    # P5 — _derive_fallback_source_impl placeholder mode == _derive_protected_fallback_source
+    def test_derive_fallback_impl_placeholder_mode_matches_protected_behavior(self):
+        """_derive_fallback_source_impl with protect_mode=True must produce the
+        same output as the public _derive_protected_fallback_source wrapper —
+        protected text replaced by [[PROT_0]], map populated with original."""
+        self._skip_if_no_bs4()
+        html = (
+            "<h1>Invoice</h1>"
+            "<p>Ref: <span translate='no'>INV-5500</span></p>"
+            "<p>Please pay by the due date.</p>"
+        )
+        impl_result, impl_map = service._derive_fallback_source_impl(html, protect_mode=True)
+        wrapper_result, wrapper_map = service._derive_protected_fallback_source(html)
+
+        self.assertEqual(impl_result, wrapper_result)
+        self.assertEqual(impl_map, wrapper_map)
+        self.assertIn("[[PROT_0]]", impl_result)
+        self.assertNotIn("INV-5500", impl_result)
+        self.assertEqual(impl_map.get("[[PROT_0]]"), "INV-5500")
+
+    # P6 — structured-success path unaffected
+    async def test_structured_success_unaffected_by_failsafe_and_dedup(self):
+        """The structured-success path must remain entirely unaffected by the
+        fail-safe retry logic and helper dedup — _derive_fallback_source_impl
+        must not be called at all on this path."""
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+            stack.enter_context(patch.object(
+                service, '_attempt_structured_html_translation',
+                return_value=(_FAKE_TRANSLATED_HTML, "structured_success"),
+            ))
+            mock_impl = stack.enter_context(patch.object(
+                service, '_derive_fallback_source_impl',
+            ))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        mock_impl.assert_not_called()
+        self.assertEqual(result["translation_mode"], "structured_html")
+        self.assertEqual(result["translation_reason_code"], "structured_success")
+
+
+# ---------------------------------------------------------------------------
+# Section Q — Retry failure contract parity (P3.5-R3F-P1R4R4)
+# ---------------------------------------------------------------------------
+
+# Shared fixture: rich HTML with protected content, large enough to fire
+# preflight and for the guard to approve the derived source.
+_Q_CONTENT_HTML = (
+    "<h1>Shipment Update</h1>"
+    "<p>Tracking: <span translate='no'>TRK-20260513</span></p>"
+    "<p>Your parcel is on its way and will arrive by the estimated date.</p>"
+    "<p>Contact support if you have any questions about your delivery.</p>"
+)
+
+
+class TestRetryFailureContractParity(unittest.IsolatedAsyncioTestCase):
+    """
+    Proofs that the fail-safe retry path raises the same HTTP exceptions as
+    the main text-fallback path for each error class (Q1–Q3).
+
+    Each test forces the primary translation call to succeed but drop a
+    [[PROT_N]] token, triggering the retry.  The retry mock then raises the
+    target exception.  All tests use real BS4 derivation and are skipped when
+    BS4 is unavailable.
+    """
+
+    def _skip_if_no_bs4(self):
+        if not service._BS4_AVAILABLE:
+            self.skipTest("BeautifulSoup4 not available")
+
+    def _make_rich_html(self):
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        return f"<html><body>{_Q_CONTENT_HTML}{padding}</body></html>"
+
+    # Q1 — retry ValueError -> 503 Translation service unavailable
+    async def test_retry_value_error_raises_503(self):
+        """When the retry engine call raises ValueError (engine misconfigured /
+        key invalid), the route must raise HTTPException with status_code=503
+        and detail='Translation service unavailable', identical to the main path."""
+        self._skip_if_no_bs4()
+        rich_html = self._make_rich_html()
+        existing_body_text = "F" * 600
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        call_count = [0]
+
+        async def _translate(*, prompt, system_prompt=None, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # Primary call: drop the placeholder so retry is triggered.
+                return "Mise a jour de l'expedition."
+            raise ValueError("invalid api key")
+
+        mock_engine.generate_text_async = _translate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=existing_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+
+            from fastapi import HTTPException as _HTTPException
+            with self.assertRaises(_HTTPException) as ctx:
+                await service.translate_render_email(
+                    _FAKE_GMAIL_MESSAGE_ID,
+                    TranslateRenderRequest(target_language="fr"),
+                )
+
+        self.assertEqual(ctx.exception.status_code, 503)
+        self.assertIn("unavailable", ctx.exception.detail.lower())
+        self.assertEqual(call_count[0], 2)
+
+    # Q2 — retry TimeoutError -> 502 Translation timed out
+    async def test_retry_timeout_error_raises_502_timed_out(self):
+        """When the retry engine call raises TimeoutError, the route must raise
+        HTTPException with status_code=502 and detail='Translation timed out',
+        identical to the main path."""
+        self._skip_if_no_bs4()
+        rich_html = self._make_rich_html()
+        existing_body_text = "G" * 600
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        call_count = [0]
+
+        async def _translate(*, prompt, system_prompt=None, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return "Mise a jour."
+            raise TimeoutError("request timed out")
+
+        mock_engine.generate_text_async = _translate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=existing_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+
+            from fastapi import HTTPException as _HTTPException
+            with self.assertRaises(_HTTPException) as ctx:
+                await service.translate_render_email(
+                    _FAKE_GMAIL_MESSAGE_ID,
+                    TranslateRenderRequest(target_language="fr"),
+                )
+
+        self.assertEqual(ctx.exception.status_code, 502)
+        self.assertIn("timed out", ctx.exception.detail.lower())
+        self.assertEqual(call_count[0], 2)
+
+    # Q3 — retry generic Exception -> 502 Translation failed
+    async def test_retry_generic_exception_raises_502_failed(self):
+        """When the retry engine call raises a generic Exception (unexpected
+        error), the route must raise HTTPException with status_code=502 and
+        detail='Translation failed', identical to the main path."""
+        self._skip_if_no_bs4()
+        rich_html = self._make_rich_html()
+        existing_body_text = "H" * 600
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        call_count = [0]
+
+        async def _translate(*, prompt, system_prompt=None, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return "Mise a jour."
+            raise RuntimeError("unexpected engine failure")
+
+        mock_engine.generate_text_async = _translate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=existing_body_text),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=existing_body_text),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+
+            from fastapi import HTTPException as _HTTPException
+            with self.assertRaises(_HTTPException) as ctx:
+                await service.translate_render_email(
+                    _FAKE_GMAIL_MESSAGE_ID,
+                    TranslateRenderRequest(target_language="fr"),
+                )
+
+        self.assertEqual(ctx.exception.status_code, 502)
+        self.assertIn("failed", ctx.exception.detail.lower())
+        self.assertEqual(call_count[0], 2)
 
 
 if __name__ == "__main__":
