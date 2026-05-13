@@ -441,6 +441,18 @@ class AISummarizerWorker:
             ai_language,
         )
 
+        # Governor: yield to interactive translation requests before calling provider.
+        # wait_for_background_slot blocks up to _BACKGROUND_MAX_DEFER_S then returns
+        # False if still deferred — in that case skip this call cycle.
+        try:
+            from backend.infrastructure.mistral_governor import get_governor as _gov
+            _governor = _gov()
+            if not _governor.wait_for_background_slot():
+                logger.warning("[AI-WORKER] Governor deferred — skipping Mistral call this cycle")
+                return None
+        except Exception:
+            pass  # governor unavailable: proceed without coordination
+
         # Semaphore-controlled execution with 429 retry
         with self._api_semaphore:
             for retry_attempt in range(len(RATE_LIMIT_RETRY_DELAYS) + 1):
@@ -467,6 +479,11 @@ class AISummarizerWorker:
 
                     if is_rate_limit and retry_attempt < len(RATE_LIMIT_RETRY_DELAYS):
                         delay = RATE_LIMIT_RETRY_DELAYS[retry_attempt]
+                        # Record 429 in governor so interactive path knows cooldown is active.
+                        try:
+                            _governor.record_rate_limit(retry_after_seconds=delay)
+                        except Exception:
+                            pass
                         logger.warning(
                             f"[AI-WORKER] Rate limit hit (429), retry "
                             f"{retry_attempt + 1}/{len(RATE_LIMIT_RETRY_DELAYS)} "

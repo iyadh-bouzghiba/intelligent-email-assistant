@@ -42,6 +42,7 @@ from dotenv import load_dotenv
 import socketio
 
 from backend.infrastructure.supabase_store import SupabaseStore
+from backend.infrastructure.mistral_governor import get_governor as _get_mistral_governor
 from backend.languages import normalize_language, SUPPORTED_LANGUAGES
 from backend.tones import SUPPORTED_TONES, normalize_tone, list_supported_tones
 from backend.summary_versions import EMAIL_SUMMARY_PROMPT_VERSION
@@ -3004,6 +3005,83 @@ _FALLBACK_CHUNK_MAX_TOKENS = 800          # target max tokens per individual chu
 _CHUNK_RATE_LIMIT_MAX_RETRIES = 2  # max additional attempts per chunk on provider 429
 _CHUNK_INTER_DELAY_S = 0.2         # inter-chunk pause (s) to reduce burst rate-limit risk
 
+# Rich-body translation input budget.
+# Applied after chrome removal to cap the translation input for preflight-degraded
+# rich emails (e.g. Supabase-class newsletters with 17 000+ char bodies).
+# 1 600 tokens → at most 2 chunks at 800 tokens/chunk (down from 7 in production).
+_RICH_BODY_BUDGET_TOKENS = 1_600
+
+# Block-level chrome patterns for rich-body canonicalization.
+# Used in _is_chrome_block to detect footer/legal/social/delivery boilerplate.
+# Conservative: the match alone is NOT sufficient — see _is_chrome_block for
+# the residual substantive-word check that prevents mixed-content paragraphs
+# from being classified as chrome.
+_CHROME_BLOCK_RE = re.compile(
+    r"\b(?:unsubscribe|opt[\s\-_]?out|"
+    r"manage\s+(?:prefs?|subscriptions?|preferences)|"
+    r"view\s+(?:in\s+)?(?:browser|online)|"
+    r"mailing\s+address|"
+    r"this\s+email\s+was\s+sent\s+to|"
+    r"you\s+(?:are\s+receiving|received)\s+this\s+(?:email|newsletter|message)|"
+    r"copyright\s+\d{4}|all\s+rights\s+reserved|"
+    r"privacy\s+policy|terms\s+of\s+(?:service|use)|"
+    r"connect\s+with\s+us|follow\s+us(?:\s+on)?|"
+    r"©\s*\d{4}|"
+    r"click\s+here\s+to\s+unsubscribe)\b",
+    re.IGNORECASE,
+)
+
+# A paragraph is only classified as chrome when fewer than this many
+# substantive words (len > 2) remain after the chrome keywords are removed.
+# This prevents mixed-content paragraphs from being silently dropped.
+_CHROME_BLOCK_MIN_SUBSTANTIVE_WORDS = 5
+
+# Paragraphs at or below this character length are treated as section headers
+# in score-based budgeting, giving them priority over longer body paragraphs.
+_CONTENT_HEADER_MAX_CHARS = 80
+
+# Maximum time (seconds) the interactive chunk path will wait for an active
+# provider cooldown before proceeding. Prevents an interactive request from
+# waiting indefinitely when the governor records a long backoff.
+_CHUNK_MAX_COOLDOWN_WAIT_S = 30.0
+
+
+def _is_chrome_block(para: str) -> bool:
+    """
+    Return True if a paragraph is chrome that adds no meaningful reading value.
+
+    Three criteria (first two are always-chrome — no false-positive risk):
+      1. Consists entirely of bare URLs (link-cloud): ≥2 raw URLs, nothing else.
+      2. Is a separator-only line (dashes, equals, asterisks).
+      3. Contains a strong footer/legal/social chrome keyword AND after removing
+         all matched keyword phrases, fewer than _CHROME_BLOCK_MIN_SUBSTANTIVE_WORDS
+         (len > 2) remain.  This residual-word check is what makes the classifier
+         genuinely conservative: a paragraph such as
+           "You can read more about our Privacy Policy in the help center."
+         is NOT classified as chrome because ≥5 substantive words survive the
+         keyword removal, whereas a pure boilerplate line like
+           "Privacy Policy | Terms of Service"
+         yields 0 substantive residual words and IS classified as chrome.
+    """
+    stripped = para.strip()
+    if not stripped:
+        return False
+    # Always-chrome: no false-positive risk for these structural signals.
+    if _LINK_CLOUD_LINE_RE.match(stripped):
+        return True
+    if _SEPARATOR_LINE_RE.match(stripped):
+        return True
+    # Chrome keyword present — apply residual substantive-word guard.
+    if _CHROME_BLOCK_RE.search(stripped):
+        residual = _CHROME_BLOCK_RE.sub("", stripped)
+        substantive = [
+            w for w in re.split(r"[\s|,;:\-/\\()\[\]{}]+", residual)
+            if len(w) > 2
+        ]
+        if len(substantive) < _CHROME_BLOCK_MIN_SUBSTANTIVE_WORDS:
+            return True
+    return False
+
 
 def _is_html_preflight_degraded(body_html: str) -> bool:
     """
@@ -3316,14 +3394,39 @@ async def _translate_text_chunks_async(
     model's safe output window.
 
     Rate-limit resilience: each chunk is retried up to _CHUNK_RATE_LIMIT_MAX_RETRIES
-    times on provider 429 / rate-limit errors with bounded exponential backoff
-    (1 s, 2 s).  Non-rate-limit exceptions propagate immediately without retry.
-    A small inter-chunk pause (_CHUNK_INTER_DELAY_S) reduces burst rate-limit risk.
+    times on provider 429 / rate-limit errors.  After recording the rate limit in
+    the governor, the retry wait uses the governor's effective cooldown remaining
+    (floor 1 s, cap _CHUNK_MAX_COOLDOWN_WAIT_S) so intra-chunk retries respect the
+    same backpressure signal as the pre-chunk adaptive wait — not a fixed 1 s/2 s.
+    Non-rate-limit exceptions propagate immediately without retry.
+
+    Adaptive backpressure: before each chunk attempt the governor cooldown is
+    checked.  If a provider cooldown is active (from an earlier 429 in this or
+    any concurrent request), the chunk waits for the shorter of the remaining
+    cooldown and _CHUNK_MAX_COOLDOWN_WAIT_S before proceeding.  This makes
+    chunk pacing adaptive rather than fixed, reducing successive 429 cascades
+    on high-chunk requests.
+
+    A minimum inter-chunk pause (_CHUNK_INTER_DELAY_S) is always applied after
+    each completed chunk (except the last) regardless of the cooldown wait.
 
     Returns a single paragraph-spaced string with empty parts filtered out.
     """
     translated_parts: List[str] = []
+    gov = _get_mistral_governor()
     for chunk_idx, chunk in enumerate(chunks):
+        # Adaptive backpressure: respect any active provider cooldown before
+        # attempting this chunk.  Capped at _CHUNK_MAX_COOLDOWN_WAIT_S so
+        # interactive requests are never indefinitely stalled.
+        cooldown_remaining = gov.get_cooldown_remaining()
+        if cooldown_remaining > 0:
+            adaptive_wait = min(cooldown_remaining, _CHUNK_MAX_COOLDOWN_WAIT_S)
+            logger.info(
+                "[TRANSLATE-RENDER] chunk_cooldown_wait chunk=%d wait=%.1fs",
+                chunk_idx, adaptive_wait,
+            )
+            await asyncio.sleep(adaptive_wait)
+
         estimated_tokens = max(256, min(2048, engine.count_tokens(chunk) + 128))
         translated_chunk: Optional[str] = None
         for attempt in range(_CHUNK_RATE_LIMIT_MAX_RETRIES + 1):
@@ -3340,7 +3443,15 @@ async def _translate_text_chunks_async(
                 break
             except Exception as exc:
                 if _is_rate_limit_error(exc) and attempt < _CHUNK_RATE_LIMIT_MAX_RETRIES:
-                    await asyncio.sleep(2.0 ** attempt)
+                    gov.record_rate_limit()
+                    retry_wait = max(
+                        1.0, min(gov.get_cooldown_remaining(), _CHUNK_MAX_COOLDOWN_WAIT_S)
+                    )
+                    logger.warning(
+                        "[TRANSLATE-RENDER] chunk_rate_limit chunk=%d attempt=%d/%d wait=%.1fs",
+                        chunk_idx, attempt + 1, _CHUNK_RATE_LIMIT_MAX_RETRIES, retry_wait,
+                    )
+                    await asyncio.sleep(retry_wait)
                 else:
                     raise
         translated_parts.append((translated_chunk or "").strip())
@@ -3792,6 +3903,136 @@ def _normalize_canonical_body_pre_translation(text: str) -> str:
     text = _MULTI_BLANK_LINE_RE.sub("\n\n", "\n".join(cleaned)).strip()
     text = _dedup_repeated_blocks(text)
     return text
+
+
+def _budget_rich_body_for_translation(text: str, engine) -> str:
+    """
+    Deterministic section-coherent canonicalization and token budgeting for
+    rich preflight-degraded email bodies.
+
+    Applied in the structured_preflight_degraded lane as the primary pre-
+    translation cleanup, replacing the plain _normalize_canonical_body_pre_translation
+    call with a stronger three-stage pipeline:
+
+      Stage 1 — Normalization
+        Delegates to _normalize_canonical_body_pre_translation (footer-tail trim,
+        link-cloud collapse, blank-line normalization, repeated-block dedup).
+
+      Stage 2 — Chrome removal
+        Splits at paragraph boundaries and removes blocks whose entire text is
+        chrome: footer/legal/social/receipt signals, link-cloud lines, separators.
+        Preserves meaningful sections (product updates, community, jobs, events)
+        because they do not match chrome patterns.
+
+      Stage 3 — Section-coherent unit selection within token budget
+        Groups content paragraphs into section units: a short paragraph
+        (≤ _CONTENT_HEADER_MAX_CHARS) that follows a prior unit opens a new
+        unit; its following body paragraphs belong to that unit.  A header
+        must remain attached to its following body when both fit — no
+        header-skeleton-only output when the budget allows including body text.
+        Score: 2.0 for header-led units, 1.0 for body-only units.
+        Units are selected in score-descending order (stable within equal
+        scores → original document order preserved within each tier), ensuring
+        that late meaningful section headers (e.g. "Jobs at Supabase",
+        "Community Highlights") survive even when earlier verbose units would
+        exhaust the budget under top-first selection.
+        Bounded fallback for oversized units: when a unit's total tokens exceed
+        the remaining budget, include its leading paragraphs greedily until the
+        budget is full — a single unit can never blow the budget.
+        Selected paragraphs are always emitted in their original document order.
+
+    Does NOT reorder, summarize, or merge paragraphs.
+    Returns the original text unchanged only when it is empty.
+    On any unexpected error, returns the Stage-1 result as a safe fallback.
+    """
+    if not text:
+        return text
+
+    # Stage 1: existing normalization
+    stage1 = _normalize_canonical_body_pre_translation(text)
+    raw_chars = len(stage1)
+
+    try:
+        # Stage 2: block-level chrome removal
+        paras = [p.strip() for p in re.split(r"\n\n+", stage1) if p.strip()]
+        content_paras = [p for p in paras if not _is_chrome_block(p)]
+        post_chrome_chars = sum(len(p) for p in content_paras)
+
+        # Stage 3: section-coherent unit selection within token budget.
+        # Group content paragraphs into section units: a short paragraph
+        # (≤ _CONTENT_HEADER_MAX_CHARS) following a prior unit starts a new
+        # unit; its following body paragraphs belong to it.  Selecting a unit
+        # selects header + body together — no header-skeleton-only output when
+        # the budget allows including body content.
+        # Score: 2.0 for header-led units, 1.0 for body-only units.
+        # Bounded fallback: oversized units include leading paragraphs that fit
+        # so the budget is strictly respected.
+        grouped: list = []
+        current_group: list = []
+        for ci, para in enumerate(content_paras):
+            if len(para) <= _CONTENT_HEADER_MAX_CHARS and current_group:
+                grouped.append(current_group)
+                current_group = [(ci, para)]
+            else:
+                current_group.append((ci, para))
+        if current_group:
+            grouped.append(current_group)
+
+        unit_data = []  # (group, score, total_tokens)
+        for group in grouped:
+            score = 2.0 if len(group[0][1]) <= _CONTENT_HEADER_MAX_CHARS else 1.0
+            total_toks = sum(engine.count_tokens(p) for _, p in group)
+            unit_data.append((group, score, total_toks))
+
+        # Stable sort by score descending; within same score, original unit order.
+        sorted_unit_indices = sorted(
+            range(len(unit_data)), key=lambda u: -unit_data[u][1]
+        )
+
+        selected_para_indices: set = set()
+        running_tokens = 0
+        for u_idx in sorted_unit_indices:
+            group, _score, unit_tokens = unit_data[u_idx]
+            remaining = _RICH_BODY_BUDGET_TOKENS - running_tokens
+            if remaining <= 0:
+                continue
+            if unit_tokens <= remaining:
+                for ci, _ in group:
+                    selected_para_indices.add(ci)
+                running_tokens += unit_tokens
+            else:
+                # Bounded within-unit fallback: include leading paragraphs that fit.
+                fallback_tokens = 0
+                for ci, para in group:
+                    para_toks = engine.count_tokens(para)
+                    if fallback_tokens + para_toks <= remaining:
+                        selected_para_indices.add(ci)
+                        fallback_tokens += para_toks
+                    else:
+                        break
+                running_tokens += fallback_tokens
+
+        # Emit in original document order.
+        kept = [content_paras[i] for i in sorted(selected_para_indices)]
+        result = "\n\n".join(kept)
+        post_budget_chars = len(result)
+
+        logger.info(
+            "[TRANSLATE-RENDER] rich_body_budget "
+            "raw_chars=%d post_chrome_chars=%d post_budget_chars=%d "
+            "budget_tokens=%d used_tokens=%d paras_kept=%d/%d",
+            raw_chars,
+            post_chrome_chars,
+            post_budget_chars,
+            _RICH_BODY_BUDGET_TOKENS,
+            running_tokens,
+            len(kept),
+            len(paras),
+        )
+
+        return result if result else stage1
+    except Exception:
+        return stage1
 
 
 def _derive_plain_text_from_html(html: str) -> str:
@@ -4296,6 +4537,31 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
 
     engine = MistralEngine(api_key=api_key)
 
+    # Signal interactive-priority to governor so background AI worker defers
+    # while this user-triggered translation is in-flight.
+    _governor = _get_mistral_governor()
+    _governor.begin_interactive()
+    try:
+        return await _translate_render_email_body(
+            gmail_message_id=gmail_message_id,
+            normalized_language=normalized_language,
+            body_text=body_text,
+            rendered_payload=rendered_payload,
+            engine=engine,
+        )
+    finally:
+        _governor.end_interactive()
+
+
+async def _translate_render_email_body(
+    *,
+    gmail_message_id: str,
+    normalized_language: str,
+    body_text: str,
+    rendered_payload: dict,
+    engine,
+):
+    """Inner implementation of translate_render_email, called under governor protection."""
     # --- Attempt structure-preserving HTML translation ---
     translated_body_html: Optional[str] = None
     translation_mode = "text_fallback"
@@ -4320,9 +4586,9 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
             )
             translation_reason_code = "structured_preflight_degraded"
             _protected_source, _placeholder_map = _derive_protected_fallback_source(body_html)
-            # Normalize canonical body before source selection to remove footer/noise
-            # so both the source comparison and the translation prompt use the cleaned body.
-            _normalized_body_text = _normalize_canonical_body_pre_translation(body_text)
+            # Apply block-scored canonicalization + token budget before source selection:
+            # removes chrome blocks and caps translation input size to reduce chunk pressure.
+            _normalized_body_text = _budget_rich_body_for_translation(body_text, engine)
             _prefer_derived, _src_reason = _select_canonical_translation_source(
                 _normalized_body_text, _protected_source
             )
@@ -4330,7 +4596,7 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
                 body_text = _protected_source
                 _use_protected_source = True
             else:
-                # Normalized canonical body wins: use it as the translation input.
+                # Budgeted canonical body wins: use it as the translation input.
                 body_text = _normalized_body_text
                 _simplified_assist = _derive_simplified_fallback_source(body_html)
                 body_text = _enrich_body_text_with_assists(body_text, _simplified_assist)

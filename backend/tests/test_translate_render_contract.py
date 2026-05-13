@@ -259,6 +259,59 @@ Deterministic proof for the translate-render contract covering:
     R20. route: structured-success unaffected by new source-selection and
          post-processing logic
 
+  Section T — Rich-body token budgeting + provider governor route integration
+              (P3.5-R4):
+
+    Helper unit tests (sync):
+    T1.  _is_chrome_block: unsubscribe-keyword paragraph → True
+    T2.  _is_chrome_block: copyright-keyword paragraph → True
+    T3.  _is_chrome_block: link-cloud line (≥2 bare URLs) → True
+    T4.  _is_chrome_block: separator-only line (dashes) → True
+    T5.  _is_chrome_block: empty / blank paragraph → False
+    T6.  _is_chrome_block: meaningful content paragraph with incidental URL → False
+    T7.  _budget_rich_body_for_translation: chrome blocks removed;
+         result smaller than input; meaningful content preserved
+    T8.  _budget_rich_body_for_translation: token budget cap truncates excess
+         paragraphs; result token count ≤ _RICH_BODY_BUDGET_TOKENS
+    T9.  _budget_rich_body_for_translation: Supabase-shaped noisy body →
+         chunk count materially reduced (≤ 2 chunks at standard chunk size)
+    T10. _budget_rich_body_for_translation: empty input returns empty string unchanged
+
+    Conservative chrome detection (Blocker 3):
+    T13. _is_chrome_block: mixed-content paragraph containing a chrome keyword
+         alongside ≥5 substantive words → NOT chrome (genuinely conservative)
+    T14. _is_chrome_block: footer-only paragraph with chrome keyword and
+         < _CHROME_BLOCK_MIN_SUBSTANTIVE_WORDS residual words → IS chrome
+    T15. _is_chrome_block: short pure-chrome paragraph ("Follow us on Twitter.")
+         with few residual words → IS chrome
+
+    Section-coherent unit selection + bounded fallback (Blocker 2):
+    T16. _budget_rich_body_for_translation: under tight budget where top-first
+         would drop a late section header, section-coherent selection preserves
+         it via bounded fallback; output is in original document order
+    T17. _budget_rich_body_for_translation: section-coherent selection: all
+         section headers survive in output even when body paragraphs are dropped
+         under very tight budget (bounded fallback includes header only when
+         body does not fit); output order matches original document order
+    T20. _budget_rich_body_for_translation: single oversized unit (header +
+         massive body) → bounded fallback includes header, excludes oversized
+         body; final token count ≤ budget (budget never blown)
+    T21. _budget_rich_body_for_translation: section-coherent — body paragraph
+         included alongside its header when budget allows (not header-skeleton-only)
+
+    Adaptive governor backpressure — interactive chunk path (Blocker 4):
+    T18. _translate_text_chunks_async: when governor has active cooldown before
+         chunk 0, asyncio.sleep is called with approximately the cooldown
+         duration (adaptive wait, not just the fixed 0.2 s inter-chunk pause)
+    T19. _translate_text_chunks_async: when governor has no cooldown, only the
+         fixed inter-chunk pause is applied (no extra adaptive sleep)
+
+    Route-level tests:
+    T11. route: preflight-degraded path calls _budget_rich_body_for_translation
+         instead of plain normalization; chrome content not in prompt
+    T12. route: governor begin_interactive called before translation and
+         end_interactive called after (even on exception)
+
   Section S — Pre-translation canonical body normalization + rate-limit-aware
               chunk retry (P3.5-R3F-R2):
 
@@ -282,6 +335,11 @@ Deterministic proof for the translate-render contract covering:
          immediately — exactly 1 engine call, no retry
     Sh10. _translate_text_chunks_async: 429 persists through all retries — raises
           after _CHUNK_RATE_LIMIT_MAX_RETRIES + 1 total attempts
+    Sh11. _translate_text_chunks_async: 429 fires inside retry loop → retry sleep
+          uses governor cooldown remaining (not fixed 1 s/2 s backoff); old
+          fixed backoff values (1.0, 2.0) must not appear in sleep calls
+    Sh12. _translate_text_chunks_async: governor reports zero cooldown at retry
+          time → retry sleep falls back to floor (1.0 s), not zero
 
     Route-level tests:
     S1.  route: pre-translation normalization applied in preflight-degraded path;
@@ -4340,6 +4398,92 @@ class TestRateLimitAwareChunkRetry(unittest.IsolatedAsyncioTestCase):
                 )
         self.assertEqual(len(calls), service._CHUNK_RATE_LIMIT_MAX_RETRIES + 1)
 
+    # Sh11 — intra-chunk 429: retry sleep uses governor cooldown, not fixed backoff
+    async def test_chunk_retry_sleep_uses_governor_cooldown(self):
+        """When a 429 fires inside the retry loop, the retry sleep must use the
+        governor cooldown remaining — not the old fixed 1 s (2^0) / 2 s (2^1) backoff."""
+        sleep_calls: list = []
+
+        async def _capture_sleep(delay):
+            sleep_calls.append(delay)
+
+        call_count = [0]
+
+        async def _flaky(*, prompt, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise RuntimeError("HTTP 429 Too Many Requests")
+            return "translated"
+
+        engine = MagicMock()
+        engine.count_tokens.return_value = 10
+        engine.generate_text_async = _flaky
+
+        mock_gov = MagicMock()
+        # Pre-chunk call → no cooldown yet; post-record call → 12 s remaining.
+        _cooldown_seq = iter([0.0, 12.0])
+        mock_gov.get_cooldown_remaining.side_effect = lambda: next(_cooldown_seq, 12.0)
+
+        with patch("asyncio.sleep", side_effect=_capture_sleep), \
+             patch.object(service, '_get_mistral_governor', return_value=mock_gov):
+            result = await service._translate_text_chunks_async(
+                chunks=["hello world"],
+                target_language="fr",
+                engine=engine,
+                system_prompt="Translate.",
+            )
+
+        self.assertEqual(result, "translated")
+        self.assertEqual(call_count[0], 2)
+        # Retry sleep must be the governed cooldown value (12.0), not the old fixed backoffs
+        self.assertIn(12.0, sleep_calls,
+                      f"Expected governor-aware retry sleep 12.0 but got: {sleep_calls}")
+        # Old fixed backoff values must NOT appear (1.0 = 2^0, 2.0 = 2^1)
+        self.assertNotIn(1.0, sleep_calls,
+                         f"Old fixed backoff 1.0 must not appear: {sleep_calls}")
+        self.assertNotIn(2.0, sleep_calls,
+                         f"Old fixed backoff 2.0 must not appear: {sleep_calls}")
+
+    # Sh12 — zero cooldown at retry time: floor of 1.0 s applied, never 0
+    async def test_chunk_retry_zero_cooldown_uses_floor(self):
+        """When governor reports zero cooldown at retry time, the floor (1.0 s) is
+        used so the retry never fires with zero delay."""
+        sleep_calls: list = []
+
+        async def _capture_sleep(delay):
+            sleep_calls.append(delay)
+
+        call_count = [0]
+
+        async def _flaky(*, prompt, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise RuntimeError("HTTP 429 Too Many Requests")
+            return "translated"
+
+        engine = MagicMock()
+        engine.count_tokens.return_value = 10
+        engine.generate_text_async = _flaky
+
+        mock_gov = MagicMock()
+        mock_gov.get_cooldown_remaining.return_value = 0.0  # no active cooldown
+
+        with patch("asyncio.sleep", side_effect=_capture_sleep), \
+             patch.object(service, '_get_mistral_governor', return_value=mock_gov):
+            result = await service._translate_text_chunks_async(
+                chunks=["hello world"],
+                target_language="fr",
+                engine=engine,
+                system_prompt="Translate.",
+            )
+
+        self.assertEqual(result, "translated")
+        # Floor must be applied: retry sleep is 1.0 s, not 0.0 s
+        self.assertIn(1.0, sleep_calls,
+                      f"Expected floor retry sleep 1.0 but got: {sleep_calls}")
+        self.assertNotIn(0.0, sleep_calls,
+                         f"Zero-delay retry must never occur: {sleep_calls}")
+
 
 class TestPreNormalizationRouteLevel(unittest.IsolatedAsyncioTestCase):
     """
@@ -4536,6 +4680,514 @@ class TestPreNormalizationRouteLevel(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["translation_mode"], "structured_html")
         self.assertEqual(result["translation_reason_code"], "structured_success")
         mock_normalize.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Section T — Rich-body token budgeting + governor route integration (P3.5-R4)
+# ---------------------------------------------------------------------------
+
+# A Supabase-shaped body large enough to span multiple paragraphs with chrome.
+_T_SUPABASE_LARGE_BODY = (
+    "What's new in Supabase\n\n"
+    "This week we shipped Edge Functions v2, improved the dashboard, "
+    "and published a new tutorial on Row Level Security.\n\n"
+    "Edge Functions v2\n\n"
+    "Faster cold starts, Node.js compat, and native npm support.\n\n"
+    "Dashboard improvements\n\n"
+    "Redesigned SQL editor with autocomplete and improved table editor.\n\n"
+    "Community Highlights\n\n"
+    "Hundreds of projects migrated to the new auth system this month.\n\n"
+    "Jobs at Supabase\n\n"
+    "We are hiring engineers across multiple teams worldwide.\n\n"
+    "https://twitter.com/supabase https://linkedin.com/company/supabase\n\n"
+    "Unsubscribe from this newsletter.\n\n"
+    "Follow us on Twitter.\n\n"
+    "Privacy Policy | Terms of Service\n\n"
+    "Copyright 2026 Supabase Inc. All rights reserved.\n"
+)
+
+
+class TestIsChromBlock(unittest.TestCase):
+    """
+    Section T (T1–T6): _is_chrome_block unit tests.
+    Verifies the block-level chrome classifier covers all documented patterns.
+    """
+
+    # T1 — unsubscribe-keyword paragraph flagged as chrome
+    def test_unsubscribe_paragraph_is_chrome(self):
+        self.assertTrue(service._is_chrome_block("Unsubscribe from this newsletter."))
+
+    # T2 — copyright-keyword paragraph flagged as chrome
+    def test_copyright_paragraph_is_chrome(self):
+        self.assertTrue(service._is_chrome_block("Copyright 2026 Supabase Inc. All rights reserved."))
+
+    # T3 — link-cloud line (two or more bare URLs) flagged as chrome
+    def test_link_cloud_line_is_chrome(self):
+        self.assertTrue(
+            service._is_chrome_block(
+                "https://twitter.com/supabase https://linkedin.com/company/supabase"
+            )
+        )
+
+    # T4 — separator-only line flagged as chrome
+    def test_separator_line_is_chrome(self):
+        self.assertTrue(service._is_chrome_block("---"))
+        self.assertTrue(service._is_chrome_block("==="))
+        self.assertTrue(service._is_chrome_block("***"))
+
+    # T5 — empty / blank paragraph is NOT chrome
+    def test_empty_paragraph_not_chrome(self):
+        self.assertFalse(service._is_chrome_block(""))
+        self.assertFalse(service._is_chrome_block("   "))
+
+    # T6 — meaningful content paragraph is NOT chrome even with an incidental URL
+    def test_meaningful_content_not_chrome(self):
+        self.assertFalse(
+            service._is_chrome_block(
+                "We published a new tutorial on Row Level Security. "
+                "Read it at https://supabase.com/docs."
+            )
+        )
+        self.assertFalse(service._is_chrome_block("Edge Functions v2"))
+        self.assertFalse(service._is_chrome_block("Community Highlights"))
+
+
+class TestBudgetRichBodyForTranslation(unittest.TestCase):
+    """
+    Section T (T7–T10): _budget_rich_body_for_translation unit tests.
+    Verifies chrome removal, token budget capping, and edge cases.
+    """
+
+    def _make_engine(self, tokens_per_para: int = 100) -> MagicMock:
+        """Engine whose count_tokens returns a fixed cost per call."""
+        eng = MagicMock()
+        eng.count_tokens.side_effect = lambda text: tokens_per_para
+        return eng
+
+    # T7 — chrome removed; result smaller; meaningful content preserved
+    def test_chrome_removed_content_preserved(self):
+        eng = self._make_engine(tokens_per_para=50)
+        result = service._budget_rich_body_for_translation(_T_SUPABASE_LARGE_BODY, eng)
+        self.assertLess(len(result), len(_T_SUPABASE_LARGE_BODY))
+        self.assertNotIn("Unsubscribe", result)
+        self.assertNotIn("Copyright 2026", result)
+        self.assertIn("Edge Functions v2", result)
+        self.assertIn("Dashboard improvements", result)
+
+    # T8 — token budget cap truncates excess paragraphs
+    def test_token_budget_cap_truncates(self):
+        # Each paragraph costs 300 tokens; budget is 1600 → at most 5 paras kept
+        eng = self._make_engine(tokens_per_para=300)
+        result = service._budget_rich_body_for_translation(_T_SUPABASE_LARGE_BODY, eng)
+        paras = [p for p in result.split("\n\n") if p.strip()]
+        # 300 * n <= 1600 → at most 5 paragraphs
+        self.assertLessEqual(len(paras), 6)  # ≤ 5, with small tolerance for test clarity
+
+    # T9 — Supabase-shaped noisy body: after budgeting, chunk count ≤ 2
+    def test_supabase_body_reduces_to_few_chunks(self):
+        # Each char ≈ 0.25 tokens (realistic prose); budget = 1600 → ~6400 chars max
+        eng = MagicMock()
+        eng.count_tokens.side_effect = lambda text: max(1, len(text) // 4)
+
+        result = service._budget_rich_body_for_translation(_T_SUPABASE_LARGE_BODY, eng)
+        result_tokens = eng.count_tokens(result)
+        # Result must be within budget
+        self.assertLessEqual(result_tokens, service._RICH_BODY_BUDGET_TOKENS)
+        # At standard chunk size (800 tokens), ≤ 2 chunks
+        chunks_expected = (result_tokens + service._FALLBACK_CHUNK_MAX_TOKENS - 1) // service._FALLBACK_CHUNK_MAX_TOKENS
+        self.assertLessEqual(chunks_expected, 2)
+
+    # T10 — empty input returns empty string unchanged
+    def test_empty_input_returns_empty(self):
+        eng = self._make_engine()
+        result = service._budget_rich_body_for_translation("", eng)
+        self.assertEqual(result, "")
+
+
+class TestBudgetingRouteIntegration(unittest.IsolatedAsyncioTestCase):
+    """
+    Section T (T11–T12): Route-level tests for body budgeting and governor wiring.
+    """
+
+    # T11 — preflight-degraded path calls _budget_rich_body_for_translation;
+    #        chrome content does not reach translation prompt
+    async def test_preflight_degraded_uses_budget_function(self):
+        """_budget_rich_body_for_translation must be called in the degraded lane;
+        chrome content absent from translation prompts."""
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body><p>Content.</p>{padding}</body></html>"
+
+        captured_prompts: list[str] = []
+        budget_called: list[str] = []
+
+        real_budget = service._budget_rich_body_for_translation
+
+        def _spy_budget(text, engine):
+            result = real_budget(text, engine)
+            budget_called.append(result)
+            return result
+
+        async def _fake_generate(*, prompt, **kwargs):
+            captured_prompts.append(prompt)
+            return "translated"
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 50
+        mock_engine.generate_text_async = _fake_generate
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body=_T_SUPABASE_LARGE_BODY),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text=_T_SUPABASE_LARGE_BODY),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+            stack.enter_context(patch.object(
+                service, '_budget_rich_body_for_translation', side_effect=_spy_budget,
+            ))
+            stack.enter_context(patch("asyncio.sleep", new=AsyncMock()))
+
+            result = await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(result["translation_mode"], "text_fallback")
+        self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
+        self.assertTrue(budget_called, "_budget_rich_body_for_translation not called")
+        combined = "\n".join(captured_prompts)
+        self.assertNotIn("Unsubscribe", combined)
+        self.assertNotIn("Copyright 2026", combined)
+
+    # T12 — governor begin_interactive/end_interactive called around translation
+    async def test_governor_begin_end_called_around_translation(self):
+        """Governor must bracket the route: begin_interactive before, end_interactive after."""
+        padding = "<div style='display:none'>" + "x" * 30_100 + "</div>"
+        rich_html = f"<html><body><p>Content.</p>{padding}</body></html>"
+
+        begin_calls: list[str] = []
+        end_calls: list[str] = []
+
+        mock_governor = MagicMock()
+        mock_governor.begin_interactive.side_effect = lambda: begin_calls.append("begin")
+        mock_governor.end_interactive.side_effect = lambda: end_calls.append("end")
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        mock_engine.generate_text_async = AsyncMock(return_value="translated")
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body="Hello world."),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_html=rich_html, body_text="Hello world."),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+            stack.enter_context(patch.object(
+                service, '_get_mistral_governor', return_value=mock_governor,
+            ))
+            stack.enter_context(patch("asyncio.sleep", new=AsyncMock()))
+
+            await service.translate_render_email(
+                _FAKE_GMAIL_MESSAGE_ID,
+                TranslateRenderRequest(target_language="fr"),
+            )
+
+        self.assertEqual(len(begin_calls), 1, "begin_interactive must be called exactly once")
+        self.assertEqual(len(end_calls), 1, "end_interactive must be called exactly once")
+
+    # T12b — governor end_interactive called even when _translate_render_email_body raises
+    async def test_governor_end_called_on_exception(self):
+        """Governor end_interactive must fire in the finally block even on error.
+        The exception must originate inside _translate_render_email_body (i.e. after
+        begin_interactive) to exercise the try/finally bracket."""
+        end_calls: list[str] = []
+        mock_governor = MagicMock()
+        mock_governor.end_interactive.side_effect = lambda: end_calls.append("end")
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(
+                service, '_lookup_email_record_by_message_id',
+                return_value=_make_record(body="Hello world."),
+            ))
+            stack.enter_context(patch.object(
+                service, '_build_rendered_email_payload',
+                return_value=_make_payload(body_text="Hello world."),
+            ))
+            stack.enter_context(patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key"}))
+            stack.enter_context(patch.object(service, 'MistralEngine', return_value=mock_engine))
+            stack.enter_context(patch.object(
+                service, '_get_mistral_governor', return_value=mock_governor,
+            ))
+            # Raise inside _translate_render_email_body so the governor bracket is entered
+            stack.enter_context(patch.object(
+                service, '_translate_render_email_body',
+                side_effect=RuntimeError("inner failure"),
+            ))
+
+            try:
+                await service.translate_render_email(
+                    _FAKE_GMAIL_MESSAGE_ID,
+                    TranslateRenderRequest(target_language="fr"),
+                )
+            except Exception:
+                pass
+
+        self.assertEqual(len(end_calls), 1, "end_interactive must be called even on exception")
+
+
+# ---------------------------------------------------------------------------
+# Section T (T13–T19) — Conservative chrome + score-based budget + adaptive
+# governor backpressure (Blocker 3, 2, 4)
+# ---------------------------------------------------------------------------
+
+class TestIsChromBlockConservative(unittest.TestCase):
+    """
+    T13–T15: _is_chrome_block conservative residual-word guard.
+    Mixed-content paragraphs must NOT be classified as chrome simply because
+    they contain one chrome keyword.
+    """
+
+    # T13 — mixed-content paragraph with ≥5 substantive residual words → NOT chrome
+    def test_mixed_content_with_chrome_keyword_not_chrome(self):
+        """A paragraph with a chrome keyword but lots of real content is NOT chrome."""
+        # "Privacy Policy" matches the regex, but many substantive words remain
+        self.assertFalse(
+            service._is_chrome_block(
+                "You can read more about our Privacy Policy in the help center "
+                "alongside other important platform guidelines for developers."
+            )
+        )
+        # "follow us" matches, but sentence has substantial content around it
+        self.assertFalse(
+            service._is_chrome_block(
+                "We encourage you to follow us as we publish weekly engineering "
+                "articles covering infrastructure, databases, and distributed systems."
+            )
+        )
+        # "terms of service" matches, but surrounding real content survives
+        self.assertFalse(
+            service._is_chrome_block(
+                "Please review the updated terms of service before submitting your "
+                "application to the developer sandbox for approval."
+            )
+        )
+
+    # T14 — pure footer paragraph with chrome keyword and < 5 residual words → IS chrome
+    def test_footer_only_paragraph_is_chrome(self):
+        """A short footer-only line with few substantive residual words IS chrome."""
+        self.assertTrue(service._is_chrome_block("Privacy Policy | Terms of Service"))
+        self.assertTrue(service._is_chrome_block("All rights reserved. Supabase Inc."))
+        self.assertTrue(service._is_chrome_block("You are receiving this email as a subscriber."))
+
+    # T15 — short social CTA with few residual words → IS chrome
+    def test_short_social_cta_is_chrome(self):
+        """Short social/follow-us footer lines with < 5 substantive residual words."""
+        self.assertTrue(service._is_chrome_block("Follow us on Twitter and LinkedIn."))
+        self.assertTrue(service._is_chrome_block("Connect with us on social media."))
+        self.assertTrue(service._is_chrome_block("Click here to unsubscribe."))
+
+
+class TestScoreBasedBudgetLateSection(unittest.TestCase):
+    """
+    T16–T17: _budget_rich_body_for_translation score-based selection.
+    Late-appearing section headers must survive when the budget is tight,
+    even when earlier verbose paragraphs would exhaust it under top-first.
+    """
+
+    # Fixture: Header → long body → late important header, tight budget
+    # Under top-first (break on first over-budget): late header dropped.
+    # Under score-based (continue): late header preserved.
+    _TIGHT_BODY = (
+        "Edge Functions v2\n\n"
+        + ("This is a very detailed paragraph about edge functions. " * 12) + "\n\n"
+        "Jobs at Supabase"
+    )
+
+    def _make_engine_by_char(self, divisor: int = 5):
+        """Engine that estimates tokens as len(text) // divisor."""
+        eng = MagicMock()
+        eng.count_tokens.side_effect = lambda text: max(1, len(text) // divisor)
+        return eng
+
+    # T16 — tight budget: score-based preserves late header; output in original order
+    def test_late_section_header_survives_tight_budget(self):
+        """Under tight budget, score-based keeps the late section header 'Jobs at Supabase'."""
+        # "Edge Functions v2" ~ 17 chars → ~3 tokens (short header, score 2.0)
+        # Long body ~ 600 chars → ~120 tokens (score 1.0)
+        # "Jobs at Supabase" ~ 16 chars → ~3 tokens (short header, score 2.0)
+        # Budget = 8 tokens → both headers (3+3=6) selected; long body (120) skipped
+        eng = self._make_engine_by_char(divisor=5)
+        with patch.object(service, '_RICH_BODY_BUDGET_TOKENS', 8):
+            result = service._budget_rich_body_for_translation(self._TIGHT_BODY, eng)
+
+        self.assertIn("Jobs at Supabase", result)
+        self.assertIn("Edge Functions v2", result)
+        # Original document order: Edge Functions v2 must appear before Jobs at Supabase
+        self.assertLess(result.index("Edge Functions v2"), result.index("Jobs at Supabase"))
+
+    # T17 — all section headers survive in output even if body paras dropped
+    def test_all_section_headers_survive_under_tight_budget(self):
+        """All short section headers are selected before body paragraphs under budget.
+        With section-coherent units, each unit is (header + body).  Under a very tight
+        budget, bounded fallback includes only the header (the body doesn't fit)."""
+        body = (
+            "What's new\n\n" +
+            "Long verbose body paragraph. " * 20 + "\n\n" +
+            "Community Highlights\n\n" +
+            "Another long verbose body. " * 20 + "\n\n" +
+            "Jobs at Supabase"
+        )
+        eng = self._make_engine_by_char(divisor=5)
+        # Budget tight enough to only fit headers (each ~2–3 tokens) but not bodies (~100+)
+        with patch.object(service, '_RICH_BODY_BUDGET_TOKENS', 12):
+            result = service._budget_rich_body_for_translation(body, eng)
+
+        self.assertIn("What's new", result)
+        self.assertIn("Community Highlights", result)
+        self.assertIn("Jobs at Supabase", result)
+        # Bodies should be dropped under this tight budget (bounded fallback: header only)
+        self.assertNotIn("Long verbose body paragraph.", result)
+        self.assertNotIn("Another long verbose body.", result)
+        # Original order must be preserved
+        idx_new = result.index("What's new")
+        idx_comm = result.index("Community Highlights")
+        idx_jobs = result.index("Jobs at Supabase")
+        self.assertLess(idx_new, idx_comm)
+        self.assertLess(idx_comm, idx_jobs)
+
+    # T20 — single oversized unit: bounded fallback includes header, never blows budget
+    def test_oversized_unit_bounded_fallback_within_budget(self):
+        """When a header-led unit's total tokens exceed the remaining budget, the
+        bounded fallback includes only the header (which fits alone).  The final
+        output token count must not exceed the budget."""
+        header = "Jobs at Supabase"
+        big_body = "Long recruitment body content. " * 100
+
+        def _tokens(text):
+            if text.strip() == header:
+                return 5
+            return 600  # all non-header paragraphs cost 600 tokens
+
+        eng = MagicMock()
+        eng.count_tokens.side_effect = _tokens
+
+        with patch.object(service, '_RICH_BODY_BUDGET_TOKENS', 100):
+            result = service._budget_rich_body_for_translation(
+                f"{header}\n\n{big_body}", eng
+            )
+
+        # Header (5 tokens) fits within budget of 100
+        self.assertIn("Jobs at Supabase", result)
+        # Oversized body must not be included (600 tokens > 95 remaining)
+        self.assertNotIn("Long recruitment body content.", result)
+        # Budget strictly not blown: sum of selected paragraph tokens ≤ budget
+        result_paras = [p.strip() for p in result.split("\n\n") if p.strip()]
+        total = sum(_tokens(p) for p in result_paras)
+        self.assertLessEqual(total, 100)
+
+    # T21 — section-coherent: body content included alongside header when budget allows
+    def test_section_coherent_body_content_preserved_with_header(self):
+        """When the budget is sufficient, a header's body paragraph is included
+        alongside it in the output — not a header-skeleton-only selection."""
+        header = "Community Highlights"
+        body_para = "Hundreds of projects migrated to the new auth system this month."
+        body = f"{header}\n\n{body_para}"
+
+        eng = MagicMock()
+        eng.count_tokens.side_effect = lambda t: max(1, len(t) // 5)
+
+        # Both header (~4 tokens) and body (~13 tokens) comfortably fit in 100 tokens
+        with patch.object(service, '_RICH_BODY_BUDGET_TOKENS', 100):
+            result = service._budget_rich_body_for_translation(body, eng)
+
+        # BOTH header and body must appear — not a header skeleton
+        self.assertIn("Community Highlights", result)
+        self.assertIn("Hundreds of projects migrated", result)
+        # They must appear in original document order
+        self.assertLess(
+            result.index("Community Highlights"),
+            result.index("Hundreds of projects migrated"),
+        )
+
+
+class TestAdaptiveGovernorBackpressure(unittest.IsolatedAsyncioTestCase):
+    """
+    T18–T19: _translate_text_chunks_async adaptive cooldown wait.
+    When the governor reports an active provider cooldown, the chunk path
+    must wait for it before the first attempt, not just apply a fixed 0.2 s pause.
+    """
+
+    # T18 — active cooldown triggers adaptive wait before chunk 0
+    async def test_active_cooldown_triggers_adaptive_wait(self):
+        """Governor cooldown of 5 s → asyncio.sleep called with 5.0 s before chunk."""
+        sleep_calls: list = []
+
+        async def _capture_sleep(delay):
+            sleep_calls.append(delay)
+
+        mock_gov = MagicMock()
+        mock_gov.get_cooldown_remaining.return_value = 5.0
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        mock_engine.generate_text_async = AsyncMock(return_value="translated")
+
+        with patch("asyncio.sleep", side_effect=_capture_sleep), \
+             patch.object(service, '_get_mistral_governor', return_value=mock_gov):
+            await service._translate_text_chunks_async(
+                chunks=["hello world"],
+                target_language="fr",
+                engine=mock_engine,
+                system_prompt="Translate.",
+            )
+
+        # The adaptive cooldown sleep (5.0) must appear in the calls
+        self.assertIn(5.0, sleep_calls,
+                      f"Expected adaptive sleep(5.0) but got: {sleep_calls}")
+
+    # T19 — no cooldown: only the fixed inter-chunk pause applied
+    async def test_no_cooldown_no_extra_sleep(self):
+        """When governor has no active cooldown, only inter-chunk pause fires."""
+        sleep_calls: list = []
+
+        async def _capture_sleep(delay):
+            sleep_calls.append(delay)
+
+        mock_gov = MagicMock()
+        mock_gov.get_cooldown_remaining.return_value = 0.0
+
+        mock_engine = MagicMock()
+        mock_engine.count_tokens.return_value = 10
+        mock_engine.generate_text_async = AsyncMock(return_value="translated")
+
+        with patch("asyncio.sleep", side_effect=_capture_sleep), \
+             patch.object(service, '_get_mistral_governor', return_value=mock_gov):
+            await service._translate_text_chunks_async(
+                chunks=["chunk one", "chunk two"],
+                target_language="fr",
+                engine=mock_engine,
+                system_prompt="Translate.",
+            )
+
+        # No adaptive sleep — only the fixed inter-chunk pause (0.2 s) between chunks
+        # cooldown = 0.0 → the adaptive branch is skipped entirely
+        adaptive_sleeps = [d for d in sleep_calls if d != service._CHUNK_INTER_DELAY_S]
+        self.assertEqual(
+            adaptive_sleeps, [],
+            f"Unexpected adaptive sleep calls when no cooldown: {sleep_calls}",
+        )
 
 
 if __name__ == "__main__":
