@@ -2942,6 +2942,26 @@ _SIMPLIFIED_NOISE_CLASS_ID_RE = re.compile(
 _SIMPLIFIED_SOURCE_MIN_CHARS = 50
 _SIMPLIFIED_SOURCE_MAX_RATIO = 0.9
 
+# Noise-signal regex for plain-text source quality scoring (preflight-degraded path).
+# Targets footer/social/unsubscribe keywords to detect noisier sources.
+_FOOTER_NOISE_SIGNAL_RE = re.compile(
+    r"\b(?:unsubscribe|opt[\s\-_]?out|"
+    r"manage\s+(?:prefs?|subscriptions?|preferences)|"
+    r"view\s+(?:in\s+)?(?:browser|online)|"
+    r"mailing\s+address|"
+    r"copyright\s+\d{4}|"
+    r"all\s+rights\s+reserved|"
+    r"privacy\s+policy|"
+    r"terms\s+of\s+(?:service|use)|"
+    r"follow\s+us|connect\s+with\s+us|"
+    r"©\s*\d{4})\b",
+    re.IGNORECASE,
+)
+_LINK_CLOUD_LINE_RE = re.compile(r"^\s*(?:\S*https?://\S*\s*){2,}\s*$")
+_SEPARATOR_LINE_RE = re.compile(r"^\s*[-=*_·•]{3,}\s*$")
+# Noise-gap above which body_text is considered clearly canonical over derived source.
+_NOISE_GAP_CANONICAL_PREFERENCE = 3.0
+
 # Block-level HTML tags that receive blank-line separation in the simplified
 # source derivation so headings, paragraphs, and list items stay readable.
 # Div is intentionally excluded — too ubiquitous in email layouts.
@@ -3517,6 +3537,191 @@ def _should_prefer_simplified_source(
     return len(derived_source) < len(existing_body_text) * _SIMPLIFIED_SOURCE_MAX_RATIO
 
 
+def _score_source_noise(text: str) -> float:
+    """
+    Deterministic noise penalty for a translation source candidate.
+
+    Returns 0.0 for clean canonical text; higher values signal noisier content.
+
+    Penalty signals (additive):
+      +5.0 per line containing footer/social/unsubscribe markers
+      +20.0 * (link_cloud_lines / total_lines) for URL-only line density
+      +2.0 per separator-only line (dashes, equals, asterisks)
+      +4.0 per duplicate paragraph fingerprint (first 120 normalised chars)
+    """
+    if not text:
+        return 0.0
+    lines = text.splitlines()
+    total_lines = max(len(lines), 1)
+    penalty = 0.0
+
+    footer_lines = sum(1 for ln in lines if _FOOTER_NOISE_SIGNAL_RE.search(ln))
+    penalty += footer_lines * 5.0
+
+    link_cloud = sum(
+        1 for ln in lines if ln.strip() and _LINK_CLOUD_LINE_RE.match(ln)
+    )
+    penalty += (link_cloud / total_lines) * 20.0
+
+    sep_lines = sum(1 for ln in lines if _SEPARATOR_LINE_RE.match(ln))
+    penalty += sep_lines * 2.0
+
+    paras = [p.strip() for p in re.split(r"\n\n+", text) if p.strip()]
+    seen: set = set()
+    for p in paras:
+        key = re.sub(r"\s+", " ", p[:120]).lower()
+        if key in seen:
+            penalty += 4.0
+        seen.add(key)
+
+    return penalty
+
+
+def _select_canonical_translation_source(
+    existing_body_text: str,
+    derived_source: str,
+) -> Tuple[bool, str]:
+    """
+    Canonical-source selector for the preflight-degraded rich-email lane.
+
+    Returns (prefer_derived, reason_label).
+
+    prefer_derived=False  existing_body_text is the canonical base.
+    prefer_derived=True   derived_source is materially better.
+
+    Selection rules (in priority order):
+      1. derived_source empty / below minimum substance
+         → False ("derived_empty")
+      2. existing_body_text empty
+         → True ("body_text_empty")
+      3. body_text clearly cleaner (noise_gap > _NOISE_GAP_CANONICAL_PREFERENCE)
+         → False ("body_text_canonical")
+      4. derived materially shorter (noise scores similar, old criterion)
+         → True ("derived_shorter")
+      5. Default
+         → False ("body_text_canonical")
+    """
+    if not derived_source or len(derived_source) < _SIMPLIFIED_SOURCE_MIN_CHARS:
+        return False, "derived_empty"
+    if not existing_body_text:
+        return True, "body_text_empty"
+
+    body_noise = _score_source_noise(existing_body_text)
+    derived_noise = _score_source_noise(derived_source)
+
+    if body_noise + _NOISE_GAP_CANONICAL_PREFERENCE <= derived_noise:
+        return False, "body_text_canonical"
+
+    if len(derived_source) < len(existing_body_text) * _SIMPLIFIED_SOURCE_MAX_RATIO:
+        return True, "derived_shorter"
+
+    return False, "body_text_canonical"
+
+
+def _enrich_body_text_with_assists(
+    body_text: str,
+    derived_source: str,
+) -> str:
+    """
+    Controlled enrichment: appends meaningful URLs from the HTML-derived source
+    that are absent from the canonical body_text.
+
+    Only URLs found on non-footer lines of derived_source are considered.
+    Duplicate URLs (already present in body_text) are skipped.
+    Does NOT reorder body_text or inject sections.
+    Returns body_text unchanged when no meaningful URLs are missing.
+    """
+    if not derived_source or not body_text:
+        return body_text
+
+    _URL_RE = re.compile(r"https?://\S+")
+
+    def _norm_url(u: str) -> str:
+        return u.rstrip(")>].,;\"'")
+
+    existing_urls: set = set(_norm_url(u) for u in _URL_RE.findall(body_text))
+    assist_urls: List[str] = []
+    seen_assist: set = set()
+
+    for line in derived_source.splitlines():
+        if _FOOTER_NOISE_SIGNAL_RE.search(line):
+            continue
+        for url in _URL_RE.findall(line):
+            norm = _norm_url(url)
+            if norm not in existing_urls and norm not in seen_assist:
+                assist_urls.append(norm)
+                seen_assist.add(norm)
+
+    if not assist_urls:
+        return body_text
+
+    return body_text.rstrip() + "\n\n" + "\n".join(assist_urls)
+
+
+def _trim_footer_tail(text: str) -> str:
+    """
+    Conservative tail-trim: cuts an obvious footer/social/unsubscribe region
+    from the bottom of a translated newsletter body.
+
+    Only triggers when ALL conditions hold:
+      - At least 5 lines total.
+      - At least 3 footer-signal lines in the last 35% of lines.
+      - The retained head is at least 200 characters.
+
+    Returns the original text unchanged when conditions are not met.
+    """
+    if not text:
+        return text
+    lines = text.splitlines()
+    n = len(lines)
+    if n < 5:
+        return text
+
+    scan_start = max(0, int(n * 0.65))
+    tail_lines = lines[scan_start:]
+
+    footer_indices = [
+        i for i, ln in enumerate(tail_lines)
+        if _FOOTER_NOISE_SIGNAL_RE.search(ln)
+    ]
+    if len(footer_indices) < 3:
+        return text
+
+    cut_abs = scan_start + footer_indices[0]
+    while cut_abs > 0 and lines[cut_abs - 1].strip():
+        cut_abs -= 1
+
+    head = "\n".join(lines[:cut_abs]).rstrip()
+    if len(head) < 200:
+        return text
+
+    return head
+
+
+def _dedup_repeated_blocks(text: str) -> str:
+    """
+    Deterministic repeated-block deduplication for newsletter-class simplified outputs.
+
+    Splits at paragraph boundaries (\\n\\n+), normalises each block's fingerprint
+    (first 120 lowercased, whitespace-collapsed characters), and keeps only the
+    first occurrence. Canonical order is preserved.
+    """
+    if not text:
+        return text
+    paras = re.split(r"\n\n+", text)
+    seen: set = set()
+    unique: List[str] = []
+    for p in paras:
+        stripped = p.strip()
+        if not stripped:
+            continue
+        key = re.sub(r"\s+", " ", stripped[:120]).lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(stripped)
+    return "\n\n".join(unique)
+
+
 def _derive_plain_text_from_html(html: str) -> str:
     """
     Extract clean, normalized plain text from translated HTML.
@@ -4043,9 +4248,16 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
             )
             translation_reason_code = "structured_preflight_degraded"
             _protected_source, _placeholder_map = _derive_protected_fallback_source(body_html)
-            if _should_prefer_simplified_source(body_text, _protected_source):
+            _prefer_derived, _src_reason = _select_canonical_translation_source(
+                body_text, _protected_source
+            )
+            if _prefer_derived:
                 body_text = _protected_source
                 _use_protected_source = True
+            else:
+                # body_text is canonical: enrich with any meaningful URLs from HTML.
+                _simplified_assist = _derive_simplified_fallback_source(body_html)
+                body_text = _enrich_body_text_with_assists(body_text, _simplified_assist)
         else:
             try:
                 translated_body_html, html_reason_code = await _attempt_structured_html_translation(
@@ -4172,6 +4384,9 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
                     )
                     raise HTTPException(status_code=502, detail="Translation failed")
                 translated_body_text = (translated_body_text or "").strip()
+        if translation_reason_code == "structured_preflight_degraded":
+            translated_body_text = _trim_footer_tail(translated_body_text)
+            translated_body_text = _dedup_repeated_blocks(translated_body_text)
         if not translated_body_text:
             raise HTTPException(status_code=502, detail="Translation returned empty content")
     else:
