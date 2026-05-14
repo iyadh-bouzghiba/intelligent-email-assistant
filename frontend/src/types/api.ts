@@ -70,6 +70,7 @@ export interface InboxThreadRow {
     ai_preferred_language_available?: boolean | null;
     gmail_message_id?: string | null;
     thread_id?: string | null;
+    thread_count?: number | null;
     is_read?: unknown;
 }
 
@@ -118,6 +119,7 @@ export interface EmailViewModel {
     ai_preferred_language_available?: boolean;
     gmail_message_id?: string;
     thread_id?: string; // Gmail thread ID (required for send functionality)
+    thread_count?: number;
     is_read?: boolean;  // false = unread (UNREAD label present in Gmail)
 }
 

@@ -84,7 +84,8 @@
         "auto_summary_limit_count": "{{limit}}개 중 {{count}}개 사용됨",
         "auto_summary_limit_body": "이 세션에서 {{limit}}개 중 {{count}}개의 자동 요약을 사용했습니다.",
         "auto_summary_limit_tip": "플랜을 업그레이드하거나 한도가 초기화될 때까지 기다리세요.",
-        "auto_summary_limit_tip_label": "팁:"
+        "auto_summary_limit_tip_label": "팁:",
+        "thread_message_count": "{{count}}개"
     },
     "modal": {
         "close_email_details": "이메일 세부 정보 닫기",

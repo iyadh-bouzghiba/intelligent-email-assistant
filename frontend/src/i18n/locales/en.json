@@ -84,7 +84,8 @@
         "auto_summary_limit_count": "{{count}} of {{limit}} used",
         "auto_summary_limit_body": "You have used {{count}} of {{limit}} auto-summaries for this session.",
         "auto_summary_limit_tip": "Upgrade your plan or wait for the limit to reset.",
-        "auto_summary_limit_tip_label": "Tip:"
+        "auto_summary_limit_tip_label": "Tip:",
+        "thread_message_count": "{{count}} messages"
     },
     "modal": {
         "close_email_details": "Close email details",

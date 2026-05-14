@@ -84,7 +84,8 @@
         "auto_summary_limit_count": "{{count}} de {{limit}} usados",
         "auto_summary_limit_body": "Você usou {{count}} de {{limit}} resumos automáticos nesta sessão.",
         "auto_summary_limit_tip": "Atualize seu plano ou aguarde a redefinição do limite.",
-        "auto_summary_limit_tip_label": "Dica:"
+        "auto_summary_limit_tip_label": "Dica:",
+        "thread_message_count": "{{count}} mensagens"
     },
     "modal": {
         "close_email_details": "Fechar detalhes do e-mail",

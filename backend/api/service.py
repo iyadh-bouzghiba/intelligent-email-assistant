@@ -2415,8 +2415,10 @@ async def get_inbox_threads(account_id: str = Query(...), limit: int = Query(50)
         # Thread-collapse: one row per thread_id (first-seen = latest, emails are date DESC)
         seen: dict = {}
         has_unread: dict = {}
+        thread_counts: dict = {}
         for email in raw_emails:
             key = email.get("thread_id") or email.get("gmail_message_id") or email.get("subject", "")
+            thread_counts[key] = thread_counts.get(key, 0) + 1
             if key not in seen:
                 seen[key] = email
                 has_unread[key] = not email.get("is_read", True)
@@ -2428,6 +2430,7 @@ async def get_inbox_threads(account_id: str = Query(...), limit: int = Query(50)
         for key, rep in seen.items():
             row = dict(rep)
             row["is_read"] = not has_unread[key]
+            row["thread_count"] = thread_counts.get(key, 1)
             thread_id = rep.get("thread_id")
             inbox_ts = rep.get("date") or rep.get("created_at") or ""
             sent_ts = sent_latest.get(thread_id, "") if thread_id else ""
@@ -2446,6 +2449,38 @@ async def get_inbox_threads(account_id: str = Query(...), limit: int = Query(50)
         logger.error(f"[INBOX] Failed: {type(e).__name__}: {e}")
         import traceback
         logger.error(traceback.format_exc())
+        return []
+
+
+@api_router.get("/threads/{thread_id}/messages")
+async def get_thread_messages(
+    thread_id: str,
+    account_id: str = Query(...),
+    preferred_language: str = Query("en"),
+):
+    """
+    Returns inbox-side messages for a single thread,
+    sorted chronologically ascending (oldest first).
+    """
+    store = safe_get_store()
+    if not store:
+        logger.warning("[THREAD_MESSAGES] Store unavailable")
+        return []
+    try:
+        preferred_language = normalize_language(preferred_language)
+        raw_emails = await asyncio.to_thread(
+            store.get_emails_with_summaries, limit=200, account_id=account_id,
+            preferred_language=preferred_language
+        )
+        messages = [e for e in raw_emails if e.get("thread_id") == thread_id]
+        messages.sort(key=lambda e: e.get("date") or e.get("created_at") or "")
+        logger.info(
+            f"[THREAD_MESSAGES] Returning {len(messages)} messages"
+            f" for thread={thread_id} account={account_id}"
+        )
+        return messages
+    except Exception as e:
+        logger.error(f"[THREAD_MESSAGES] Failed: {type(e).__name__}: {e}")
         return []
 
 

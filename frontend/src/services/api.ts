@@ -433,6 +433,24 @@ export const apiService = {
         }
     },
 
+    // Thread messages — /api/threads/{thread_id}/messages (inbox-side, ascending)
+    getThreadMessages: async (
+        thread_id: string,
+        account_id: string,
+        preferred_language = 'en'
+    ): Promise<InboxThreadRow[]> => {
+        try {
+            const response = await api.get(
+                `${API_ROOT}/threads/${encodeURIComponent(thread_id)}/messages`,
+                { params: { account_id, preferred_language } }
+            );
+            return response.data ?? [];
+        } catch (error) {
+            console.warn('📡 API: getThreadMessages failed', error);
+            return [];
+        }
+    },
+
     // Sent emails — /api/sent
     getSentEmails: async (account_id: string, limit = 50, offset = 0): Promise<SentEmail[]> => {
         try {
