@@ -7,7 +7,7 @@ import {
     InboxThreadRow,
     ThreadListResponse,
     SimulateEmailRequest,
-    BriefingResponse,
+    EmailViewModelResponse,
     AccountsResponse,
     SendEmailResponse,
     SentEmail,
@@ -76,8 +76,8 @@ export const apiService = {
         return response.data;
     },
 
-    // Executive Briefing — root endpoint
-    getBriefing: async (email?: string): Promise<BriefingResponse> => {
+    // Executive EmailViewModel — root endpoint
+    getEmailViewModel: async (email?: string): Promise<EmailViewModelResponse> => {
         const response = await api.get("/process", {
             params: email ? { email } : {},
         });

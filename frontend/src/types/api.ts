@@ -57,7 +57,7 @@ export interface DraftReplyResponse {
 export interface InboxThreadRow {
     date?: string | null;
     created_at?: string | null;
-    ai_summary_json?: Briefing['ai_summary_json'] | null;
+    ai_summary_json?: EmailViewModel['ai_summary_json'] | null;
     ai_summary_text?: string | null;
     body?: string | null;
     subject?: string | null;
@@ -88,7 +88,7 @@ export interface BriefingSentMeta {
     bodyPreview?: string | null;
 }
 
-export interface Briefing {
+export interface EmailViewModel {
     account: string;
     subject: string;
     sender: string;
@@ -167,9 +167,9 @@ export interface DeleteTemplateResponse {
     id: string;
 }
 
-export interface BriefingResponse {
+export interface EmailViewModelResponse {
     account: string;
-    briefings: Briefing[];
+    briefings: EmailViewModel[];
     error?: string;
     login_url?: string;
 }

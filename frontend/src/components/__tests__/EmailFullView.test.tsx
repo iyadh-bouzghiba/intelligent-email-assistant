@@ -10,7 +10,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EmailFullView } from '../EmailFullView';
-import type { Briefing } from '@types';
+import type { EmailViewModel } from '@types';
 
 // ---------------------------------------------------------------------------
 // react-i18next mock — deterministic English strings, no i18n initialisation
@@ -81,7 +81,7 @@ vi.mock('../ImageLightbox', () => ({
 // Shared fixtures
 // ---------------------------------------------------------------------------
 
-const mockEmail: Briefing = {
+const mockEmail: EmailViewModel = {
   account: 'test@example.com',
   subject: 'Test Subject',
   sender: 'sender@example.com',

@@ -1,6 +1,6 @@
 import { RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ExternalLink, Globe, RefreshCw, Sparkles } from 'lucide-react';
-import { Briefing } from '@types';
+import { EmailViewModel } from '@types';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
 import { AttachmentStrip, AttachmentStripItem } from './AttachmentStrip';
 import { ImageLightbox } from './ImageLightbox';
@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 type TranslationInlineState = 'idle' | 'loading' | 'translated' | 'error';
 
 interface Props {
-  email: Briefing;
+  email: EmailViewModel;
   actionItemsRef: RefObject<HTMLDivElement>;
   onBackToSummary: () => void;
   translationActive?: boolean;

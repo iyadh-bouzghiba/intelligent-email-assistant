@@ -5,7 +5,7 @@ import { websocketService, type EmailsUpdatedData, type SummaryReadyData } from 
 import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send, Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { Briefing, AccountInfo, SentEmail, SupportedLanguage, SupportedTone, EmailTemplate, DraftTone, InboxThreadRow } from '@types';
+import { EmailViewModel, AccountInfo, SentEmail, SupportedLanguage, SupportedTone, EmailTemplate, DraftTone, InboxThreadRow } from '@types';
 import { SentList } from './components/SentList';
 import { EmailDetailModal } from './components/EmailDetailModal';
 import { ReplyComposeModal } from './components/ReplyComposeModal';
@@ -68,7 +68,7 @@ const FALLBACK_LANGUAGE_OPTIONS: SupportedLanguage[] = [
 
 export const App = () => {
   const { t, i18n } = useTranslation();
-  const [briefings, setBriefings] = useState<Briefing[]>([]);
+  const [emailViewModels, setBriefings] = useState<EmailViewModel[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [startupPhase, setStartupPhase] = useState<'probing' | 'waking' | 'ready'>('probing');
@@ -97,7 +97,7 @@ export const App = () => {
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [summarizingIds, setSummarizingIds] = useState<Set<string>>(new Set());
-  const [selectedEmailDetail, setSelectedEmailDetail] = useState<Briefing | null>(null);
+  const [selectedEmailDetail, setSelectedEmailDetail] = useState<EmailViewModel | null>(null);
   const [offlineAccounts, setOfflineAccounts] = useState<Set<string>>(new Set());
   const [scrollToActions, setScrollToActions] = useState(false);
   const actionItemsRef = useRef<HTMLDivElement | null>(null);
@@ -135,7 +135,7 @@ export const App = () => {
   const [templateDeletingId, setTemplateDeletingId] = useState<string | null>(null);
   const [aiLanguageResolvedAccountId, setAiLanguageResolvedAccountId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Briefing[]>([]);
+  const [searchResults, setSearchResults] = useState<EmailViewModel[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const desktopSearchInputRef = useRef<HTMLInputElement | null>(null);
@@ -191,12 +191,12 @@ export const App = () => {
     setTimeout(() => setShowSentinelToast(false), 3000);
   };
 
-  const triggerSentinelAlert = (briefing: Briefing) => {
-    if (notificationsEnabled && briefing.should_alert) {
+  const triggerSentinelAlert = (emailViewModel: EmailViewModel) => {
+    if (notificationsEnabled && emailViewModel.should_alert) {
       new Notification(
         t('nav.sentinel_alert_notification_title', { brand: brandName }),
         {
-          body: `[${briefing.account}] ${briefing.subject} - ${briefing.summary.substring(0, 80)}...`,
+          body: `[${emailViewModel.account}] ${emailViewModel.subject} - ${emailViewModel.summary.substring(0, 80)}...`,
           icon: "/vite.svg"
         }
       );
@@ -294,9 +294,9 @@ export const App = () => {
     return 'General';
   };
 
-  // Maps one InboxThreadRow to a Briefing.  triggerAlerts=false suppresses
+  // Maps one InboxThreadRow to an EmailViewModel.  triggerAlerts=false suppresses
   // Sentinel notifications for search results (avoids alert spam on FTS queries).
-  const mapRowToBriefing = (e: InboxThreadRow, triggerAlerts: boolean): Briefing => {
+  const mapRowToEmailViewModel = (e: InboxThreadRow, triggerAlerts: boolean): EmailViewModel => {
     const isoDate = e.date ?? e.created_at;
     const formattedDate = formatDisplayDate(isoDate);
     let priority: 'Low' | 'Medium' | 'High' = 'Medium';
@@ -310,7 +310,7 @@ export const App = () => {
       e.body || '',
       e.ai_summary_text ?? undefined
     );
-    const briefing: Briefing = {
+    const emailViewModel: EmailViewModel = {
       account: e.account_id || t('common.unknown'),
       subject: e.subject || t('inbox.no_subject'),
       sender: e.sender || t('common.unknown'),
@@ -333,10 +333,10 @@ export const App = () => {
       thread_id: e.thread_id ?? undefined,
       is_read: e.is_read !== undefined ? Boolean(e.is_read) : undefined,
     };
-    if (triggerAlerts && briefing.should_alert) {
-      setTimeout(() => triggerSentinelAlert(briefing), 500);
+    if (triggerAlerts && emailViewModel.should_alert) {
+      setTimeout(() => triggerSentinelAlert(emailViewModel), 500);
     }
-    return briefing;
+    return emailViewModel;
   };
 
   // Global session-expired handler: reset all UI state when backend returns 401
@@ -463,7 +463,7 @@ export const App = () => {
 
   // INVARIANT: Whenever the selected email identity changes or panel closes, force compose back to neutral.
   // This avoids leaking compose state across different emails while preserving compose state when the
-  // currently selected email is merely refreshed from the latest briefings data.
+  // currently selected email is merely refreshed from the latest emailViewModels data.
   useEffect(() => {
     if (!selectedEmailIdentity) {
       setActiveModal('none');
@@ -502,7 +502,7 @@ export const App = () => {
       setSearchError(null);
       try {
         const rows = await apiService.searchEmails(trimmed, activeEmail, aiLanguageRef.current, 50);
-        if (!stale) setSearchResults(rows.map(e => mapRowToBriefing(e, false)));
+        if (!stale) setSearchResults(rows.map(e => mapRowToEmailViewModel(e, false)));
       } catch {
         if (!stale) setSearchError('error');
       } finally {
@@ -513,8 +513,8 @@ export const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, activeEmail, aiLanguage]);
 
-  // Rerun active search when briefings change (read/unread mutations, summary refreshes, inbox refetches)
-  // so the visible search card list stays coherent with inbox state without overwriting briefings.
+  // Rerun active search when emailViewModels change (read/unread mutations, summary refreshes, inbox refetches)
+  // so the visible search card list stays coherent with inbox state without overwriting emailViewModels.
   useEffect(() => {
     const trimmed = searchQuery.trim();
     if (trimmed.length < 2 || !activeEmail) return;
@@ -524,14 +524,14 @@ export const App = () => {
       if (!stale) setSearchError(null);
       try {
         const rows = await apiService.searchEmails(trimmed, activeEmail, aiLanguageRef.current, 50);
-        if (!stale) setSearchResults(rows.map(e => mapRowToBriefing(e, false)));
+        if (!stale) setSearchResults(rows.map(e => mapRowToEmailViewModel(e, false)));
       } catch {
         if (!stale) setSearchError('error');
       }
     }, 200);
     return () => { stale = true; clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [briefings]);
+  }, [emailViewModels]);
 
   // Fetch sent emails when the Sent tab is active, or when the active account changes while Sent is open.
   useEffect(() => {
@@ -630,8 +630,8 @@ export const App = () => {
       // Client-side re-sort by individual message date would overwrite that ordering.
       const ordered = emailData || [];
 
-      // Map DB schema to UI Briefing model (alerts enabled for normal inbox fetch)
-      const mapped: Briefing[] = ordered.map((e: InboxThreadRow) => mapRowToBriefing(e, true));
+      // Map DB schema to UI EmailViewModel (alerts enabled for normal inbox fetch)
+      const mapped: EmailViewModel[] = ordered.map((e: InboxThreadRow) => mapRowToEmailViewModel(e, true));
 
       setBriefings(mapped);
       setError(null);
@@ -660,7 +660,7 @@ export const App = () => {
       if (!syncingRef.current) {
         setConsecutiveFailures((prev: number) => {
           const newFailureCount = prev + 1;
-          if (briefings.length === 0) {
+          if (emailViewModels.length === 0) {
             if (newFailureCount < 5) {
               setError(t('common.waking_backend'));
             } else {
@@ -720,7 +720,7 @@ export const App = () => {
     }, SUMMARY_REFRESH_DELAY_MS);
   };
 
-  const autoSummarizeEmails = async (emails: Briefing[], accountId: string) => {
+  const autoSummarizeEmails = async (emails: EmailViewModel[], accountId: string) => {
     // Only queue emails that are unsummarized AND not already tracked in-flight
     const toQueue = emails.filter(
       e => !e.ai_summary_text && e.gmail_message_id && !queuedSummarizeIdsRef.current.has(e.gmail_message_id)
@@ -1012,13 +1012,13 @@ export const App = () => {
     };
   }, []);
 
-  // Sync selectedEmailDetail with latest briefings data so language metadata stays fresh after a re-fetch
+  // Sync selectedEmailDetail with latest emailViewModels data so language metadata stays fresh after a re-fetch
   useEffect(() => {
     if (!selectedEmailDetail?.gmail_message_id) return;
-    const fresh = briefings.find(b => b.gmail_message_id === selectedEmailDetail.gmail_message_id);
+    const fresh = emailViewModels.find(b => b.gmail_message_id === selectedEmailDetail.gmail_message_id);
     if (fresh) setSelectedEmailDetail(fresh);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [briefings]);
+  }, [emailViewModels]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1403,7 +1403,7 @@ export const App = () => {
   };
 
   // Open a specific email in the details panel, resetting any previous compose state
-  const openEmailDetail = (item: Briefing, scrollToAct = false, isSent = false) => {
+  const openEmailDetail = (item: EmailViewModel, scrollToAct = false, isSent = false) => {
     setActiveModal('detail');
     setReplyBody('');
     setReplySubject('');
@@ -1729,9 +1729,9 @@ export const App = () => {
   };
 
   // Filter out self-generated security alerts (from app's own Gmail API access)
-  const isSelfGeneratedAlert = (briefing: Briefing): boolean => {
+  const isSelfGeneratedAlert = (emailViewModel: EmailViewModel): boolean => {
     // Check if this is a security alert category
-    if (briefing.category !== 'Security') return false;
+    if (emailViewModel.category !== 'Security') return false;
 
     // Expanded domain matching patterns
     const appIdentifiers = [
@@ -1746,17 +1746,17 @@ export const App = () => {
 
     // Check all text fields for app-related content
     const textToCheck = [
-      briefing.summary?.toLowerCase() || '',
-      briefing.subject?.toLowerCase() || '',
-      briefing.sender?.toLowerCase() || '',
-      briefing.action?.toLowerCase() || ''
+      emailViewModel.summary?.toLowerCase() || '',
+      emailViewModel.subject?.toLowerCase() || '',
+      emailViewModel.sender?.toLowerCase() || '',
+      emailViewModel.action?.toLowerCase() || ''
     ].join(' ');
 
     // Check for Google security alert patterns related to our app
     const isGoogleSecurityAlert = (
-      (briefing.sender?.toLowerCase().includes('google') ||
-        briefing.sender?.toLowerCase().includes('no-reply@accounts.google.com')) &&
-      briefing.subject?.toLowerCase().includes('security alert')
+      (emailViewModel.sender?.toLowerCase().includes('google') ||
+        emailViewModel.sender?.toLowerCase().includes('no-reply@accounts.google.com')) &&
+      emailViewModel.subject?.toLowerCase().includes('security alert')
     );
 
     // If it's a Google security alert, check if it mentions our app domains
@@ -1769,14 +1769,14 @@ export const App = () => {
   };
 
   // ── Gmail-style thread-collapsed inbox projection ───────────────────────
-  // Groups raw briefings by thread_id (fallback: gmail_message_id → subject).
-  // briefings is already sorted date DESC from fetchEmails, so the first
+  // Groups raw emailViewModels by thread_id (fallback: gmail_message_id → subject).
+  // emailViewModels is already sorted date DESC from fetchEmails, so the first
   // occurrence of each key IS the latest message — no secondary sort needed.
-  // The original `briefings` state is not mutated.
-  const collapsedInbox: Briefing[] = (() => {
-    const seen = new Map<string, Briefing>();
+  // The original `emailViewModels` state is not mutated.
+  const collapsedInbox: EmailViewModel[] = (() => {
+    const seen = new Map<string, EmailViewModel>();
     const hasUnread = new Map<string, boolean>();
-    for (const b of briefings) {
+    for (const b of emailViewModels) {
       const key = b.thread_id || b.gmail_message_id || b.subject;
       if (!seen.has(key)) {
         seen.set(key, b);
@@ -1812,8 +1812,8 @@ export const App = () => {
   // Unread count: thread-level collapsed rows (not raw per-message count)
   const unreadCount = collapsedInbox.filter(b => b.is_read === false).length;
 
-  // Convert a SentEmail to a minimal Briefing for the shared detail panel
-  const sentToBriefing = (se: SentEmail): Briefing => ({
+  // Convert a SentEmail to a minimal EmailViewModel for the shared detail panel
+  const sentToEmailViewModel = (se: SentEmail): EmailViewModel => ({
     account: se.account_id,
     subject: se.subject || t('sent.no_subject'),
     sender: se.cc_addresses
@@ -1845,7 +1845,7 @@ export const App = () => {
   // Show feed toolbar only when an account is active AND the feed has either
   // already loaded data or finished its initial load - prevents toolbar flashing
   // during the "Analyzing..." skeleton state on first account selection.
-  const showFeedNavigation = Boolean(activeEmail) && (!loading || briefings.length > 0);
+  const showFeedNavigation = Boolean(activeEmail) && (!loading || emailViewModels.length > 0);
   const showInboxEmptyState = activeTab === 'inbox' && !loading && !error && !hasFilteredBriefings && !isSearchActive;
   const showInboxPagination = activeTab === 'inbox' && !loading && !isSearchActive && hasFilteredBriefings && totalPages > 1;
   const showWakingOverlay = startupPhase === 'waking';
@@ -2275,7 +2275,7 @@ export const App = () => {
               <SentList
                 emails={currentSentItems}
                 loading={loadingSent}
-                onSelect={(se: SentEmail) => openEmailDetail(sentToBriefing(se), false, true)}
+                onSelect={(se: SentEmail) => openEmailDetail(sentToEmailViewModel(se), false, true)}
               />
               {!loadingSent && sentTotalPages > 1 && (
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-8 mt-4 w-full max-w-sm sm:max-w-none mx-auto">
