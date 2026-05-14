@@ -1,11 +1,11 @@
 import { RefObject } from 'react';
 import { Sparkles, Bot } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Briefing } from '@types';
+import { EmailViewModel } from '@types';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
 
 interface Props {
-  email: Briefing;
+  email: EmailViewModel;
   actionItemsRef: RefObject<HTMLDivElement>;
   onReadFull: () => void;
   isSummarizing?: boolean;

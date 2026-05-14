@@ -2,12 +2,12 @@ import { RefObject, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, AlertCircle, RefreshCw, Mail, Sparkles, ChevronDown, Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Briefing, DraftTone, SupportedTone, EmailTemplate } from '@types';
+import { EmailViewModel, DraftTone, SupportedTone, EmailTemplate } from '@types';
 import { FocusTrap } from './FocusTrap';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
 
 interface Props {
-  email: Briefing;
+  email: EmailViewModel;
   replyBody: string;
   replySubject: string;
   replyCC: string;

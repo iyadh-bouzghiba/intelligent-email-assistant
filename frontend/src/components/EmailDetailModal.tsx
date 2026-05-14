@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { X, MailOpen, Mail, RefreshCw } from 'lucide-react';
-import { AILanguage, Briefing, TranslateRenderResponse } from '@types';
+import { AILanguage, EmailViewModel, TranslateRenderResponse } from '@types';
 import { apiService } from '../services/api';
 import { FocusTrap } from './FocusTrap';
 import { EmailQuickView } from './EmailQuickView';
@@ -9,7 +9,7 @@ import { RefObject, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface Props {
-  email: Briefing;
+  email: EmailViewModel;
   panelView: 'quick' | 'full';
   detailIsSent: boolean;
   modifyScope: boolean;

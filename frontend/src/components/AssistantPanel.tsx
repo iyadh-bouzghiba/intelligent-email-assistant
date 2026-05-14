@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import axios, { isAxiosError } from 'axios';
 import { Bot, X, Send, RefreshCw, Sparkles, AlertCircle, CheckCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Briefing, DraftTone, SupportedTone } from '@types';
+import { EmailViewModel, DraftTone, SupportedTone } from '@types';
 import { apiService } from '@services';
 
 const BASE_URL: string = import.meta.env.PROD
@@ -10,7 +10,7 @@ const BASE_URL: string = import.meta.env.PROD
   : (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(/\/$/, '');
 
 interface Props {
-  email: Briefing;
+  email: EmailViewModel;
   /** Called with the generated draft text; the caller populates ReplyComposeModal. */
   onUseDraft: (draft: string) => void;
   onClose: () => void;
