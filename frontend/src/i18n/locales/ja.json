@@ -58,6 +58,8 @@
         "connecting": "接続中...",
         "channel_clear": "{{category}} チャンネルは空です",
         "no_fresh_briefings_in_filter": "{{category}} フィルターに新しいブリーフィングはありません。",
+        "category_all": "すべて",
+        "category_filter_aria_label": "カテゴリで受信トレイを絞り込む",
         "no_preview_available": "プレビューはありません。",
         "categories": {
             "all": "すべて",

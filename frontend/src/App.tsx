@@ -16,6 +16,7 @@ import { GlobeButton } from './components/GlobeButton';
 import { NotificationCenter } from './components/NotificationCenter';
 import { WakingUp } from './components/WakingUp';
 import { getAccountColor, getEmailInitials } from './components/accountSwitcherHelpers';
+import CategoryPillBar from './components/CategoryPillBar';
 
 const devLog = (...args: unknown[]) => {
   if (import.meta.env.DEV) {
@@ -34,7 +35,7 @@ const CATEGORY_OPTIONS: FilterCategory[] = ['All', 'Security', 'Financial', 'Wor
 const resolveCategoryLabelKey = (category: string) => {
   switch (category) {
     case 'All':
-      return 'inbox.categories.all';
+      return 'inbox.category_all';
     case 'Security':
       return 'inbox.categories.security';
     case 'Financial':
@@ -169,7 +170,11 @@ export const App = () => {
   const brandName = t('nav.brand_name');
   const subtitle = t('nav.subtitle');
 
-  const getCategoryDisplayLabel = (category: string) => t(resolveCategoryLabelKey(category));
+  const getCategoryDisplayLabel = (category: string) => {
+    const categoryTranslator = i18n.getFixedT(aiLanguage);
+    return categoryTranslator(resolveCategoryLabelKey(category));
+  };
+  const isCategoryPillBarRTL = aiLanguage === 'ar';
   const getUrgencyDisplayLabel = (urgency: string) => t(resolveUrgencyLabelKey(urgency));
   const getPageStatusLabel = (current: number, total: number) =>
     t('common.page_status', { current, total });
@@ -651,9 +656,20 @@ export const App = () => {
         if (!stale) setSearchError('error');
       }
     }, 200);
+
     return () => { stale = true; clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emailViewModels]);
+
+  // Reset category filtering when search becomes active.
+  // Search results must remain flat and sovereign over inbox category filtering.
+  useEffect(() => {
+    const searchActivated = searchQuery.trim().length >= 2 && !!activeEmail;
+    if (!searchActivated) return;
+
+    setCurrentPage(1);
+    setFilterCategory((prev) => (prev === 'All' ? prev : 'All'));
+  }, [searchQuery, activeEmail]);
 
   // Fetch sent emails when the Sent tab is active, or when the active account changes while Sent is open.
   useEffect(() => {
@@ -1539,6 +1555,8 @@ export const App = () => {
     setPanelError(null);
     setScrollToActions(false);
     setAiLanguageSavedAccountId(null);
+    setFilterCategory('All');
+    setCurrentPage(1);
 
     // P4 shared tone/template state
     setSelectedTone('professional');
@@ -1953,10 +1971,19 @@ export const App = () => {
   })();
   // ─────────────────────────────────────────────────────────────────────────
 
-  const filteredBriefings = (filterCategory === 'All'
-    ? collapsedInbox
-    : collapsedInbox.filter(b => b.category === filterCategory))
-    .filter(b => !isSelfGeneratedAlert(b)); // Remove self-generated alerts
+  const visibleCollapsedInbox = collapsedInbox.filter((item) => !isSelfGeneratedAlert(item));
+
+  const availableCategories: FilterCategory[] = [
+    'All',
+    ...CATEGORY_OPTIONS.filter(
+      (category): category is Exclude<FilterCategory, 'All'> =>
+        category !== 'All' && visibleCollapsedInbox.some((item) => item.category === category)
+    ),
+  ];
+
+  const filteredBriefings = filterCategory === 'All'
+    ? visibleCollapsedInbox
+    : visibleCollapsedInbox.filter((item) => item.category === filterCategory);
 
   const totalPages = Math.ceil(filteredBriefings.length / ITEMS_PER_PAGE);
   const effectiveInboxPage = totalPages > 0 ? Math.min(currentPage, totalPages) : 1;
@@ -2589,18 +2616,20 @@ export const App = () => {
                 </button>
               </div>
 
-              {/* Right: category chips — inbox only, hidden while search is active */}
+              {/* Right: category pill bar — inbox only, hidden while search is active */}
               {activeTab === 'inbox' && !isSearchActive && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {CATEGORY_OPTIONS.map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => { setFilterCategory(cat); setCurrentPage(1); }}
-                      className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterCategory === cat ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
-                    >
-                      {getCategoryDisplayLabel(cat)}
-                    </button>
-                  ))}
+                <div className="w-full sm:w-auto sm:max-w-[50%]">
+                  <CategoryPillBar
+                    categories={availableCategories}
+                    activeCategoryCode={filterCategory}
+                    onSelect={(code) => {
+                      setFilterCategory(code as FilterCategory);
+                      setCurrentPage(1);
+                    }}
+                    getLabel={getCategoryDisplayLabel}
+                    isRTL={isCategoryPillBarRTL}
+                    ariaLabel={t('inbox.category_filter_aria_label')}
+                  />
                 </div>
               )}
             </div>

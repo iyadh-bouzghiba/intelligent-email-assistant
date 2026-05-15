@@ -58,6 +58,8 @@
         "connecting": "Connecting...",
         "channel_clear": "{{category}} Channel Clear",
         "no_fresh_briefings_in_filter": "No fresh briefings caught in the {{category}} filter.",
+        "category_all": "All",
+        "category_filter_aria_label": "Filter inbox by category",
         "no_preview_available": "No preview available.",
         "categories": {
             "all": "All",

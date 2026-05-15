@@ -58,6 +58,8 @@
         "connecting": "Connexion...",
         "channel_clear": "Canal {{category}} dégagé",
         "no_fresh_briefings_in_filter": "Aucun nouveau briefing détecté dans le filtre {{category}}.",
+        "category_all": "Tous",
+        "category_filter_aria_label": "Filtrer la boîte de réception par catégorie",
         "no_preview_available": "Aucun aperçu disponible.",
         "categories": {
             "all": "Tous",

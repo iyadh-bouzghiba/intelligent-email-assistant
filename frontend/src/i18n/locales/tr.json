@@ -58,6 +58,8 @@
         "connecting": "Bağlanıyor...",
         "channel_clear": "{{category}} kanalı temiz",
         "no_fresh_briefings_in_filter": "{{category}} filtresinde yeni briefing yok.",
+        "category_all": "Tümü",
+        "category_filter_aria_label": "Gelen kutusunu kategoriye göre filtrele",
         "no_preview_available": "Önizleme yok.",
         "categories": {
             "all": "Tümü",

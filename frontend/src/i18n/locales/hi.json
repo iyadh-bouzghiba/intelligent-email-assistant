@@ -58,6 +58,8 @@
         "connecting": "कनेक्ट हो रहा है...",
         "channel_clear": "{{category}} चैनल स्पष्ट",
         "no_fresh_briefings_in_filter": "{{category}} फ़िल्टर में कोई नई ब्रीफिंग नहीं मिली।",
+        "category_all": "सभी",
+        "category_filter_aria_label": "श्रेणी के अनुसार इनबॉक्स फ़िल्टर करें",
         "no_preview_available": "कोई पूर्वावलोकन उपलब्ध नहीं।",
         "categories": {
             "all": "सभी",
