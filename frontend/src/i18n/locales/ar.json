@@ -315,5 +315,24 @@
         "error_body": "تعذّر تحميل نتائج البحث الآن.",
         "clear": "مسح البحث",
         "results_count": "{{count}} نتيجة"
+    },
+    "notification": {
+        "open": "فتح الإشعارات",
+        "title": "الإشعارات",
+        "empty": "لا توجد إشعارات",
+        "all_clear": "البريد الوارد خالٍ — لا عناصر عاجلة",
+        "unseen_count": "{{count}} غير مرئي",
+        "mark_all_seen_sr": "وضع علامة على جميع الإشعارات كمُشاهدة",
+        "mark_as_read": "وضع علامة كمقروء",
+        "dismiss": "تجاهل",
+        "open_email": "فتح البريد الإلكتروني",
+        "urgency_label": "الأولوية",
+        "just_now": "الآن",
+        "browser_alerts": "تنبيهات المتصفح",
+        "browser_alerts_help": "تنبيهات المتصفح لرسائل البريد الجديدة عالية الأولوية على هذا الجهاز.",
+        "browser_alerts_on": "التنبيهات مفعلة",
+        "browser_alerts_off": "التنبيهات متوقفة",
+        "permission_required": "إذن الإشعارات مطلوب",
+        "close": "إغلاق"
     }
 }

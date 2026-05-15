@@ -313,5 +313,24 @@
         "error_body": "अभी खोज परिणाम लोड नहीं किए जा सके।",
         "clear": "खोज साफ़ करें",
         "results_count": "{{count}} परिणाम"
+    },
+    "notification": {
+        "open": "सूचनाएँ खोलें",
+        "title": "सूचनाएँ",
+        "empty": "कोई सूचना नहीं",
+        "all_clear": "इनबॉक्स साफ़ — कोई अत्यावश्यक आइटम नहीं",
+        "unseen_count": "{{count}} अनदेखी",
+        "mark_all_seen_sr": "सभी सूचनाओं को देखी हुई चिह्नित करें",
+        "mark_as_read": "पढ़ा हुआ चिह्नित करें",
+        "dismiss": "हटाएँ",
+        "open_email": "ईमेल खोलें",
+        "urgency_label": "तात्कालिकता",
+        "just_now": "अभी",
+        "browser_alerts": "ब्राउज़र सूचनाएँ",
+        "browser_alerts_help": "इस डिवाइस पर नए उच्च-तात्कालिकता ईमेल के लिए ब्राउज़र सूचनाएँ।",
+        "browser_alerts_on": "सूचनाएँ चालू",
+        "browser_alerts_off": "सूचनाएँ बंद",
+        "permission_required": "सूचना अनुमति आवश्यक है",
+        "close": "बंद करें"
     }
 }

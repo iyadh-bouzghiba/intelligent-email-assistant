@@ -313,5 +313,24 @@
         "error_body": "Hasil pencarian tidak dapat dimuat saat ini.",
         "clear": "Hapus pencarian",
         "results_count": "{{count}} hasil"
+    },
+    "notification": {
+        "open": "Buka notifikasi",
+        "title": "Notifikasi",
+        "empty": "Tidak ada notifikasi",
+        "all_clear": "Kotak masuk bersih — tidak ada item mendesak",
+        "unseen_count": "{{count}} belum dilihat",
+        "mark_all_seen_sr": "Tandai semua notifikasi sebagai sudah dilihat",
+        "mark_as_read": "Tandai sebagai dibaca",
+        "dismiss": "Tutup",
+        "open_email": "Buka email",
+        "urgency_label": "Urgensi",
+        "just_now": "Baru saja",
+        "browser_alerts": "Peringatan browser",
+        "browser_alerts_help": "Peringatan browser untuk email baru dengan urgensi tinggi di perangkat ini.",
+        "browser_alerts_on": "Peringatan aktif",
+        "browser_alerts_off": "Peringatan nonaktif",
+        "permission_required": "Izin notifikasi diperlukan",
+        "close": "Tutup"
     }
 }

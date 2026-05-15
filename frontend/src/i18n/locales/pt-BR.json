@@ -315,5 +315,24 @@
         "error_body": "Não foi possível carregar os resultados da pesquisa agora.",
         "clear": "Limpar pesquisa",
         "results_count": "{{count}} resultados"
+    },
+    "notification": {
+        "open": "Abrir notificações",
+        "title": "Notificações",
+        "empty": "Sem notificações",
+        "all_clear": "Caixa de entrada limpa — sem itens urgentes",
+        "unseen_count": "{{count}} não vista(s)",
+        "mark_all_seen_sr": "Marcar todas as notificações como vistas",
+        "mark_as_read": "Marcar como lido",
+        "dismiss": "Dispensar",
+        "open_email": "Abrir e-mail",
+        "urgency_label": "Urgência",
+        "just_now": "Agora mesmo",
+        "browser_alerts": "Alertas do navegador",
+        "browser_alerts_help": "Alertas do navegador para novos e-mails de alta urgência neste dispositivo.",
+        "browser_alerts_on": "Alertas ativados",
+        "browser_alerts_off": "Alertas desativados",
+        "permission_required": "Permissão de notificação necessária",
+        "close": "Fechar"
     }
 }

@@ -13,6 +13,7 @@ import { AssistantPanel } from './components/AssistantPanel';
 import { AccountSwitcherMobile } from './components/AccountSwitcherMobile';
 import { AccountSwitcherDesktop } from './components/AccountSwitcherDesktop';
 import { GlobeButton } from './components/GlobeButton';
+import { NotificationCenter } from './components/NotificationCenter';
 import { WakingUp } from './components/WakingUp';
 import { getAccountColor, getEmailInitials } from './components/accountSwitcherHelpers';
 
@@ -98,6 +99,16 @@ export const App = () => {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [summarizingIds, setSummarizingIds] = useState<Set<string>>(new Set());
   const [selectedEmailDetail, setSelectedEmailDetail] = useState<EmailViewModel | null>(null);
+  const [_notificationSeenIds, setNotificationSeenIds] = useState<Set<string>>(new Set());
+  const [_notificationDismissedIds, setNotificationDismissedIds] = useState<Set<string>>(new Set());
+  const [_notificationUnseenIds, setNotificationUnseenIds] = useState<Set<string>>(new Set());
+  const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
+  const [notificationUrgencyDeltaIds, setNotificationUrgencyDeltaIds] = useState<Set<string>>(new Set());
+  const urgencySnapshotRef = useRef<Record<string, 'low' | 'medium' | 'high'>>({});
+  const [isDesktopViewport, setIsDesktopViewport] = useState<boolean>(
+    typeof window !== 'undefined' ? window.innerWidth >= 640 : true
+  );
+  const knownHighUrgencyIdsRef = useRef<Set<string>>(new Set());
   const [offlineAccounts, setOfflineAccounts] = useState<Set<string>>(new Set());
   const [scrollToActions, setScrollToActions] = useState(false);
   const actionItemsRef = useRef<HTMLDivElement | null>(null);
@@ -157,7 +168,6 @@ export const App = () => {
 
   const brandName = t('nav.brand_name');
   const subtitle = t('nav.subtitle');
-  const urgencyAlertsHelp = t('nav.urgency_alerts_help');
 
   const getCategoryDisplayLabel = (category: string) => t(resolveCategoryLabelKey(category));
   const getUrgencyDisplayLabel = (urgency: string) => t(resolveUrgencyLabelKey(urgency));
@@ -344,6 +354,58 @@ export const App = () => {
     return emailViewModel;
   };
 
+  const areIdSetsEqual = (a: Set<string>, b: Set<string>): boolean => {
+    if (a.size !== b.size) return false;
+    for (const value of a) {
+      if (!b.has(value)) return false;
+    }
+    return true;
+  };
+
+  const getNotificationIdentity = (item: EmailViewModel): string | null => {
+    const baseId = item.gmail_message_id ?? item.thread_id ?? null;
+    if (!baseId) return null;
+    return `${item.account}::${baseId}`;
+  };
+
+  const getNotificationUrgency = (item: EmailViewModel): 'low' | 'medium' | 'high' => {
+    const rawUrgency = item.ai_summary_json?.urgency?.trim().toLowerCase();
+    if (rawUrgency === 'high' || rawUrgency === 'medium' || rawUrgency === 'low') {
+      return rawUrgency;
+    }
+    if (item.priority === 'High') return 'high';
+    if (item.priority === 'Low') return 'low';
+    return 'medium';
+  };
+
+  const getNotificationUrgencyWeight = (urgency: 'low' | 'medium' | 'high'): number => {
+    if (urgency === 'high') return 3;
+    if (urgency === 'medium') return 2;
+    return 1;
+  };
+
+  const itemDateToEpoch = (item: EmailViewModel): number => {
+    if (!item.date_iso) return Number.NEGATIVE_INFINITY;
+    const parsed = Date.parse(item.date_iso);
+    return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+  };
+
+  const getNotificationItemsFromEmailViewModels = (items: EmailViewModel[]): EmailViewModel[] => {
+    return items
+      .filter((item) => item.should_alert)
+      .sort((a, b) => {
+        const urgencyDiff =
+          getNotificationUrgencyWeight(getNotificationUrgency(b)) -
+          getNotificationUrgencyWeight(getNotificationUrgency(a));
+
+        if (urgencyDiff !== 0) return urgencyDiff;
+
+        const timeA = itemDateToEpoch(a);
+        const timeB = itemDateToEpoch(b);
+        return timeB - timeA;
+      });
+  };
+
   // Updates cached thread message rows when read state changes for a thread.
   const _updateThreadItemReadState = (thread_id: string, is_read: boolean) => {
     setThreadItemsById(prev => {
@@ -413,6 +475,21 @@ export const App = () => {
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Viewport breakpoint tracking — closes panel on mobile<->desktop transition
+  useEffect(() => {
+    let currentIsDesktop = window.innerWidth >= 640;
+    const handleResize = () => {
+      const nextIsDesktop = window.innerWidth >= 640;
+      if (nextIsDesktop !== currentIsDesktop) {
+        currentIsDesktop = nextIsDesktop;
+        setIsDesktopViewport(nextIsDesktop);
+        setIsNotificationCenterOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   // Keyboard shortcut for scroll to top (Ctrl+Home or Cmd+Home)
@@ -1062,6 +1139,40 @@ export const App = () => {
     if (!selectedEmailDetail?.gmail_message_id) return;
     const fresh = emailViewModels.find(b => b.gmail_message_id === selectedEmailDetail.gmail_message_id);
     if (fresh) setSelectedEmailDetail(fresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emailViewModels]);
+
+  useEffect(() => {
+    const highUrgencyItems = getNotificationItemsFromEmailViewModels(emailViewModels);
+    const currentIds = new Set(
+      highUrgencyItems
+        .map((item) => getNotificationIdentity(item))
+        .filter((id): id is string => id !== null)
+    );
+
+    setNotificationSeenIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => currentIds.has(id)));
+      return areIdSetsEqual(prev, next) ? prev : next;
+    });
+
+    setNotificationDismissedIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => currentIds.has(id)));
+      return areIdSetsEqual(prev, next) ? prev : next;
+    });
+
+    setNotificationUnseenIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => currentIds.has(id)));
+
+      currentIds.forEach((id) => {
+        if (!knownHighUrgencyIdsRef.current.has(id)) {
+          next.add(id);
+        }
+      });
+
+      return areIdSetsEqual(prev, next) ? prev : next;
+    });
+
+    knownHighUrgencyIdsRef.current = currentIds;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emailViewModels]);
 
@@ -1912,6 +2023,171 @@ export const App = () => {
     }
   }, [currentPage, totalPages]);
 
+  // Safety: close notification panel when no active account or no connected accounts
+  useEffect(() => {
+    if (!activeEmail || accounts.filter(a => a.connected).length === 0) {
+      setIsNotificationCenterOpen(false);
+    }
+  }, [activeEmail, accounts]);
+
+  // ── Notification Center derived values ─────────────────────────────────────
+
+  const notificationItems = getNotificationItemsFromEmailViewModels(emailViewModels).filter(item => {
+    const id = getNotificationIdentity(item);
+    return id !== null && !_notificationDismissedIds.has(id);
+  });
+
+  const visibleNotificationIds = new Set(
+    notificationItems
+      .map(item => getNotificationIdentity(item))
+      .filter((id): id is string => id !== null)
+  );
+
+  const unseenNotificationCount = notificationItems.filter(item => {
+    const id = getNotificationIdentity(item);
+    return id !== null && _notificationUnseenIds.has(id);
+  }).length;
+
+  const notificationsSupported = typeof window !== 'undefined' && 'Notification' in window;
+
+  // ── Urgency snapshot helpers ───────────────────────────────────────────────
+
+  const buildNotificationUrgencySnapshot = (items: EmailViewModel[]): Record<string, 'low' | 'medium' | 'high'> => {
+    const snapshot: Record<string, 'low' | 'medium' | 'high'> = {};
+    items.forEach(item => {
+      const id = getNotificationIdentity(item);
+      if (id) snapshot[id] = getNotificationUrgency(item);
+    });
+    return snapshot;
+  };
+
+  const getNotificationDeltaIds = (
+    items: EmailViewModel[],
+    previousSnapshot: Record<string, 'low' | 'medium' | 'high'>
+  ): Set<string> => {
+    const delta = new Set<string>();
+    items.forEach(item => {
+      const id = getNotificationIdentity(item);
+      if (!id) return;
+      if (!(id in previousSnapshot)) return;
+      const prevWeight = getNotificationUrgencyWeight(previousSnapshot[id]);
+      const currWeight = getNotificationUrgencyWeight(getNotificationUrgency(item));
+      if (currWeight > prevWeight) delta.add(id);
+    });
+    return delta;
+  };
+
+  const markNotificationIdsSeen = (ids: Set<string>) => {
+    setNotificationSeenIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      return next;
+    });
+    setNotificationUnseenIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.delete(id));
+      return next;
+    });
+  };
+
+  const clearNotificationDeltaForId = (id: string) => {
+    setNotificationUrgencyDeltaIds(prev => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const closeNotificationCenter = () => setIsNotificationCenterOpen(false);
+
+  const toggleNotificationCenter = () => {
+    if (isNotificationCenterOpen) {
+      setIsNotificationCenterOpen(false);
+      return;
+    }
+    // Compare against previous snapshot BEFORE updating it
+    const deltaIds = getNotificationDeltaIds(notificationItems, urgencySnapshotRef.current);
+    setNotificationUrgencyDeltaIds(deltaIds);
+    // Replace snapshot AFTER computing delta
+    urgencySnapshotRef.current = buildNotificationUrgencySnapshot(notificationItems);
+    // Mark visible items as seen
+    markNotificationIdsSeen(visibleNotificationIds);
+    setIsNotificationCenterOpen(true);
+  };
+
+  // ── Notification item callbacks ────────────────────────────────────────────
+
+  const isNotificationItemUnseen = (item: EmailViewModel): boolean => {
+    const id = getNotificationIdentity(item);
+    return id !== null && _notificationUnseenIds.has(id);
+  };
+
+  const hasNotificationItemUrgencyDelta = (item: EmailViewModel): boolean => {
+    const id = getNotificationIdentity(item);
+    return id !== null && notificationUrgencyDeltaIds.has(id);
+  };
+
+  const canMarkNotificationItemAsRead = (item: EmailViewModel): boolean => {
+    if (item.is_read !== false) return false;
+    if (!item.thread_id) return false;
+    if (!activeEmail) return false;
+    const acct = accounts.find(a => a.account_id === activeEmail);
+    return Boolean(acct?.modify_scope);
+  };
+
+  const handleOpenNotificationItem = (item: EmailViewModel) => {
+    const id = getNotificationIdentity(item);
+    if (id) {
+      clearNotificationDeltaForId(id);
+      markNotificationIdsSeen(new Set([id]));
+    }
+    closeNotificationCenter();
+    openEmailDetail(item);
+  };
+
+  const handleDismissNotificationItem = (item: EmailViewModel) => {
+    const id = getNotificationIdentity(item);
+    if (!id) return;
+    setNotificationDismissedIds(prev => new Set(prev).add(id));
+    markNotificationIdsSeen(new Set([id]));
+    clearNotificationDeltaForId(id);
+  };
+
+  const handleToggleBrowserAlertsFromCenter = () => {
+    if (notificationsEnabled) {
+      setNotificationsEnabled(false);
+    } else {
+      requestNotificationPermission();
+    }
+  };
+
+  const handleMarkNotificationItemAsRead = async (item: EmailViewModel) => {
+    if (!canMarkNotificationItemAsRead(item)) return;
+    if (!item.thread_id || !activeEmail) return;
+    const capturedAccountId = activeEmail;
+    try {
+      const res = await apiService.setThreadReadState(item.thread_id, true, capturedAccountId);
+      if (res.success === true && res.gmail_updated === true) {
+        setBriefings(prev => prev.map(b =>
+          b.thread_id === item.thread_id ? { ...b, is_read: true } : b
+        ));
+        _updateThreadItemReadState(item.thread_id, true);
+        if (selectedEmailDetail?.thread_id === item.thread_id) {
+          setIsDetailRead(true);
+        }
+        const id = getNotificationIdentity(item);
+        if (id) markNotificationIdsSeen(new Set([id]));
+        if (res.db_updated === false) {
+          console.warn('[READ-STATE] DB mirror unconfirmed on notification mark-as-read:', res.db_error);
+          fetchEmails(capturedAccountId, { reason: 'read-state-db-reconcile' });
+        }
+      }
+    } catch {
+      // Non-destructive failure — keep notification visible
+    }
+  };
+
   if (startupPhase !== 'ready') {
     return (
       <div className="min-h-screen bg-brand-bg">
@@ -1951,6 +2227,27 @@ export const App = () => {
               </div>
               <div className="sm:hidden flex items-center gap-2 flex-shrink-0">
                 <GlobeButton />
+                {connectedAccounts.length > 0 && !isDesktopViewport && (
+                  <NotificationCenter
+                    items={notificationItems}
+                    isOpen={isNotificationCenterOpen}
+                    unseenCount={unseenNotificationCount}
+                    notificationsEnabled={notificationsEnabled}
+                    notificationsSupported={notificationsSupported}
+                    getItemId={(item) => getNotificationIdentity(item)!}
+                    isItemUnseen={isNotificationItemUnseen}
+                    hasUrgencyDelta={hasNotificationItemUrgencyDelta}
+                    canMarkAsRead={canMarkNotificationItemAsRead}
+                    onToggleOpen={toggleNotificationCenter}
+                    onClose={closeNotificationCenter}
+                    onOpenItem={handleOpenNotificationItem}
+                    onDismissItem={handleDismissNotificationItem}
+                    onMarkAsRead={handleMarkNotificationItemAsRead}
+                    onToggleBrowserAlerts={handleToggleBrowserAlertsFromCenter}
+                    buttonId="notification-center-button-mobile"
+                    panelId="notification-center-panel-mobile"
+                  />
+                )}
               </div>
             </div>
 
@@ -1989,35 +2286,27 @@ export const App = () => {
             <div className={useSearchHeaderLayout ? "hidden sm:flex items-center justify-end gap-3 flex-shrink-0 flex-wrap min-w-0 ml-auto" : "hidden sm:flex items-center justify-end gap-3 flex-wrap min-w-0"}>
               <GlobeButton />
 
-              {/* Desktop utility rail — compact, future-extensible, only when an account is connected */}
-              {connectedAccounts.length > 0 && (
-                <div className="flex items-center gap-2 flex-shrink-0 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/5">
-                  <Shield
-                    size={14}
-                    aria-hidden="true"
-                    className={`${notificationsEnabled ? 'text-primary-300' : 'text-slate-500'}`}
-                  />
-                  <span
-                    id="sentinel-alerts-label"
-                    className="text-[11px] font-bold text-slate-300 whitespace-nowrap"
-                  >
-                    {t('nav.urgency_alerts')}
-                  </span>
-                  <button
-                    type="button"
-                    aria-labelledby="sentinel-alerts-label"
-                    aria-describedby="sentinel-alerts-help"
-                    aria-pressed={notificationsEnabled}
-                    title={urgencyAlertsHelp}
-                    onClick={() => notificationsEnabled ? setNotificationsEnabled(false) : requestNotificationPermission()}
-                    className={`w-10 h-5 rounded-full relative transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg ${notificationsEnabled ? 'bg-primary-600' : 'bg-slate-700'}`}
-                  >
-                    <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 ${notificationsEnabled ? 'left-6' : 'left-1'}`} />
-                  </button>
-                  <span id="sentinel-alerts-help" className="sr-only">
-                    {urgencyAlertsHelp}
-                  </span>
-                </div>
+              {/* Desktop notification center — bell-based, replaces legacy Shield/toggle rail */}
+              {connectedAccounts.length > 0 && isDesktopViewport && (
+                <NotificationCenter
+                  items={notificationItems}
+                  isOpen={isNotificationCenterOpen}
+                  unseenCount={unseenNotificationCount}
+                  notificationsEnabled={notificationsEnabled}
+                  notificationsSupported={notificationsSupported}
+                  getItemId={(item) => getNotificationIdentity(item)!}
+                  isItemUnseen={isNotificationItemUnseen}
+                  hasUrgencyDelta={hasNotificationItemUrgencyDelta}
+                  canMarkAsRead={canMarkNotificationItemAsRead}
+                  onToggleOpen={toggleNotificationCenter}
+                  onClose={closeNotificationCenter}
+                  onOpenItem={handleOpenNotificationItem}
+                  onDismissItem={handleDismissNotificationItem}
+                  onMarkAsRead={handleMarkNotificationItemAsRead}
+                  onToggleBrowserAlerts={handleToggleBrowserAlertsFromCenter}
+                  buttonId="notification-center-button-desktop"
+                  panelId="notification-center-panel-desktop"
+                />
               )}
 
               {/* Desktop session/action rail — account context and immediate actions only */}
