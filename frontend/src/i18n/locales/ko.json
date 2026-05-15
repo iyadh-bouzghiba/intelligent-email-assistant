@@ -313,5 +313,24 @@
         "error_body": "지금은 검색 결과를 불러올 수 없습니다.",
         "clear": "검색 지우기",
         "results_count": "{{count}}개 결과"
+    },
+    "notification": {
+        "open": "알림 열기",
+        "title": "알림",
+        "empty": "알림이 없습니다",
+        "all_clear": "받은 편지함이 비어 있음 — 긴급 항목 없음",
+        "unseen_count": "읽지 않음 {{count}}개",
+        "mark_all_seen_sr": "모든 알림을 확인됨으로 표시",
+        "mark_as_read": "읽음으로 표시",
+        "dismiss": "닫기",
+        "open_email": "이메일 열기",
+        "urgency_label": "긴급도",
+        "just_now": "방금",
+        "browser_alerts": "브라우저 알림",
+        "browser_alerts_help": "이 기기에서 새 고긴급 이메일에 대해 브라우저 알림을 받습니다.",
+        "browser_alerts_on": "알림 켜짐",
+        "browser_alerts_off": "알림 꺼짐",
+        "permission_required": "알림 권한이 필요합니다",
+        "close": "닫기"
     }
 }

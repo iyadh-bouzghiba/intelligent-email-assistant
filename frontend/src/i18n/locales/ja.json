@@ -313,5 +313,24 @@
         "error_body": "現在、検索結果を読み込めませんでした。",
         "clear": "検索をクリア",
         "results_count": "{{count}} 件の結果"
+    },
+    "notification": {
+        "open": "通知を開く",
+        "title": "通知",
+        "empty": "通知はありません",
+        "all_clear": "受信トレイは空です — 緊急項目なし",
+        "unseen_count": "未確認 {{count}} 件",
+        "mark_all_seen_sr": "すべての通知を確認済みにする",
+        "mark_as_read": "既読にする",
+        "dismiss": "閉じる",
+        "open_email": "メールを開く",
+        "urgency_label": "緊急度",
+        "just_now": "たった今",
+        "browser_alerts": "ブラウザー通知",
+        "browser_alerts_help": "このデバイスで新しい高緊急メールをブラウザー通知で受け取ります。",
+        "browser_alerts_on": "通知オン",
+        "browser_alerts_off": "通知オフ",
+        "permission_required": "通知の許可が必要です",
+        "close": "閉じる"
     }
 }

@@ -315,5 +315,24 @@
         "error_body": "Impossible de charger les résultats de recherche pour le moment.",
         "clear": "Effacer la recherche",
         "results_count": "{{count}} résultats"
+    },
+    "notification": {
+        "open": "Ouvrir les notifications",
+        "title": "Notifications",
+        "empty": "Aucune notification",
+        "all_clear": "Boîte de réception vide — aucun élément urgent",
+        "unseen_count": "{{count}} non vue(s)",
+        "mark_all_seen_sr": "Marquer toutes les notifications comme vues",
+        "mark_as_read": "Marquer comme lu",
+        "dismiss": "Ignorer",
+        "open_email": "Ouvrir l'e-mail",
+        "urgency_label": "Urgence",
+        "just_now": "À l'instant",
+        "browser_alerts": "Alertes du navigateur",
+        "browser_alerts_help": "Alertes du navigateur pour les nouveaux e-mails à forte urgence sur cet appareil.",
+        "browser_alerts_on": "Alertes activées",
+        "browser_alerts_off": "Alertes désactivées",
+        "permission_required": "Autorisation de notification requise",
+        "close": "Fermer"
     }
 }

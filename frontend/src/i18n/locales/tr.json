@@ -315,5 +315,24 @@
         "error_body": "Arama sonuçları şu anda yüklenemedi.",
         "clear": "Aramayı temizle",
         "results_count": "{{count}} sonuç"
+    },
+    "notification": {
+        "open": "Bildirimleri aç",
+        "title": "Bildirimler",
+        "empty": "Bildirim yok",
+        "all_clear": "Gelen kutusu temiz — acil öğe yok",
+        "unseen_count": "{{count}} görülmedi",
+        "mark_all_seen_sr": "Tüm bildirimleri görüldü olarak işaretle",
+        "mark_as_read": "Okundu olarak işaretle",
+        "dismiss": "Kapat",
+        "open_email": "E-postayı aç",
+        "urgency_label": "Öncelik",
+        "just_now": "Az önce",
+        "browser_alerts": "Tarayıcı bildirimleri",
+        "browser_alerts_help": "Bu cihazda yeni yüksek öncelikli e-postalar için tarayıcı bildirimleri.",
+        "browser_alerts_on": "Bildirimler açık",
+        "browser_alerts_off": "Bildirimler kapalı",
+        "permission_required": "Bildirim izni gerekli",
+        "close": "Kapat"
     }
 }

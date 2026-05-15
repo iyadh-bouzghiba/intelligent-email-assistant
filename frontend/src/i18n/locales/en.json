@@ -315,5 +315,24 @@
         "error_body": "We couldn't load search results right now.",
         "clear": "Clear search",
         "results_count": "{{count}} results"
+    },
+    "notification": {
+        "open": "Open notifications",
+        "title": "Notifications",
+        "empty": "No notifications",
+        "all_clear": "Inbox clear — no urgent items",
+        "unseen_count": "{{count}} unseen",
+        "mark_all_seen_sr": "Mark all notifications as seen",
+        "mark_as_read": "Mark as read",
+        "dismiss": "Dismiss",
+        "open_email": "Open email",
+        "urgency_label": "Urgency",
+        "just_now": "Just now",
+        "browser_alerts": "Browser alerts",
+        "browser_alerts_help": "Browser alerts for new high-urgency emails on this device.",
+        "browser_alerts_on": "Alerts on",
+        "browser_alerts_off": "Alerts off",
+        "permission_required": "Notification permission required",
+        "close": "Close"
     }
 }
