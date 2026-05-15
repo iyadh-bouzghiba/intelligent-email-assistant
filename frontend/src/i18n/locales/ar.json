@@ -58,6 +58,8 @@
         "connecting": "جارٍ الاتصال...",
         "channel_clear": "قناة {{category}} خالية",
         "no_fresh_briefings_in_filter": "لا توجد موجزات جديدة ضمن فلتر {{category}}.",
+        "category_all": "الكل",
+        "category_filter_aria_label": "تصفية البريد الوارد حسب الفئة",
         "no_preview_available": "لا توجد معاينة متاحة.",
         "categories": {
             "all": "الكل",

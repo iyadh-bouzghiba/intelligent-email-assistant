@@ -58,6 +58,8 @@
         "connecting": "Menghubungkan...",
         "channel_clear": "Saluran {{category}} Bersih",
         "no_fresh_briefings_in_filter": "Tidak ada briefing baru di filter {{category}}.",
+        "category_all": "Semua",
+        "category_filter_aria_label": "Filter kotak masuk berdasarkan kategori",
         "no_preview_available": "Tidak ada pratinjau tersedia.",
         "categories": {
             "all": "Semua",

@@ -58,6 +58,8 @@
         "connecting": "연결 중...",
         "channel_clear": "{{category}} 채널 비어 있음",
         "no_fresh_briefings_in_filter": "{{category}} 필터에 새 브리핑이 없습니다.",
+        "category_all": "전체",
+        "category_filter_aria_label": "카테고리별로 받은편지함 필터링",
         "no_preview_available": "미리보기를 사용할 수 없습니다.",
         "categories": {
             "all": "전체",
