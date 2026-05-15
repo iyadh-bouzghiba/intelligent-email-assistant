@@ -84,7 +84,8 @@
         "auto_summary_limit_count": "{{count}} dari {{limit}} digunakan",
         "auto_summary_limit_body": "Anda telah menggunakan {{count}} dari {{limit}} ringkasan otomatis untuk sesi ini.",
         "auto_summary_limit_tip": "Tingkatkan paket Anda atau tunggu batas direset.",
-        "auto_summary_limit_tip_label": "Tips:"
+        "auto_summary_limit_tip_label": "Tips:",
+        "thread_message_count": "{{count}} pesan"
     },
     "modal": {
         "close_email_details": "Tutup detail email",

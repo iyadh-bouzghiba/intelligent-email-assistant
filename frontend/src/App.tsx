@@ -138,6 +138,10 @@ export const App = () => {
   const [searchResults, setSearchResults] = useState<EmailViewModel[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [expandedThreadIds, setExpandedThreadIds] = useState<Set<string>>(new Set());
+  const [threadItemsById, setThreadItemsById] = useState<Record<string, EmailViewModel[]>>({});
+  const [_threadLoadingIds, setThreadLoadingIds] = useState<Set<string>>(new Set());
+  const [_threadLoadErrors, setThreadLoadErrors] = useState<Record<string, string | null>>({});
   const desktopSearchInputRef = useRef<HTMLInputElement | null>(null);
   const mobileSearchInputRef = useRef<HTMLInputElement | null>(null);
   const activeSearchInputRef = () =>
@@ -331,12 +335,53 @@ export const App = () => {
       ai_preferred_language_available: e.ai_preferred_language_available ?? false,
       gmail_message_id: e.gmail_message_id ?? undefined,
       thread_id: e.thread_id ?? undefined,
+      thread_count: typeof e.thread_count === 'number' && e.thread_count >= 1 ? e.thread_count : 1,
       is_read: e.is_read !== undefined ? Boolean(e.is_read) : undefined,
     };
     if (triggerAlerts && emailViewModel.should_alert) {
       setTimeout(() => triggerSentinelAlert(emailViewModel), 500);
     }
     return emailViewModel;
+  };
+
+  // Updates cached thread message rows when read state changes for a thread.
+  const _updateThreadItemReadState = (thread_id: string, is_read: boolean) => {
+    setThreadItemsById(prev => {
+      const rows = prev[thread_id];
+      if (!rows) return prev;
+      return { ...prev, [thread_id]: rows.map(r => ({ ...r, is_read })) };
+    });
+  };
+
+  // Toggles thread expansion; fetches and caches messages on first expand.
+  const _handleToggleThreadExpansion = async (item: EmailViewModel) => {
+    const { thread_id, thread_count } = item;
+    if (!thread_id) return;
+    if ((thread_count ?? 1) <= 1) return;
+    if (!activeEmail) return;
+
+    if (expandedThreadIds.has(thread_id)) {
+      setExpandedThreadIds(prev => { const s = new Set(prev); s.delete(thread_id); return s; });
+      return;
+    }
+
+    if (threadItemsById[thread_id]) {
+      setExpandedThreadIds(prev => new Set(prev).add(thread_id));
+      return;
+    }
+
+    setExpandedThreadIds(prev => new Set(prev).add(thread_id));
+    setThreadLoadingIds(prev => new Set(prev).add(thread_id));
+    setThreadLoadErrors(prev => ({ ...prev, [thread_id]: null }));
+    try {
+      const rows = await apiService.getThreadMessages(thread_id, activeEmail, aiLanguageRef.current);
+      const mapped = rows.map(row => mapRowToEmailViewModel(row, false));
+      setThreadItemsById(prev => ({ ...prev, [thread_id]: mapped }));
+    } catch {
+      setThreadLoadErrors(prev => ({ ...prev, [thread_id]: 'error' }));
+    } finally {
+      setThreadLoadingIds(prev => { const s = new Set(prev); s.delete(thread_id); return s; });
+    }
   };
 
   // Global session-expired handler: reset all UI state when backend returns 401
@@ -1431,6 +1476,7 @@ export const App = () => {
             setBriefings(prev => prev.map(b =>
               b.thread_id === item.thread_id ? { ...b, is_read: true } : b
             ));
+            if (item.thread_id) _updateThreadItemReadState(item.thread_id, true);
             if (res.db_updated === false) {
               console.warn('[READ-STATE] DB mirror unconfirmed on auto-mark-read:', res.db_error);
               fetchEmails(capturedAccountId, { reason: 'read-state-db-reconcile' });
@@ -1669,6 +1715,7 @@ export const App = () => {
         setBriefings(prev => prev.map(b =>
           b.thread_id === selectedEmailDetail.thread_id ? { ...b, is_read: true } : b
         ));
+        _updateThreadItemReadState(selectedEmailDetail.thread_id, true);
         if (res.db_updated === false) {
           console.warn('[READ-STATE] DB mirror unconfirmed on mark-read:', res.db_error);
           fetchEmails(activeEmail, { reason: 'read-state-db-reconcile' });
@@ -1693,6 +1740,7 @@ export const App = () => {
         setBriefings(prev => prev.map(b =>
           b.thread_id === selectedEmailDetail.thread_id ? { ...b, is_read: false } : b
         ));
+        _updateThreadItemReadState(selectedEmailDetail.thread_id, false);
         if (res.db_updated === false) {
           console.warn('[READ-STATE] DB mirror unconfirmed on mark-unread:', res.db_error);
           fetchEmails(activeEmail, { reason: 'read-state-db-reconcile' });
@@ -2402,6 +2450,11 @@ export const App = () => {
                             <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${getCategoryStyles(item.category)}`}>
                               {getCategoryDisplayLabel(item.category)}
                             </span>
+                            {item.thread_id && (item.thread_count ?? 1) > 1 && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border border-primary-500/30 bg-primary-500/10 text-primary-300">
+                                {t('inbox.thread_message_count', { count: item.thread_count })}
+                              </span>
+                            )}
                           </div>
                           {item.ai_summary_text && (
                             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-primary-500/15 border border-primary-400/30">
@@ -2456,7 +2509,7 @@ export const App = () => {
                               </ul>
                               {item.ai_summary_json.action_items.length > 3 && (
                                 <button
-                                  onClick={() => openEmailDetail(item, true)}
+                                  onClick={e => { e.stopPropagation(); openEmailDetail(item, true); }}
                                   className="text-[10px] font-bold text-primary-400 hover:text-primary-300 mt-1.5 transition-colors"
                                 >
                                   {t('inbox.view_more_actions', { count: item.ai_summary_json.action_items.length - 3 })} &rarr;
@@ -2479,7 +2532,8 @@ export const App = () => {
                             {/* Refresh AI Summary for cards that already have summaries */}
                             {item.ai_summary_text && item.gmail_message_id && (
                               <button
-                                onClick={async () => {
+                                onClick={async (e) => {
+                                  e.stopPropagation();
                                   if (!activeEmail) return;
                                   setSummarizingIds(prev => new Set(prev).add(item.gmail_message_id!));
                                   await apiService.summarizeEmail(item.gmail_message_id!, activeEmail);
@@ -2500,13 +2554,69 @@ export const App = () => {
                               </button>
                             )}
                             <button
-                              onClick={() => openEmailDetail(item)}
+                              onClick={e => { e.stopPropagation(); openEmailDetail(item); }}
                               className="text-[9px] font-bold text-slate-500 hover:text-slate-300 uppercase flex items-center gap-1 transition-colors"
                             >
                               {t('inbox.details')} <ChevronRight size={11} />
                             </button>
+                            {item.thread_id && (item.thread_count ?? 1) > 1 && (
+                              <button
+                                onClick={e => { e.stopPropagation(); _handleToggleThreadExpansion(item); }}
+                                aria-expanded={expandedThreadIds.has(item.thread_id)}
+                                aria-controls={`thread-messages-${item.thread_id}`}
+                                aria-label={t('inbox.thread_message_count', { count: item.thread_count })}
+                                className="text-[9px] font-bold text-primary-400 hover:text-primary-300 uppercase flex items-center gap-1 transition-colors min-h-[44px] py-2 px-2"
+                              >
+                                <ChevronRight size={11} className={`transition-transform duration-200 ${expandedThreadIds.has(item.thread_id) ? 'rotate-90' : ''}`} />
+                                {t('inbox.thread_message_count', { count: item.thread_count })}
+                              </button>
+                            )}
                           </div>
                         </div>
+
+                        {/* Expanded thread messages panel */}
+                        {item.thread_id && expandedThreadIds.has(item.thread_id) && (
+                          <div
+                            id={`thread-messages-${item.thread_id}`}
+                            className="mt-3 pt-3 border-t border-white/5 space-y-1.5"
+                          >
+                            {_threadLoadingIds.has(item.thread_id) && (
+                              <div className="flex items-center gap-2 py-1.5 text-[11px] text-slate-500">
+                                <RefreshCw size={11} className="animate-spin text-primary-400" />
+                                <span>{t('common.syncing')}</span>
+                              </div>
+                            )}
+                            {!_threadLoadingIds.has(item.thread_id) && _threadLoadErrors[item.thread_id] && (
+                              <div className="flex items-center gap-2 py-1.5 text-[11px] text-slate-500">
+                                <AlertCircle size={11} className="text-red-400/70" />
+                                <span>{t('common.network_error_try_again')}</span>
+                              </div>
+                            )}
+                            {!_threadLoadingIds.has(item.thread_id) && !_threadLoadErrors[item.thread_id] && threadItemsById[item.thread_id]?.map((msg, mi) => (
+                              <button
+                                key={msg.gmail_message_id || String(mi)}
+                                onClick={e => { e.stopPropagation(); openEmailDetail(msg); }}
+                                className="w-full text-left flex items-start gap-3 px-3 py-3 min-h-[44px] rounded-xl bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 hover:border-white/10 transition-all"
+                              >
+                                {msg.is_read === false
+                                  ? <Mail size={12} className="mt-0.5 text-primary-400 flex-shrink-0" />
+                                  : <MailOpen size={12} className="mt-0.5 text-slate-600 flex-shrink-0" />
+                                }
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-2 mb-0.5">
+                                    <span className={`text-[11px] truncate ${msg.is_read === false ? 'font-bold text-slate-200' : 'font-medium text-slate-400'}`}>
+                                      {msg.sender.split('<')[0].trim()}
+                                    </span>
+                                    <span className="text-[10px] text-slate-600 shrink-0">{formatDisplayDate(msg.date_iso, msg.date)}</span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 leading-snug line-clamp-2">
+                                    {msg.ai_summary_text || msg.body || msg.summary}
+                                  </p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </motion.div>
                     );
                   })

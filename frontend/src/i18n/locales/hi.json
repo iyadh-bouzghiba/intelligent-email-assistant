@@ -84,7 +84,8 @@
         "auto_summary_limit_count": "{{limit}} में से {{count}} उपयोग किए गए",
         "auto_summary_limit_body": "आपने इस सत्र में {{limit}} में से {{count}} स्वचालित सारांशों का उपयोग किया है।",
         "auto_summary_limit_tip": "अपना प्लान अपग्रेड करें या सीमा रीसेट होने की प्रतीक्षा करें।",
-        "auto_summary_limit_tip_label": "सुझाव:"
+        "auto_summary_limit_tip_label": "सुझाव:",
+        "thread_message_count": "{{count}} संदेश"
     },
     "modal": {
         "close_email_details": "ईमेल विवरण बंद करें",
