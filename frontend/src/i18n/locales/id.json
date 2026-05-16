@@ -136,7 +136,17 @@
         "no_preview": "Tidak ada pratinjau tersedia.",
         "ask_ai_assistant": "Tanya Asisten AI",
         "mark_read_failed": "Gagal menandai sebagai sudah dibaca.",
-        "mark_unread_failed": "Gagal menandai sebagai belum dibaca."
+        "mark_unread_failed": "Gagal menandai sebagai belum dibaca.",
+        "confidence_label": "Kepercayaan AI",
+        "confidence_high": "Tinggi",
+        "confidence_medium": "Sedang",
+        "confidence_low": "Rendah",
+        "confidence_aria_label": "Kepercayaan AI: {{level}}",
+        "confidence_low_warning": "Kepercayaan AI rendah — verifikasi ringkasan ini.",
+        "confidence_reason_fallback_summary": "Ringkasan ini menggunakan varian bahasa cadangan.",
+        "confidence_reason_summary_too_short": "Ringkasan ini mungkin terlalu singkat untuk diandalkan sendiri.",
+        "confidence_reason_language_mismatch": "Bahasa ringkasan ini tidak sesuai dengan bahasa AI yang disukai.",
+        "confidence_reason_signal_incomplete": "Beberapa sinyal bahasa ringkasan tidak tersedia."
     },
     "auth": {
         "add_account": "+ Tambah akun",

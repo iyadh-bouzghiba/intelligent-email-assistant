@@ -136,7 +136,17 @@
         "no_preview": "プレビューはありません。",
         "ask_ai_assistant": "AIアシスタントに質問",
         "mark_read_failed": "既読にする処理に失敗しました。",
-        "mark_unread_failed": "未読にする処理に失敗しました。"
+        "mark_unread_failed": "未読にする処理に失敗しました。",
+        "confidence_label": "AI信頼度",
+        "confidence_high": "高",
+        "confidence_medium": "中",
+        "confidence_low": "低",
+        "confidence_aria_label": "AI信頼度: {{level}}",
+        "confidence_low_warning": "AI信頼度が低い — この要約を確認してください。",
+        "confidence_reason_fallback_summary": "この要約はフォールバック言語バリアントを使用しています。",
+        "confidence_reason_summary_too_short": "この要約は単独で信頼するには短すぎる可能性があります。",
+        "confidence_reason_language_mismatch": "この要約の言語は優先AI言語と一致しません。",
+        "confidence_reason_signal_incomplete": "一部の要約言語シグナルが利用できません。"
     },
     "auth": {
         "add_account": "+ アカウントを追加",

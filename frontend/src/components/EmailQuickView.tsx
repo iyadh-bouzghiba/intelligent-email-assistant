@@ -3,6 +3,7 @@ import { Sparkles, Bot } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { EmailViewModel } from '@types';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
+import AiSummaryConfidence from './AiSummaryConfidence';
 
 interface Props {
   email: EmailViewModel;
@@ -121,6 +122,8 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
               <span className="text-[9px] text-slate-600 font-bold">{email.ai_summary_model}</span>
             )}
           </div>
+
+          <AiSummaryConfidence email={email} />
 
           <div className={aiAnalysisCardClassName}>
             <p className="text-sm leading-relaxed text-slate-200">{email.ai_summary_text}</p>

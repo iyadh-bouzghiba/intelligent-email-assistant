@@ -5,6 +5,7 @@ import { normalizeBodyText } from '@utils/normalizeBodyText';
 import { AttachmentStrip, AttachmentStripItem } from './AttachmentStrip';
 import { ImageLightbox } from './ImageLightbox';
 import { useTranslation } from 'react-i18next';
+import AiSummaryConfidence from './AiSummaryConfidence';
 
 type TranslationInlineState = 'idle' | 'loading' | 'translated' | 'error';
 
@@ -495,6 +496,8 @@ export function EmailFullView({
               </button>
             )}
           </div>
+
+          <AiSummaryConfidence email={email} />
 
           <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
             <p className="text-sm leading-relaxed text-slate-200">{email.ai_summary_text}</p>

@@ -138,7 +138,17 @@
         "mark_read_failed": "Failed to mark as read.",
         "mark_unread_failed": "Failed to mark as unread.",
         "fallback_translation_title": "Simplified translated view",
-        "fallback_translation_notice": "Some original formatting could not be preserved."
+        "fallback_translation_notice": "Some original formatting could not be preserved.",
+        "confidence_label": "AI confidence",
+        "confidence_high": "High",
+        "confidence_medium": "Medium",
+        "confidence_low": "Low",
+        "confidence_aria_label": "AI confidence: {{level}}",
+        "confidence_low_warning": "AI confidence is low — verify this summary.",
+        "confidence_reason_fallback_summary": "This summary is using a fallback language variant.",
+        "confidence_reason_summary_too_short": "This summary may be too brief to rely on alone.",
+        "confidence_reason_language_mismatch": "This summary language does not match the preferred AI language.",
+        "confidence_reason_signal_incomplete": "Some summary language signals are unavailable."
     },
     "auth": {
         "add_account": "+ Add account",

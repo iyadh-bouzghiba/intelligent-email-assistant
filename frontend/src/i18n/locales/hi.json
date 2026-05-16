@@ -136,7 +136,17 @@
         "no_preview": "कोई पूर्वावलोकन उपलब्ध नहीं।",
         "ask_ai_assistant": "AI सहायक से पूछें",
         "mark_read_failed": "पठित के रूप में चिह्नित करने में विफल।",
-        "mark_unread_failed": "अपठित के रूप में चिह्नित करने में विफल।"
+        "mark_unread_failed": "अपठित के रूप में चिह्नित करने में विफल।",
+        "confidence_label": "AI विश्वसनीयता",
+        "confidence_high": "उच्च",
+        "confidence_medium": "मध्यम",
+        "confidence_low": "निम्न",
+        "confidence_aria_label": "AI विश्वसनीयता: {{level}}",
+        "confidence_low_warning": "AI विश्वसनीयता कम है — इस सारांश को सत्यापित करें।",
+        "confidence_reason_fallback_summary": "यह सारांश एक वैकल्पिक भाषा संस्करण का उपयोग कर रहा है।",
+        "confidence_reason_summary_too_short": "यह सारांश अकेले भरोसा करने के लिए बहुत संक्षिप्त हो सकता है।",
+        "confidence_reason_language_mismatch": "इस सारांश की भाषा पसंदीदा AI भाषा से मेल नहीं खाती।",
+        "confidence_reason_signal_incomplete": "कुछ सारांश भाषा संकेत अनुपलब्ध हैं।"
     },
     "auth": {
         "add_account": "+ खाता जोड़ें",

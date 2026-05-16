@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { EmailViewModel, DraftTone, SupportedTone, EmailTemplate } from '@types';
 import { FocusTrap } from './FocusTrap';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
+import AiSummaryConfidence from './AiSummaryConfidence';
 
 interface Props {
   email: EmailViewModel;
@@ -477,6 +478,8 @@ export function ReplyComposeModal({
                   {/* AI summary + action items — always visible when present */}
                   {hasAiSummary && (
                     <div className="space-y-2">
+                      <AiSummaryConfidence email={email} />
+
                       <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-white/[0.025] border border-white/[0.06]">
                         <Sparkles size={10} className="text-primary-300 mt-0.5 flex-shrink-0" />
                         <p className="text-xs text-slate-300/85 leading-relaxed">
