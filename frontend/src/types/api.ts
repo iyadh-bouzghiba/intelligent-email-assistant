@@ -206,6 +206,15 @@ export interface SendEmailResponse {
     error?: string;
 }
 
+/** Frontend-only compose state for a single attachment pending reply send. */
+export interface ReplyAttachmentDraft {
+    file: File;
+    filename: string;
+    size: number;
+    content_type: string;
+    last_modified: number;
+}
+
 export interface TranslateRenderResponse {
     gmail_message_id: string;
     target_language: string;

@@ -19,6 +19,7 @@ import {
     AILanguage,
     TemplateLanguage,
     TranslateRenderResponse,
+    ReplyAttachmentDraft,
 } from "@types";
 
 export type { AILanguage } from "@types";
@@ -127,17 +128,31 @@ export const apiService = {
         thread_id: string,
         body: string,
         subject?: string,
-        cc?: string
+        cc?: string,
+        attachments?: ReplyAttachmentDraft[]
     ): Promise<SendEmailResponse> => {
         try {
-            const response = await api.post(
-                `${API_ROOT}/threads/${encodeURIComponent(thread_id)}/send`,
-                {
+            const url = `${API_ROOT}/threads/${encodeURIComponent(thread_id)}/send`;
+
+            let payload: FormData | object;
+            if (attachments && attachments.length > 0) {
+                const form = new FormData();
+                form.append('body', body);
+                if (subject !== undefined) form.append('subject', subject);
+                if (cc) form.append('cc', cc);
+                for (const att of attachments) {
+                    form.append('attachments', att.file, att.filename);
+                }
+                payload = form;
+            } else {
+                payload = {
                     body,
                     ...(subject !== undefined ? { subject } : {}),
                     ...(cc ? { cc } : {}),
-                }
-            );
+                };
+            }
+
+            const response = await api.post(url, payload);
             return response.data;
         } catch (error: unknown) {
             console.error('[API] sendThreadReply failed:', error);

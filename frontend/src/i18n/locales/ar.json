@@ -298,7 +298,15 @@
         "original_message": "الرسالة الأصلية",
         "attribution_on_date_sender": "بتاريخ {{date}}، كتب {{sender}}:",
         "attribution_sender_only": "كتب {{sender}}:",
-        "attribution_date_only": "بتاريخ {{date}}، كتب:"
+        "attribution_date_only": "بتاريخ {{date}}، كتب:",
+        "attach": "إرفاق ملفات",
+        "attachments_list": "المرفقات",
+        "remove_attachment": "إزالة المرفق {{filename}}",
+        "total_attachment_size": "الإجمالي: {{size}}",
+        "attachment_size_error": "تتجاوز المرفقات حد 25 ميغابايت.",
+        "attachment_blocked_type_error": "يستخدم مرفق واحد أو أكثر نوع ملف محظورًا.",
+        "attachment_scope_required": "أعد ربط هذا الحساب لإرسال المرفقات.",
+        "attachment_privacy_notice": "تُرسل الملفات عبر Gmail فقط ولا يتم تخزينها مطلقًا بواسطة Executive Brain."
     },
     "sent": {
         "loading": "جارٍ تحميل الرسائل المرسلة...",

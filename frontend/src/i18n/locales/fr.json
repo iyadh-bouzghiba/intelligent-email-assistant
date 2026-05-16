@@ -298,7 +298,15 @@
         "original_message": "Message original",
         "attribution_on_date_sender": "Le {{date}}, {{sender}} a écrit :",
         "attribution_sender_only": "{{sender}} a écrit :",
-        "attribution_date_only": "Le {{date}}, a écrit :"
+        "attribution_date_only": "Le {{date}}, a écrit :",
+        "attach": "Joindre des fichiers",
+        "attachments_list": "Pièces jointes",
+        "remove_attachment": "Supprimer la pièce jointe {{filename}}",
+        "total_attachment_size": "Total : {{size}}",
+        "attachment_size_error": "Les pièces jointes dépassent la limite de 25 Mo.",
+        "attachment_blocked_type_error": "Une ou plusieurs pièces jointes utilisent un type de fichier bloqué.",
+        "attachment_scope_required": "Reconnectez ce compte pour envoyer des pièces jointes.",
+        "attachment_privacy_notice": "Les fichiers sont envoyés uniquement via Gmail et ne sont jamais stockés par Executive Brain."
     },
     "sent": {
         "loading": "Chargement des e-mails envoyés...",

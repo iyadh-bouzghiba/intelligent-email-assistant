@@ -296,7 +296,15 @@
         "original_message": "Pesan asli",
         "attribution_on_date_sender": "Pada {{date}}, {{sender}} menulis:",
         "attribution_sender_only": "{{sender}} menulis:",
-        "attribution_date_only": "Pada {{date}}, menulis:"
+        "attribution_date_only": "Pada {{date}}, menulis:",
+        "attach": "Lampirkan file",
+        "attachments_list": "Lampiran",
+        "remove_attachment": "Hapus lampiran {{filename}}",
+        "total_attachment_size": "Total: {{size}}",
+        "attachment_size_error": "Lampiran melebihi batas 25 MB.",
+        "attachment_blocked_type_error": "Satu atau lebih lampiran menggunakan jenis file yang diblokir.",
+        "attachment_scope_required": "Hubungkan ulang akun ini untuk mengirim lampiran.",
+        "attachment_privacy_notice": "File dikirim hanya melalui Gmail dan tidak pernah disimpan oleh Executive Brain."
     },
     "sent": {
         "loading": "Memuat email terkirim...",

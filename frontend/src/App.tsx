@@ -5,7 +5,7 @@ import { websocketService, type EmailsUpdatedData, type SummaryReadyData } from 
 import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send, Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { EmailViewModel, AccountInfo, SentEmail, SupportedLanguage, SupportedTone, EmailTemplate, DraftTone, InboxThreadRow } from '@types';
+import { EmailViewModel, AccountInfo, SentEmail, SupportedLanguage, SupportedTone, EmailTemplate, DraftTone, InboxThreadRow, ReplyAttachmentDraft } from '@types';
 import { SentList } from './components/SentList';
 import { EmailDetailModal } from './components/EmailDetailModal';
 import { ReplyComposeModal } from './components/ReplyComposeModal';
@@ -27,6 +27,17 @@ const devLog = (...args: unknown[]) => {
 const AUTH_REQUIRED_EVENT = 'iea:auth-required';
 const ITEMS_PER_PAGE = 5;
 const MAX_CONNECTED_ACCOUNTS = 3;
+
+/** Dangerous-extension denylist for client-side UX gate — aligned with backend policy. */
+const BLOCKED_ATTACHMENT_EXTENSIONS = new Set([
+  'ade', 'adp', 'apk', 'appx', 'appxbundle', 'bat', 'cab', 'chm', 'cmd', 'com',
+  'cpl', 'diagcab', 'diagcfg', 'diagpkg', 'dll', 'dmg', 'ex', 'ex_', 'exe', 'hta',
+  'img', 'ins', 'iso', 'isp', 'jar', 'jnlp', 'js', 'jse', 'lib', 'lnk', 'mde',
+  'mjs', 'msc', 'msi', 'msix', 'msixbundle', 'msp', 'mst', 'nsh', 'pif', 'ps1',
+  'scr', 'sct', 'shb', 'sys', 'vb', 'vbe', 'vbs', 'vhd', 'vxd', 'wsc', 'wsf', 'wsh', 'xll',
+]);
+
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 type FilterCategory = 'All' | 'Security' | 'Financial' | 'Work' | 'Personal' | 'Marketing' | 'General';
 
@@ -145,6 +156,8 @@ export const App = () => {
   const [templatesError, setTemplatesError] = useState<string | null>(null);
   const [templateSaving, setTemplateSaving] = useState(false);
   const [templateDeletingId, setTemplateDeletingId] = useState<string | null>(null);
+  const [replyAttachments, setReplyAttachments] = useState<ReplyAttachmentDraft[]>([]);
+  const [replyAttachmentError, setReplyAttachmentError] = useState<string | null>(null);
   const [aiLanguageResolvedAccountId, setAiLanguageResolvedAccountId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<EmailViewModel[]>([]);
@@ -166,6 +179,9 @@ export const App = () => {
   const aiLanguageResolvedAccountRef = useRef<string | null>(null);
   const resolvedLanguageOptions =
     supportedLanguages.length > 0 ? supportedLanguages : FALLBACK_LANGUAGE_OPTIONS;
+
+  const replyAttachmentsTotalBytes = replyAttachments.reduce((sum, a) => sum + a.size, 0);
+  const attachmentsDisabled = !(accounts.find(a => a.account_id === activeEmail)?.send_scope === true);
 
   const brandName = t('nav.brand_name');
   const subtitle = t('nav.subtitle');
@@ -533,6 +549,8 @@ export const App = () => {
           setReplySubject('');
           setReplyCC('');
           setPanelError(null);
+          setReplyAttachments([]);
+          setReplyAttachmentError(null);
         } else if (activeModal === 'assistant') {
           setActiveModal('detail');
         } else {
@@ -599,6 +617,8 @@ export const App = () => {
     setReplyCC('');
     setSending(false);
     setPanelError(null);
+    setReplyAttachments([]);
+    setReplyAttachmentError(null);
   }, [selectedEmailIdentity]);
 
   // Auto-scroll to action items when panel opens via "View N more" button
@@ -1486,6 +1506,16 @@ export const App = () => {
       return;
     }
 
+    if (replyAttachmentError) {
+      setPanelError(replyAttachmentError);
+      return;
+    }
+
+    if (replyAttachments.length > 0 && attachmentsDisabled) {
+      setPanelError(t('compose.attachment_scope_required'));
+      return;
+    }
+
     setSending(true);
     setPanelError(null);
 
@@ -1502,7 +1532,8 @@ export const App = () => {
         selectedEmailDetail.thread_id,
         outboundBody,
         replySubject || undefined,
-        ccValue
+        ccValue,
+        replyAttachments.length > 0 ? replyAttachments : undefined
       );
 
       if (result.success) {
@@ -1513,6 +1544,8 @@ export const App = () => {
         setReplyBody('');
         setReplySubject('');
         setReplyCC('');
+        setReplyAttachments([]);
+        setReplyAttachmentError(null);
         setActiveModal('detail');
         setPanelError(null);
 
@@ -1567,6 +1600,9 @@ export const App = () => {
     setTemplateDeletingId(null);
     setAiLanguageResolvedAccountId(null);
     aiLanguageResolvedAccountRef.current = null;
+    // P5.4 attachment compose state
+    setReplyAttachments([]);
+    setReplyAttachmentError(null);
   };
 
   // Close details panel. Compose state is handled by the selectedEmailDetail invariant effect.
@@ -1585,6 +1621,8 @@ export const App = () => {
     setSentToAddress('');
     setSendSuccess(false);
     setPanelError(null);
+    setReplyAttachments([]);
+    setReplyAttachmentError(null);
     setScrollToActions(scrollToAct);
     setPanelView('quick');
     setDetailIsSent(isSent);
@@ -1789,6 +1827,63 @@ export const App = () => {
     }
   };
 
+  // P5.4: attachment compose handlers — canonical state owner lives in App.tsx
+  const handleAddAttachments = (files: File[]) => {
+    if (attachmentsDisabled) {
+      setReplyAttachmentError(t('compose.attachment_scope_required'));
+      return;
+    }
+
+    // a. Normalize to ReplyAttachmentDraft
+    const incoming: ReplyAttachmentDraft[] = files.map(file => ({
+      file,
+      filename: file.name,
+      size: file.size,
+      content_type: file.type || 'application/octet-stream',
+      last_modified: file.lastModified,
+    }));
+
+    // b. Dedupe exact duplicates by (filename, size, last_modified) across full combined set
+    //    Seeding `seen` from existing state also removes within-batch duplicates on the fly.
+    const seen = new Set(
+      replyAttachments.map(a => `${a.filename}|${a.size}|${a.last_modified}`)
+    );
+    const deduped = incoming.filter(inc => {
+      const key = `${inc.filename}|${inc.size}|${inc.last_modified}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (deduped.length === 0) return;
+
+    // c. Reject blocked extensions (case-insensitive)
+    const hasBlocked = deduped.some(att => {
+      const ext = att.filename.split('.').pop()?.toLowerCase() ?? '';
+      return BLOCKED_ATTACHMENT_EXTENSIONS.has(ext);
+    });
+    if (hasBlocked) {
+      setReplyAttachmentError(t('compose.attachment_blocked_type_error'));
+      return;
+    }
+
+    // d–e. Sum total bytes; reject if > 25 MB
+    const next = [...replyAttachments, ...deduped];
+    const total = next.reduce((sum, a) => sum + a.size, 0);
+    if (total > MAX_ATTACHMENT_BYTES) {
+      setReplyAttachmentError(t('compose.attachment_size_error'));
+      return;
+    }
+
+    // g. Commit and clear any prior error
+    setReplyAttachments(next);
+    setReplyAttachmentError(null);
+  };
+
+  const handleRemoveAttachment = (index: number) => {
+    setReplyAttachments(prev => prev.filter((_, i) => i !== index));
+    setReplyAttachmentError(null);
+  };
+
   // Extracted: open compose in standalone modal; called by EmailDetailModal
   const handleOpenReply = () => {
     setPanelError(null);
@@ -1830,6 +1925,8 @@ export const App = () => {
     setReplySubject('');
     setReplyCC('');
     setPanelError(null);
+    setReplyAttachments([]);
+    setReplyAttachmentError(null);
   };
 
   // Extracted: mark thread read via Gmail API
@@ -3230,6 +3327,12 @@ export const App = () => {
             onSaveTemplate={handleSaveTemplate}
             onDeleteTemplate={handleDeleteTemplate}
             buildAttribution={buildAttribution}
+            attachments={replyAttachments}
+            attachmentError={replyAttachmentError}
+            attachmentsTotalBytes={replyAttachmentsTotalBytes}
+            attachmentsDisabled={attachmentsDisabled}
+            onAddAttachments={handleAddAttachments}
+            onRemoveAttachment={handleRemoveAttachment}
           />
         )}
       </AnimatePresence>
