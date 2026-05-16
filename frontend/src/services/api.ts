@@ -51,11 +51,10 @@ const devLog = (...args: unknown[]) => {
     }
 };
 
+// No global Content-Type default — axios infers application/json for plain
+// objects and lets the browser set multipart/form-data+boundary for FormData.
 const api = axios.create({
     baseURL: BASE_URL,
-    headers: {
-        "Content-Type": "application/json",
-    },
     timeout: 20000,
     withCredentials: true,
 });
