@@ -138,7 +138,17 @@
         "mark_read_failed": "تعذّر التعليم كمقروء.",
         "mark_unread_failed": "تعذّر التعليم كغير مقروء.",
         "fallback_translation_title": "عرض مُبسَّط للترجمة",
-        "fallback_translation_notice": "تعذّر الحفاظ على بعض التنسيق الأصلي."
+        "fallback_translation_notice": "تعذّر الحفاظ على بعض التنسيق الأصلي.",
+        "confidence_label": "ثقة الذكاء الاصطناعي",
+        "confidence_high": "عالية",
+        "confidence_medium": "متوسطة",
+        "confidence_low": "منخفضة",
+        "confidence_aria_label": "ثقة الذكاء الاصطناعي: {{level}}",
+        "confidence_low_warning": "ثقة الذكاء الاصطناعي منخفضة — تحقق من هذا الملخص.",
+        "confidence_reason_fallback_summary": "يستخدم هذا الملخص نسخة لغوية احتياطية.",
+        "confidence_reason_summary_too_short": "قد يكون هذا الملخص قصيرًا جدًا للاعتماد عليه وحده.",
+        "confidence_reason_language_mismatch": "لغة هذا الملخص لا تتطابق مع لغة الذكاء الاصطناعي المفضلة.",
+        "confidence_reason_signal_incomplete": "بعض إشارات لغة الملخص غير متاحة."
     },
     "auth": {
         "add_account": "+ إضافة حساب",

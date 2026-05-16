@@ -138,7 +138,17 @@
         "mark_read_failed": "Okundu olarak işaretlenemedi.",
         "mark_unread_failed": "Okunmadı olarak işaretlenemedi.",
         "fallback_translation_title": "Basitleştirilmiş çeviri görünümü",
-        "fallback_translation_notice": "Özgün biçimlendirmenin bir kısmı korunamadı."
+        "fallback_translation_notice": "Özgün biçimlendirmenin bir kısmı korunamadı.",
+        "confidence_label": "YZ güveni",
+        "confidence_high": "Yüksek",
+        "confidence_medium": "Orta",
+        "confidence_low": "Düşük",
+        "confidence_aria_label": "YZ güveni: {{level}}",
+        "confidence_low_warning": "YZ güveni düşük — bu özeti doğrulayın.",
+        "confidence_reason_fallback_summary": "Bu özet yedek bir dil varyantı kullanıyor.",
+        "confidence_reason_summary_too_short": "Bu özet tek başına güvenilmek için çok kısa olabilir.",
+        "confidence_reason_language_mismatch": "Bu özetin dili tercih edilen YZ diliyle eşleşmiyor.",
+        "confidence_reason_signal_incomplete": "Bazı özet dil sinyalleri kullanılamıyor."
     },
     "auth": {
         "add_account": "+ Hesap ekle",

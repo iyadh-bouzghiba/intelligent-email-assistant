@@ -136,7 +136,17 @@
         "no_preview": "미리보기를 사용할 수 없습니다.",
         "ask_ai_assistant": "AI 어시스턴트에게 질문",
         "mark_read_failed": "읽음으로 표시하지 못했습니다.",
-        "mark_unread_failed": "읽지 않음으로 표시하지 못했습니다."
+        "mark_unread_failed": "읽지 않음으로 표시하지 못했습니다.",
+        "confidence_label": "AI 신뢰도",
+        "confidence_high": "높음",
+        "confidence_medium": "보통",
+        "confidence_low": "낮음",
+        "confidence_aria_label": "AI 신뢰도: {{level}}",
+        "confidence_low_warning": "AI 신뢰도가 낮습니다 — 이 요약을 확인하세요.",
+        "confidence_reason_fallback_summary": "이 요약은 대체 언어 변형을 사용하고 있습니다.",
+        "confidence_reason_summary_too_short": "이 요약은 단독으로 신뢰하기에 너무 짧을 수 있습니다.",
+        "confidence_reason_language_mismatch": "이 요약의 언어가 선호하는 AI 언어와 일치하지 않습니다.",
+        "confidence_reason_signal_incomplete": "일부 요약 언어 신호를 사용할 수 없습니다."
     },
     "auth": {
         "add_account": "+ 계정 추가",

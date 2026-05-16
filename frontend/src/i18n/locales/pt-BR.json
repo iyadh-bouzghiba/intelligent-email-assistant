@@ -138,7 +138,17 @@
         "mark_read_failed": "Falha ao marcar como lido.",
         "mark_unread_failed": "Falha ao marcar como não lido.",
         "fallback_translation_title": "Visão traduzida simplificada",
-        "fallback_translation_notice": "Parte da formatação original não pôde ser preservada."
+        "fallback_translation_notice": "Parte da formatação original não pôde ser preservada.",
+        "confidence_label": "Confiança da IA",
+        "confidence_high": "Alta",
+        "confidence_medium": "Média",
+        "confidence_low": "Baixa",
+        "confidence_aria_label": "Confiança da IA: {{level}}",
+        "confidence_low_warning": "A confiança da IA é baixa — verifique este resumo.",
+        "confidence_reason_fallback_summary": "Este resumo está usando uma variante de idioma de fallback.",
+        "confidence_reason_summary_too_short": "Este resumo pode ser muito breve para ser usado sozinho.",
+        "confidence_reason_language_mismatch": "O idioma deste resumo não corresponde ao idioma de IA preferido.",
+        "confidence_reason_signal_incomplete": "Alguns sinais de idioma do resumo estão indisponíveis."
     },
     "auth": {
         "add_account": "+ Adicionar conta",
