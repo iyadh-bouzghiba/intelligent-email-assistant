@@ -8,6 +8,7 @@ from googleapiclient.discovery import build
 from googleapiclient.discovery_cache.base import Cache
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
+from email import encoders
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
@@ -335,8 +336,8 @@ class GmailClient:
                     if not maintype or not subtype:
                         maintype, subtype = 'application', 'octet-stream'
                     part = MIMEBase(maintype, subtype)
-                    part.set_payload(base64.encodebytes(att['content_bytes']).decode('ascii'))
-                    part['Content-Transfer-Encoding'] = 'base64'
+                    part.set_payload(att['content_bytes'])
+                    encoders.encode_base64(part)
                     safe_filename = re.sub(r'["\\\r\n]+', '_', att['filename'])
                     part.add_header('Content-Disposition', 'attachment', filename=safe_filename)
                     message.attach(part)
