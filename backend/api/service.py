@@ -12,6 +12,7 @@ Bootstrap:
     No manual sys.path manipulation needed.
 """
 import base64
+import inspect
 import mimetypes
 import os
 import sys
@@ -33,7 +34,7 @@ from html import escape
 from typing import Dict, Any, List, Optional, Tuple
 from email.utils import parseaddr
 
-from fastapi import FastAPI, HTTPException, Request, Response, APIRouter, Query, Depends, UploadFile
+from fastapi import FastAPI, HTTPException, Request, Response, APIRouter, Query, Depends
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -2021,17 +2022,24 @@ async def send_thread_reply(thread_id: str, request: Request):
             raw_files = form.getlist("attachments")
             total_bytes = 0
             for upload in raw_files:
-                if not isinstance(upload, UploadFile):
+                if (
+                    isinstance(upload, str)
+                    or not hasattr(upload, "filename")
+                    or not hasattr(upload, "read")
+                    or not callable(upload.read)
+                ):
+                    logger.warning(f"[SEND] Skipping non-file multipart part: {type(upload)}")
                     continue
                 try:
-                    filename = upload.filename or "attachment"
+                    filename = getattr(upload, "filename", None) or "attachment"
                     ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
                     if ext in _BLOCKED_EXTENSIONS:
                         return {
                             "success": False,
                             "error": f"Attachment '{filename}' has a blocked file type ({ext}). Remove it and retry.",
                         }
-                    content_bytes = await upload.read()
+                    _read_result = upload.read()
+                    content_bytes = await _read_result if inspect.isawaitable(_read_result) else _read_result
                     total_bytes += len(content_bytes)
                     if total_bytes > _MAX_ATTACHMENT_BYTES:
                         return {
@@ -2041,14 +2049,18 @@ async def send_thread_reply(thread_id: str, request: Request):
                                 f"({total_bytes / (1024 * 1024):.1f} MB). Reduce attachments and retry."
                             ),
                         }
-                    att_content_type = upload.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+                    raw_ct = getattr(upload, "content_type", None)
+                    att_content_type = raw_ct or mimetypes.guess_type(filename)[0] or "application/octet-stream"
                     validated_attachments.append({
                         "filename": filename,
                         "content_type": att_content_type,
                         "content_bytes": content_bytes,
                     })
                 finally:
-                    await upload.close()
+                    if hasattr(upload, "close") and callable(upload.close):
+                        _close_result = upload.close()
+                        if inspect.isawaitable(_close_result):
+                            await _close_result
             logger.info(f"[SEND] Multipart request — {len(validated_attachments)} attachment(s), {total_bytes} bytes")
         else:
             json_data = await request.json()
