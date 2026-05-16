@@ -296,7 +296,15 @@
         "original_message": "元のメッセージ",
         "attribution_on_date_sender": "{{date}} に {{sender}} は書きました:",
         "attribution_sender_only": "{{sender}} は書きました:",
-        "attribution_date_only": "{{date}} に書きました:"
+        "attribution_date_only": "{{date}} に書きました:",
+        "attach": "ファイルを添付",
+        "attachments_list": "添付ファイル",
+        "remove_attachment": "添付ファイル {{filename}} を削除",
+        "total_attachment_size": "合計: {{size}}",
+        "attachment_size_error": "添付ファイルが25MBの上限を超えています。",
+        "attachment_blocked_type_error": "1つ以上の添付ファイルでブロックされたファイル形式が使用されています。",
+        "attachment_scope_required": "添付ファイルを送信するには、このアカウントを再接続してください。",
+        "attachment_privacy_notice": "ファイルは Gmail 経由でのみ送信され、Executive Brain に保存されることはありません。"
     },
     "sent": {
         "loading": "送信済みメールを読み込み中...",

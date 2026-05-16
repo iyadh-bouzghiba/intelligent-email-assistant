@@ -298,7 +298,15 @@
         "original_message": "Original message",
         "attribution_on_date_sender": "On {{date}}, {{sender}} wrote:",
         "attribution_sender_only": "{{sender}} wrote:",
-        "attribution_date_only": "On {{date}}, wrote:"
+        "attribution_date_only": "On {{date}}, wrote:",
+        "attach": "Attach files",
+        "attachments_list": "Attachments",
+        "remove_attachment": "Remove attachment {{filename}}",
+        "total_attachment_size": "Total: {{size}}",
+        "attachment_size_error": "Attachments exceed the 25 MB limit.",
+        "attachment_blocked_type_error": "One or more attachments use a blocked file type.",
+        "attachment_scope_required": "Reconnect this account to send attachments.",
+        "attachment_privacy_notice": "Files are sent through Gmail only and are never stored by Executive Brain."
     },
     "sent": {
         "loading": "Loading sent emails...",

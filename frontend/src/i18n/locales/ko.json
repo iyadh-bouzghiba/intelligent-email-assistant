@@ -296,7 +296,15 @@
         "original_message": "원본 메시지",
         "attribution_on_date_sender": "{{date}}에 {{sender}} 님이 작성:",
         "attribution_sender_only": "{{sender}} 님이 작성:",
-        "attribution_date_only": "{{date}}에 작성:"
+        "attribution_date_only": "{{date}}에 작성:",
+        "attach": "파일 첨부",
+        "attachments_list": "첨부파일",
+        "remove_attachment": "첨부파일 {{filename}} 제거",
+        "total_attachment_size": "총합: {{size}}",
+        "attachment_size_error": "첨부파일이 25MB 제한을 초과했습니다.",
+        "attachment_blocked_type_error": "하나 이상의 첨부파일에 차단된 파일 형식이 사용되었습니다.",
+        "attachment_scope_required": "첨부파일을 보내려면 이 계정을 다시 연결하세요.",
+        "attachment_privacy_notice": "파일은 Gmail을 통해서만 전송되며 Executive Brain에는 절대 저장되지 않습니다."
     },
     "sent": {
         "loading": "보낸 이메일 불러오는 중...",

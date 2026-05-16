@@ -298,7 +298,15 @@
         "original_message": "Orijinal mesaj",
         "attribution_on_date_sender": "{{date}} tarihinde {{sender}} yazdı:",
         "attribution_sender_only": "{{sender}} yazdı:",
-        "attribution_date_only": "{{date}} tarihinde yazdı:"
+        "attribution_date_only": "{{date}} tarihinde yazdı:",
+        "attach": "Dosya ekle",
+        "attachments_list": "Ekler",
+        "remove_attachment": "{{filename}} ekini kaldır",
+        "total_attachment_size": "Toplam: {{size}}",
+        "attachment_size_error": "Ekler 25 MB sınırını aşıyor.",
+        "attachment_blocked_type_error": "Bir veya daha fazla ekte engellenen bir dosya türü kullanılıyor.",
+        "attachment_scope_required": "Ek göndermek için bu hesabı yeniden bağlayın.",
+        "attachment_privacy_notice": "Dosyalar yalnızca Gmail üzerinden gönderilir ve Executive Brain tarafından asla saklanmaz."
     },
     "sent": {
         "loading": "Gönderilen e-postalar yükleniyor...",

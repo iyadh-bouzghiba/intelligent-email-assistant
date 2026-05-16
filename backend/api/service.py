@@ -33,7 +33,7 @@ from html import escape
 from typing import Dict, Any, List, Optional, Tuple
 from email.utils import parseaddr
 
-from fastapi import FastAPI, HTTPException, Request, Response, APIRouter, Query, Depends
+from fastapi import FastAPI, HTTPException, Request, Response, APIRouter, Query, Depends, UploadFile
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -1965,6 +1965,19 @@ async def draft_thread_reply(thread_id: str, request: AgentDraftRequest):
     }
 
 
+_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024  # 25 MB total across all attachments
+
+_BLOCKED_EXTENSIONS: frozenset = frozenset({
+    ".ade", ".adp", ".apk", ".appx", ".appxbundle", ".bat", ".cab", ".chm",
+    ".cmd", ".com", ".cpl", ".diagcab", ".diagcfg", ".diagpkg", ".dll", ".dmg",
+    ".ex", ".ex_", ".exe", ".hta", ".img", ".ins", ".iso", ".isp", ".jar",
+    ".jnlp", ".js", ".jse", ".lib", ".lnk", ".mde", ".mjs", ".msc", ".msi",
+    ".msix", ".msixbundle", ".msp", ".mst", ".nsh", ".pif", ".ps1", ".scr",
+    ".sct", ".shb", ".sys", ".vb", ".vbe", ".vbs", ".vhd", ".vxd", ".wsc",
+    ".wsf", ".wsh", ".xll",
+})
+
+
 class SendEmailRequest(BaseModel):
     """Request model for sending email replies - backend owns reply context."""
     body: str
@@ -1973,14 +1986,14 @@ class SendEmailRequest(BaseModel):
 
 
 @api_router.post("/threads/{thread_id}/send")
-async def send_thread_reply(thread_id: str, request: SendEmailRequest):
+async def send_thread_reply(thread_id: str, request: Request):
     """
     Send an email reply with RFC-compliant threading headers.
     Backend owns reply context derivation - client only provides draft text.
 
-    Args:
-        thread_id: Gmail thread ID (from URL path)
-        request: SendEmailRequest with body (draft text only)
+    Accepts both:
+      - application/json: {"body": "...", "subject": "...", "cc": "..."}
+      - multipart/form-data: body + optional subject/cc + repeated 'attachments' parts
 
     Returns:
         Success: {"success": true, "message_id": "...", "thread_id": "...", "sent_to": "..."}
@@ -1994,6 +2007,54 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
     """
     try:
         logger.info(f"[SEND] Starting send for thread {thread_id}")
+
+        # Parse request body — JSON or multipart/form-data
+        content_type = request.headers.get("content-type", "")
+        validated_attachments: List[Dict[str, Any]] = []
+
+        if "multipart/form-data" in content_type:
+            form = await request.form()
+            body_text: str = str(form.get("body", "") or "")
+            subject_val: Optional[str] = str(form.get("subject")) if form.get("subject") else None
+            cc_val: Optional[str] = str(form.get("cc")) if form.get("cc") else None
+
+            raw_files = form.getlist("attachments")
+            total_bytes = 0
+            for upload in raw_files:
+                if not isinstance(upload, UploadFile):
+                    continue
+                try:
+                    filename = upload.filename or "attachment"
+                    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+                    if ext in _BLOCKED_EXTENSIONS:
+                        return {
+                            "success": False,
+                            "error": f"Attachment '{filename}' has a blocked file type ({ext}). Remove it and retry.",
+                        }
+                    content_bytes = await upload.read()
+                    total_bytes += len(content_bytes)
+                    if total_bytes > _MAX_ATTACHMENT_BYTES:
+                        return {
+                            "success": False,
+                            "error": (
+                                f"Total attachment size exceeds the 25 MB limit "
+                                f"({total_bytes / (1024 * 1024):.1f} MB). Reduce attachments and retry."
+                            ),
+                        }
+                    att_content_type = upload.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+                    validated_attachments.append({
+                        "filename": filename,
+                        "content_type": att_content_type,
+                        "content_bytes": content_bytes,
+                    })
+                finally:
+                    await upload.close()
+            logger.info(f"[SEND] Multipart request — {len(validated_attachments)} attachment(s), {total_bytes} bytes")
+        else:
+            json_data = await request.json()
+            body_text = json_data.get("body", "") or ""
+            subject_val = json_data.get("subject") or None
+            cc_val = json_data.get("cc") or None
 
         # Step 1: Derive account_id from database
         store = safe_get_store()
@@ -2151,7 +2212,7 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
 
         # Subject: use client-provided subject if given, else derive from thread.
         # Normalize: ensure exactly one "Re: " prefix regardless of source.
-        client_subject = (request.subject or '').strip()
+        client_subject = (subject_val or '').strip()
         base_subject = client_subject if client_subject else raw_subject
         subject = base_subject if base_subject.lower().startswith('re:') else f"Re: {base_subject}"
 
@@ -2159,10 +2220,10 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
 
         # Step 8: Normalize and validate CC addresses
         normalized_cc = ''
-        if request.cc:
+        if cc_val:
             seen: set = set()
             valid_addrs: list = []
-            for raw in re.split(r'[,;]', request.cc):
+            for raw in re.split(r'[,;]', cc_val):
                 addr = raw.strip()
                 if not addr:
                     continue
@@ -2183,11 +2244,12 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
             gmail_client.send_message,
             to=recipient,
             subject=subject,
-            body=request.body,
+            body=body_text,
             gmail_thread_id=thread_id,
             in_reply_to=in_reply_to,
             references=references,
-            cc=normalized_cc or None
+            cc=normalized_cc or None,
+            attachments=validated_attachments or None,
         )
 
         if result['success']:
@@ -2209,7 +2271,7 @@ async def send_thread_reply(thread_id: str, request: SendEmailRequest):
                         "to_address": recipient,
                         "cc_addresses": normalized_cc or None,
                         "subject": subject,
-                        "body_preview": request.body[:200],
+                        "body_preview": body_text[:200],
                         "sent_at": datetime.now(timezone.utc).isoformat(),
                         "source": "app_send",
                     }

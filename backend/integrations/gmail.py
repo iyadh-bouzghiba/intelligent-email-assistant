@@ -1,4 +1,5 @@
 import base64
+import re
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from bs4 import BeautifulSoup
@@ -7,6 +8,8 @@ from googleapiclient.discovery import build
 from googleapiclient.discovery_cache.base import Cache
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 
 
@@ -298,7 +301,8 @@ class GmailClient:
         gmail_thread_id: Optional[str] = None,
         in_reply_to: Optional[str] = None,
         references: Optional[str] = None,
-        cc: Optional[str] = None
+        cc: Optional[str] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Send an email via Gmail API with RFC-compliant threading headers.
@@ -310,6 +314,8 @@ class GmailClient:
             gmail_thread_id: Gmail threadId for Gmail-native threading (optional)
             in_reply_to: RFC Message-ID of parent message (optional)
             references: RFC References header value (optional)
+            cc: CC addresses (optional)
+            attachments: list of {filename, content_type, content_bytes} dicts (optional)
 
         Returns:
             dict with: success (bool), message_id (str), thread_id (str), error (str|None)
@@ -321,7 +327,21 @@ class GmailClient:
                 normalized_subject = f"Re: {subject}"
 
             # Build RFC-compliant MIME message
-            message = MIMEText(body, 'plain', 'utf-8')
+            if attachments:
+                message = MIMEMultipart('mixed')
+                message.attach(MIMEText(body, 'plain', 'utf-8'))
+                for att in attachments:
+                    maintype, _, subtype = att['content_type'].partition('/')
+                    if not maintype or not subtype:
+                        maintype, subtype = 'application', 'octet-stream'
+                    part = MIMEBase(maintype, subtype)
+                    part.set_payload(base64.encodebytes(att['content_bytes']).decode('ascii'))
+                    part['Content-Transfer-Encoding'] = 'base64'
+                    safe_filename = re.sub(r'["\\\r\n]+', '_', att['filename'])
+                    part.add_header('Content-Disposition', 'attachment', filename=safe_filename)
+                    message.attach(part)
+            else:
+                message = MIMEText(body, 'plain', 'utf-8')
             message['To'] = to
             message['Subject'] = normalized_subject
             if cc:

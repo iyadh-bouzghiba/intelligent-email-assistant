@@ -1,8 +1,8 @@
 import { RefObject, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, AlertCircle, RefreshCw, Mail, Sparkles, ChevronDown, Save, Trash2 } from 'lucide-react';
+import { X, AlertCircle, RefreshCw, Mail, Sparkles, ChevronDown, Save, Trash2, Paperclip } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { EmailViewModel, DraftTone, SupportedTone, EmailTemplate } from '@types';
+import { EmailViewModel, DraftTone, SupportedTone, EmailTemplate, ReplyAttachmentDraft } from '@types';
 import { FocusTrap } from './FocusTrap';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
 import AiSummaryConfidence from './AiSummaryConfidence';
@@ -43,11 +43,28 @@ interface Props {
    * This component uses email.body directly for display, normalized via normalizeBodyText.
    */
   buildAttribution: (date: string, sender: string) => string;
+
+  /**
+   * P5.4 optional controlled attachment UI contract.
+   * All props remain optional — App.tsx wiring deferred to a later slice.
+   */
+  attachments?: ReplyAttachmentDraft[];
+  attachmentError?: string | null;
+  attachmentsTotalBytes?: number;
+  attachmentsDisabled?: boolean;
+  onAddAttachments?: (files: File[]) => void;
+  onRemoveAttachment?: (index: number) => void;
 }
 
 const TITLE_ID = 'reply-compose-title';
 
 const EMPTY_TEMPLATES: EmailTemplate[] = [];
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 /**
  * Standalone blocking modal for composing a reply.
@@ -97,6 +114,12 @@ export function ReplyComposeModal({
   onSaveTemplate,
   onDeleteTemplate,
   buildAttribution,
+  attachments = [],
+  attachmentError = null,
+  attachmentsTotalBytes = 0,
+  attachmentsDisabled = false,
+  onAddAttachments,
+  onRemoveAttachment,
 }: Props) {
   const { t } = useTranslation();
 
@@ -557,10 +580,77 @@ export function ReplyComposeModal({
               )}
             </div>
 
+            {/* Attachment list — flex-shrink-0 sibling, visually directly above the footer */}
+            {(attachmentError != null || attachments.length > 0) && (
+              <div className="flex-shrink-0 border-t border-white/[0.06] bg-brand-surface px-4 py-3 sm:px-6 space-y-2">
+                {attachmentError && (
+                  <div
+                    role="alert"
+                    aria-live="assertive"
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs"
+                  >
+                    <AlertCircle size={13} className="flex-shrink-0" />
+                    <span className="font-bold">{attachmentError}</span>
+                  </div>
+                )}
+
+                {attachments.length > 0 && (
+                  <ul
+                    className="rounded-xl border border-white/[0.06] bg-white/[0.02] divide-y divide-white/[0.04]"
+                    aria-label={t('compose.attachments_list')}
+                  >
+                    {attachments.map((att, idx) => (
+                      <li key={idx} className="flex items-center justify-between gap-2 px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs text-slate-200 truncate">{att.filename}</p>
+                          <p className="text-[10px] text-slate-500">{formatBytes(att.size)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          aria-label={t('compose.remove_attachment', { filename: att.filename })}
+                          onClick={() => onRemoveAttachment?.(idx)}
+                          className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] rounded-lg hover:bg-white/10 text-slate-400 hover:text-rose-400 transition-colors flex-shrink-0"
+                        >
+                          <X size={14} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {attachments.length > 0 && (
+                  <p className="text-[10px] text-slate-500 px-1">
+                    {t('compose.total_attachment_size', { size: formatBytes(attachmentsTotalBytes) })}
+                  </p>
+                )}
+
+                <p className="text-[10px] text-slate-600 px-1">
+                  {t('compose.attachment_privacy_notice')}
+                </p>
+              </div>
+            )}
+
             {/* Footer — action bar
                 Mobile: flex-col-reverse stacks Send on top (full-width) and Discard below.
-                sm+: flex-row with Discard left, Send right — standard desktop pattern. */}
+                sm+: flex-row with Discard left, Attach+Send cluster right — standard desktop pattern. */}
             <div className="flex-shrink-0 border-t border-white/[0.12] bg-brand-surface px-4 py-3 sm:px-6 sm:py-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3">
+              {/* Hidden file input — triggered via htmlFor on the label below */}
+              <input
+                id="reply-attachment-input"
+                name="replyAttachments"
+                type="file"
+                multiple
+                aria-label={t('compose.attach')}
+                className="sr-only"
+                disabled={attachmentsDisabled}
+                onChange={(e) => {
+                  const files = e.target.files;
+                  if (onAddAttachments && files && files.length > 0) {
+                    onAddAttachments(Array.from(files));
+                  }
+                  e.target.value = '';
+                }}
+              />
               <button
                 onClick={onDiscard}
                 disabled={sending}
@@ -568,23 +658,37 @@ export function ReplyComposeModal({
               >
                 {t('compose.discard')}
               </button>
-              <button
-                onClick={onSend}
-                disabled={sending || !replyBody.trim() || !email.thread_id}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-lg shadow-primary-600/20"
-              >
-                {sending ? (
-                  <>
-                    <RefreshCw size={12} className="animate-spin" />
-                    {t('compose.sending')}
-                  </>
-                ) : (
-                  <>
-                    <Mail size={12} />
-                    {t('compose.send_reply')}
-                  </>
-                )}
-              </button>
+              <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                <label
+                  htmlFor="reply-attachment-input"
+                  aria-disabled={attachmentsDisabled}
+                  className={`w-full sm:w-auto inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl border text-xs font-bold transition-all select-none ${
+                    attachmentsDisabled
+                      ? 'bg-white/[0.02] border-white/[0.05] text-slate-600 opacity-50 cursor-not-allowed pointer-events-none'
+                      : 'bg-white/[0.04] border-white/10 text-slate-300 hover:text-white hover:bg-white/[0.08] cursor-pointer'
+                  }`}
+                >
+                  <Paperclip size={12} />
+                  {t('compose.attach')}
+                </label>
+                <button
+                  onClick={onSend}
+                  disabled={sending || !replyBody.trim() || !email.thread_id}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-lg shadow-primary-600/20"
+                >
+                  {sending ? (
+                    <>
+                      <RefreshCw size={12} className="animate-spin" />
+                      {t('compose.sending')}
+                    </>
+                  ) : (
+                    <>
+                      <Mail size={12} />
+                      {t('compose.send_reply')}
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </motion.div>
         </FocusTrap>

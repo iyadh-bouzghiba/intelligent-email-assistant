@@ -298,7 +298,15 @@
         "original_message": "Mensagem original",
         "attribution_on_date_sender": "Em {{date}}, {{sender}} escreveu:",
         "attribution_sender_only": "{{sender}} escreveu:",
-        "attribution_date_only": "Em {{date}}, escreveu:"
+        "attribution_date_only": "Em {{date}}, escreveu:",
+        "attach": "Anexar arquivos",
+        "attachments_list": "Anexos",
+        "remove_attachment": "Remover anexo {{filename}}",
+        "total_attachment_size": "Total: {{size}}",
+        "attachment_size_error": "Os anexos excedem o limite de 25 MB.",
+        "attachment_blocked_type_error": "Um ou mais anexos usam um tipo de arquivo bloqueado.",
+        "attachment_scope_required": "Reconecte esta conta para enviar anexos.",
+        "attachment_privacy_notice": "Os arquivos são enviados somente pelo Gmail e nunca são armazenados pelo Executive Brain."
     },
     "sent": {
         "loading": "Carregando e-mails enviados...",
