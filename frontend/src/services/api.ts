@@ -151,7 +151,7 @@ export const apiService = {
                 };
             }
 
-            const response = await api.post(url, payload);
+            const response = await api.post(url, payload, { timeout: 180000 });
             return response.data;
         } catch (error: unknown) {
             console.error('[API] sendThreadReply failed:', error);
