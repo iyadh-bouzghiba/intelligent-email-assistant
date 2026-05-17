@@ -117,7 +117,8 @@ CREATE TABLE IF NOT EXISTS public.emails (
   tenant_id TEXT DEFAULT 'primary',
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMP WITHOUT TIME ZONE,
-  account_id TEXT DEFAULT 'default'
+  account_id TEXT DEFAULT 'default',
+  has_attachments boolean NOT NULL DEFAULT false
 );
 
 -- Add columns if they don't exist (upgrade-safe)
@@ -132,7 +133,8 @@ ALTER TABLE public.emails
   ADD COLUMN IF NOT EXISTS tenant_id TEXT DEFAULT 'primary',
   ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now(),
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITHOUT TIME ZONE,
-  ADD COLUMN IF NOT EXISTS account_id TEXT DEFAULT 'default';
+  ADD COLUMN IF NOT EXISTS account_id TEXT DEFAULT 'default',
+  ADD COLUMN IF NOT EXISTS has_attachments boolean NOT NULL DEFAULT false;
 
 -- Ensure dedup contract exists (account_id, gmail_message_id)
 CREATE UNIQUE INDEX IF NOT EXISTS emails_account_gmail_message_id_uq
@@ -275,5 +277,45 @@ EXCEPTION
     NULL; -- constraint already exists; nothing to do
 END;
 $$;
+
+-- 10) SENT EMAILS (schema authority restored by P5.5 — was runtime-only, now documented)
+-- Stores outbound message records from both app_send and gmail_backfill sources.
+CREATE TABLE IF NOT EXISTS public.sent_emails (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id TEXT NOT NULL,
+  gmail_message_id TEXT NOT NULL,
+  thread_id TEXT,
+  to_address TEXT,
+  cc_addresses TEXT,
+  subject TEXT,
+  body_preview TEXT,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  source TEXT NOT NULL DEFAULT 'app_send',
+  has_attachments boolean NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Add columns if they don't exist (upgrade-safe for existing deployments)
+ALTER TABLE public.sent_emails
+  ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid(),
+  ADD COLUMN IF NOT EXISTS account_id TEXT,
+  ADD COLUMN IF NOT EXISTS gmail_message_id TEXT,
+  ADD COLUMN IF NOT EXISTS thread_id TEXT,
+  ADD COLUMN IF NOT EXISTS to_address TEXT,
+  ADD COLUMN IF NOT EXISTS cc_addresses TEXT,
+  ADD COLUMN IF NOT EXISTS subject TEXT,
+  ADD COLUMN IF NOT EXISTS body_preview TEXT,
+  ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'app_send',
+  ADD COLUMN IF NOT EXISTS has_attachments boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+
+-- Idempotency: one sent record per (account_id, gmail_message_id)
+CREATE UNIQUE INDEX IF NOT EXISTS sent_emails_account_message_id_uq
+ON public.sent_emails (account_id, gmail_message_id);
+
+-- Ordering index for get_sent_emails queries
+CREATE INDEX IF NOT EXISTS idx_sent_emails_account_sent_at
+ON public.sent_emails (account_id, sent_at DESC);
 
 -- GUARD: Never paste HTML entities into this SQL file. Use raw comparison operators (<=, >=) only.

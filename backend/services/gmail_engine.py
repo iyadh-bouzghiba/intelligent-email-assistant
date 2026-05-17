@@ -21,6 +21,25 @@ if not logger.handlers:
     logger.addHandler(handler)
 logger.propagate = False
 
+def gmail_payload_has_attachments(payload: dict) -> bool:
+    """
+    Returns True if the Gmail MIME payload contains at least one user-meaningful
+    attachment candidate: a part with a non-empty filename and either a remote
+    attachmentId or inline body data.
+
+    Mirrors the logic in service.py _collect_attachment_candidate_parts so both
+    the sync ingestion path and the API rendering path use the same detection rule.
+    No new Gmail API calls are made.
+    """
+    def _walk(part: dict) -> bool:
+        filename = (part.get("filename") or "").strip()
+        body = part.get("body") or {}
+        if filename and (body.get("attachmentId") or body.get("data")):
+            return True
+        return any(_walk(child) for child in (part.get("parts") or []))
+    return _walk(payload)
+
+
 def clean_html(html_content):
     """Strips HTML tags to save context window space."""
     if not html_content:
@@ -246,6 +265,7 @@ def run_engine(token_data: dict, max_emails: int = 30):
                     "date": date_iso,  # ISO timestamp
                     "body": cleaned_body,
                     "is_read": is_read,
+                    "has_attachments": gmail_payload_has_attachments(payload),
                 })
 
                 total_fetched += 1
@@ -373,6 +393,7 @@ def fetch_sent_messages(token_data: dict, max_messages: int = 100):
                         "subject": subject,
                         "body_preview": body_preview,
                         "sent_at": sent_at,
+                        "has_attachments": gmail_payload_has_attachments(payload),
                     })
                 except Exception as msg_err:
                     logger.warning(f"[SENT-BACKFILL] Skipping message {msg_info.get('id')}: {msg_err}")

@@ -10,7 +10,7 @@ from backend.core import EmailAssistant
 from backend.data.store import PersistenceManager
 from backend.integrations.gmail import GmailClient as RichGmailClient
 from backend.providers.base import EmailProvider, NormalizedEmail
-from backend.services.gmail_engine import get_message_body
+from backend.services.gmail_engine import get_message_body, gmail_payload_has_attachments
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +66,7 @@ class GmailProvider(EmailProvider):
             date=email.get("date") or datetime.now(timezone.utc).isoformat(),
             body=email.get("body", "") or "",
             thread_id=email.get("thread_id"),
+            has_attachments=bool(email.get("has_attachments", False)),
         )
 
     def _normalize_raw_message(self, raw_msg: Dict[str, Any]) -> Optional[NormalizedEmail]:
@@ -100,6 +101,7 @@ class GmailProvider(EmailProvider):
             date=date_iso,
             body=cleaned_body,
             thread_id=raw_msg.get("threadId"),
+            has_attachments=gmail_payload_has_attachments(payload),
         )
 
     def _extract_message_ids_from_history(
