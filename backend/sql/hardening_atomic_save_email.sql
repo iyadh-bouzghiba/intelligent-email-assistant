@@ -7,10 +7,10 @@
 -- Cost control: Caller explicitly passes whether to create AI job (preserves 30-cap)
 --
 -- Usage:
---   save_email_with_ai_job(..., p_create_ai_job := true)  -- First 30 emails
---   save_email_with_ai_job(..., p_create_ai_job := false) -- Rest
+--   save_email_with_ai_job_v2(..., p_create_ai_job := true)  -- First 30 emails
+--   save_email_with_ai_job_v2(..., p_create_ai_job := false) -- Rest
 
-CREATE OR REPLACE FUNCTION public.save_email_with_ai_job(
+CREATE OR REPLACE FUNCTION public.save_email_with_ai_job_v2(
   p_subject text,
   p_sender text,
   p_date timestamptz,
@@ -21,7 +21,8 @@ CREATE OR REPLACE FUNCTION public.save_email_with_ai_job(
   p_thread_id text DEFAULT NULL,
   p_provider text DEFAULT 'gmail',
   p_thread_ref text DEFAULT NULL,
-  p_create_ai_job boolean DEFAULT false
+  p_create_ai_job boolean DEFAULT false,
+  p_has_attachments boolean DEFAULT false
 )
 RETURNS json
 LANGUAGE plpgsql
@@ -45,6 +46,7 @@ BEGIN
     thread_id,
     provider,
     thread_ref,
+    has_attachments,
     created_at,
     updated_at
   )
@@ -59,6 +61,7 @@ BEGIN
     p_thread_id,
     p_provider,
     COALESCE(p_thread_ref, p_thread_id),
+    p_has_attachments,
     now(),
     now()
   )
@@ -67,7 +70,8 @@ BEGIN
     updated_at = now(),
     thread_id = COALESCE(EXCLUDED.thread_id, emails.thread_id),
     provider = COALESCE(EXCLUDED.provider, emails.provider),
-    thread_ref = COALESCE(EXCLUDED.thread_ref, emails.thread_ref)
+    thread_ref = COALESCE(EXCLUDED.thread_ref, emails.thread_ref),
+    has_attachments = EXCLUDED.has_attachments
   RETURNING id INTO v_email_id;
 
   -- Atomic operation 2: Conditionally create AI job (same transaction)
@@ -120,4 +124,4 @@ END;
 $$;
 
 -- Grant execute permission (adjust role as needed)
--- GRANT EXECUTE ON FUNCTION public.save_email_with_ai_job TO authenticated;
+-- GRANT EXECUTE ON FUNCTION public.save_email_with_ai_job_v2 TO authenticated;

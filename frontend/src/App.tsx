@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import './i18n';
 import { apiService, AILanguage } from '@services';
 import { websocketService, type EmailsUpdatedData, type SummaryReadyData } from '@services/websocket';
-import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send, Search, X } from 'lucide-react';
+import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send, Search, X, Paperclip } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { EmailViewModel, AccountInfo, SentEmail, SupportedLanguage, SupportedTone, EmailTemplate, DraftTone, InboxThreadRow, ReplyAttachmentDraft } from '@types';
@@ -368,6 +368,7 @@ export const App = () => {
       thread_id: e.thread_id ?? undefined,
       thread_count: typeof e.thread_count === 'number' && e.thread_count >= 1 ? e.thread_count : 1,
       is_read: e.is_read !== undefined ? Boolean(e.is_read) : undefined,
+      has_attachments: e.has_attachments ?? undefined,
     };
     if (triggerAlerts && emailViewModel.should_alert) {
       setTimeout(() => triggerSentinelAlert(emailViewModel), 500);
@@ -2894,6 +2895,11 @@ export const App = () => {
                             }
                             <h3 className={`text-lg tracking-tight leading-tight group-hover:text-primary-400 transition-colors duration-300 ${item.is_read === false ? 'font-black text-white' : 'font-bold text-slate-200'}`}>
                               {item.subject}
+                              {item.has_attachments && (
+                                <span role="img" aria-label={t('inbox.has_attachments')} title={t('inbox.has_attachments')} className="inline-block">
+                                  <Paperclip size={13} className="inline-block ml-1.5 text-slate-400 align-[-1px]" aria-hidden="true" />
+                                </span>
+                              )}
                             </h3>
                           </div>
                           <div className="flex items-center justify-between text-xs text-slate-500">

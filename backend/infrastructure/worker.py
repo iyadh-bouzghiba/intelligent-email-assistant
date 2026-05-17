@@ -293,6 +293,7 @@ def _sync_one_account(
                     thread_id=email.thread_id,
                     provider=provider_name,
                     thread_ref=email.thread_id,
+                    has_attachments=email.has_attachments,
                 )
                 written_count += 1
 

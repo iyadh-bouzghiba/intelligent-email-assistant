@@ -1,4 +1,4 @@
-import { Clock, Mail, Send, Users } from 'lucide-react';
+import { Clock, Mail, Paperclip, Send, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SentEmail } from '@types';
 
@@ -122,6 +122,11 @@ export function SentList({ emails, loading, onSelect }: Props) {
               <div className="min-w-0">
                 <h3 className="text-base sm:text-[17px] font-black text-white group-hover:text-primary-300 transition-colors leading-snug truncate">
                   {subject}
+                  {email.has_attachments && (
+                    <span role="img" aria-label={t('inbox.has_attachments')} title={t('inbox.has_attachments')} className="inline-block">
+                      <Paperclip size={13} className="inline-block ml-1.5 text-slate-400 align-[-1px]" aria-hidden="true" />
+                    </span>
+                  )}
                 </h3>
 
                 {preview ? (

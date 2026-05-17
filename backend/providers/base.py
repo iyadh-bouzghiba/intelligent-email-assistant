@@ -11,6 +11,7 @@ class NormalizedEmail:
     date: str
     body: str
     thread_id: Optional[str] = None
+    has_attachments: bool = False
 
 
 class EmailProvider(ABC):

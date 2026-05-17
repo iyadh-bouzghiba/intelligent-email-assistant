@@ -35,7 +35,7 @@ class SupabaseStore:
             logger.warning(f"Supabase thread fetch error: {e}")
             return type('obj', (object,), {'data': []})
 
-    def save_email(self, subject, sender, date, body=None, message_id=None, tenant_id="primary", account_id="default", thread_id=None):
+    def save_email(self, subject, sender, date, body=None, message_id=None, tenant_id="primary", account_id="default", thread_id=None, has_attachments=False):
         """
         Upserts an email into Supabase.
         Deduplication is handled by (account_id, gmail_message_id) unique index.
@@ -73,7 +73,8 @@ class SupabaseStore:
             "tenant_id": tenant_id,
             "account_id": account_id,  # CRITICAL: Required for multi-account email isolation
             "updated_at": datetime.now(timezone.utc).isoformat(),  # ✅ FIXED: Use timezone-aware datetime
-            "thread_id": thread_id  # CRITICAL: Gmail thread ID for send functionality
+            "thread_id": thread_id,  # CRITICAL: Gmail thread ID for send functionality
+            "has_attachments": bool(has_attachments),
         }
 
         if message_id:
@@ -118,6 +119,7 @@ class SupabaseStore:
         thread_id=None,
         provider="gmail",
         thread_ref=None,
+        has_attachments=False,
     ):
 
         """
@@ -153,7 +155,7 @@ class SupabaseStore:
                 validated_date = f"{date}+00:00" if not date.endswith('Z') else date
 
         try:
-            result = self.client.rpc('save_email_with_ai_job', {
+            result = self.client.rpc('save_email_with_ai_job_v2', {
                 'p_subject': subject,
                 'p_sender': sender,
                 'p_date': validated_date,
@@ -164,7 +166,8 @@ class SupabaseStore:
                 'p_thread_id': thread_id,
                 'p_provider': provider,
                 'p_thread_ref': thread_ref,
-                'p_create_ai_job': create_ai_job
+                'p_create_ai_job': create_ai_job,
+                'p_has_attachments': bool(has_attachments),
             }).execute()
 
             if result and result.data:

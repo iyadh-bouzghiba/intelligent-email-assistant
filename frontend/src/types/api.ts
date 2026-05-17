@@ -72,6 +72,7 @@ export interface InboxThreadRow {
     thread_id?: string | null;
     thread_count?: number | null;
     is_read?: unknown;
+    has_attachments?: boolean | null;
 }
 
 export interface SimulateEmailRequest {
@@ -121,6 +122,7 @@ export interface EmailViewModel {
     thread_id?: string; // Gmail thread ID (required for send functionality)
     thread_count?: number;
     is_read?: boolean;  // false = unread (UNREAD label present in Gmail)
+    has_attachments?: boolean;
 }
 
 export interface SentEmail {
@@ -133,6 +135,7 @@ export interface SentEmail {
     subject: string | null;
     body_preview: string | null;
     sent_at: string;
+    has_attachments?: boolean | null;
 }
 
 export interface SupportedLanguage {
