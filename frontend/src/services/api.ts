@@ -501,12 +501,13 @@ export const apiService = {
         q: string,
         account_id: string,
         preferred_language = 'en',
-        limit = 50
+        limit = 50,
+        has_attachments?: boolean
     ): Promise<InboxThreadRow[]> => {
         try {
-            const response = await api.get(`${API_ROOT}/search`, {
-                params: { q, account_id, preferred_language, limit },
-            });
+            const params: Record<string, unknown> = { q, account_id, preferred_language, limit };
+            if (has_attachments !== undefined) params.has_attachments = has_attachments;
+            const response = await api.get(`${API_ROOT}/search`, { params });
             return response.data ?? [];
         } catch (error) {
             console.warn('[API] searchEmails failed', error);

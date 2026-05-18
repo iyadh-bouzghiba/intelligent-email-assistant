@@ -346,7 +346,9 @@
         "error_title": "Recherche indisponible",
         "error_body": "Impossible de charger les résultats de recherche pour le moment.",
         "clear": "Effacer la recherche",
-        "results_count": "{{count}} résultats"
+        "results_count": "{{count}} résultats",
+        "filter_attachments": "Avec pièces jointes",
+        "no_attachment_results": "Aucun e-mail avec pièces jointes trouvé"
     },
     "notification": {
         "open": "Ouvrir les notifications",

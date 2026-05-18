@@ -346,7 +346,9 @@
         "error_title": "Search unavailable",
         "error_body": "We couldn't load search results right now.",
         "clear": "Clear search",
-        "results_count": "{{count}} results"
+        "results_count": "{{count}} results",
+        "filter_attachments": "Has attachments",
+        "no_attachment_results": "No emails with attachments found"
     },
     "notification": {
         "open": "Open notifications",

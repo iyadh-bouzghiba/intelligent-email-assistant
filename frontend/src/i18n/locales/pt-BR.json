@@ -346,7 +346,9 @@
         "error_title": "Pesquisa indisponível",
         "error_body": "Não foi possível carregar os resultados da pesquisa agora.",
         "clear": "Limpar pesquisa",
-        "results_count": "{{count}} resultados"
+        "results_count": "{{count}} resultados",
+        "filter_attachments": "Com anexos",
+        "no_attachment_results": "Nenhum e-mail com anexos encontrado"
     },
     "notification": {
         "open": "Abrir notificações",

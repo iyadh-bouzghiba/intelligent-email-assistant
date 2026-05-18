@@ -17,6 +17,8 @@ import { NotificationCenter } from './components/NotificationCenter';
 import { WakingUp } from './components/WakingUp';
 import { getAccountColor, getEmailInitials } from './components/accountSwitcherHelpers';
 import CategoryPillBar from './components/CategoryPillBar';
+import AttachmentSearchToggle from './components/AttachmentSearchToggle';
+import { isSearchQueryActive, shouldDisableAttachmentToggle, shouldResetAttachmentFilterOnInput, resolveSearchEmptyBodyKey } from './utils/searchFilterState';
 
 const devLog = (...args: unknown[]) => {
   if (import.meta.env.DEV) {
@@ -163,6 +165,7 @@ export const App = () => {
   const [searchResults, setSearchResults] = useState<EmailViewModel[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchHasAttachments, setSearchHasAttachments] = useState(false);
   const [expandedThreadIds, setExpandedThreadIds] = useState<Set<string>>(new Set());
   const [threadItemsById, setThreadItemsById] = useState<Record<string, EmailViewModel[]>>({});
   const [_threadLoadingIds, setThreadLoadingIds] = useState<Set<string>>(new Set());
@@ -572,7 +575,7 @@ export const App = () => {
       const focused = document.activeElement;
       if (focused !== desktopSearchInputRef.current && focused !== mobileSearchInputRef.current) return;
       if (searchQuery.trim().length > 0) {
-        setSearchQuery('');
+        resetSearch();
       } else {
         (focused as HTMLElement).blur();
       }
@@ -649,7 +652,7 @@ export const App = () => {
       setSearchLoading(true);
       setSearchError(null);
       try {
-        const rows = await apiService.searchEmails(trimmed, activeEmail, aiLanguageRef.current, 50);
+        const rows = await apiService.searchEmails(trimmed, activeEmail, aiLanguageRef.current, 50, searchHasAttachments || undefined);
         if (!stale) setSearchResults(rows.map(e => mapRowToEmailViewModel(e, false)));
       } catch {
         if (!stale) setSearchError('error');
@@ -659,7 +662,7 @@ export const App = () => {
     }, 300);
     return () => { stale = true; clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, activeEmail, aiLanguage]);
+  }, [searchQuery, activeEmail, aiLanguage, searchHasAttachments]);
 
   // Rerun active search when emailViewModels change (read/unread mutations, summary refreshes, inbox refetches)
   // so the visible search card list stays coherent with inbox state without overwriting emailViewModels.
@@ -671,7 +674,7 @@ export const App = () => {
       if (stale) return;
       if (!stale) setSearchError(null);
       try {
-        const rows = await apiService.searchEmails(trimmed, activeEmail, aiLanguageRef.current, 50);
+        const rows = await apiService.searchEmails(trimmed, activeEmail, aiLanguageRef.current, 50, searchHasAttachments || undefined);
         if (!stale) setSearchResults(rows.map(e => mapRowToEmailViewModel(e, false)));
       } catch {
         if (!stale) setSearchError('error');
@@ -685,7 +688,7 @@ export const App = () => {
   // Reset category filtering when search becomes active.
   // Search results must remain flat and sovereign over inbox category filtering.
   useEffect(() => {
-    const searchActivated = searchQuery.trim().length >= 2 && !!activeEmail;
+    const searchActivated = isSearchQueryActive(searchQuery) && !!activeEmail;
     if (!searchActivated) return;
 
     setCurrentPage(1);
@@ -1565,6 +1568,14 @@ export const App = () => {
 
   // Reset all account-scoped UI state immediately on account switch.
   // CRITICAL: clears the feed to prevent old-account cards remaining visible under new account label.
+  const resetSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchError(null);
+    setSearchLoading(false);
+    setSearchHasAttachments(false);
+  };
+
   const resetAccountScopedState = () => {
     devLog('[SWITCH] Resetting account-scoped UI state');
     // Feed — must be cleared immediately so old account cards are not visible under new account label
@@ -1604,6 +1615,7 @@ export const App = () => {
     // P5.4 attachment compose state
     setReplyAttachments([]);
     setReplyAttachmentError(null);
+    resetSearch();
   };
 
   // Close details panel. Compose state is handled by the selectedEmailDetail invariant effect.
@@ -2089,7 +2101,7 @@ export const App = () => {
   const hasFilteredBriefings = filteredBriefings.length > 0;
 
   // Search active when trimmed query is long enough to trigger FTS
-  const isSearchActive = searchQuery.trim().length >= 2 && !!activeEmail;
+  const isSearchActive = isSearchQueryActive(searchQuery) && !!activeEmail;
   // Unified display source: search results override normal paginated inbox when searching
   const displayItems = isSearchActive ? searchResults : currentItems;
 
@@ -2379,30 +2391,39 @@ export const App = () => {
             {/* CENTER: desktop search lane (visible only when an account is active) */}
             {activeEmail && (
               <div className="hidden sm:flex basis-full lg:basis-auto lg:flex-1 justify-center px-0 lg:px-2 order-3 lg:order-none">
-                <div className="relative w-full max-w-xl lg:max-w-sm">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" aria-hidden="true" />
-                  <input
-                    ref={desktopSearchInputRef}
-                    id="email-search-desktop"
-                    name="email_search_desktop"
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    aria-label={t('search.aria_label')}
-                    placeholder={t('search.placeholder')}
-                    className="w-full h-9 pl-8 pr-8 rounded-xl bg-white/[0.04] border border-white/[0.08] text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-primary-500/50 focus:border-primary-500/30 transition-all"
+                <div className="flex items-center gap-2 w-full max-w-xl lg:max-w-sm">
+                  <div className="relative flex-1">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" aria-hidden="true" />
+                    <input
+                      ref={desktopSearchInputRef}
+                      id="email-search-desktop"
+                      name="email_search_desktop"
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => { setSearchQuery(e.target.value); if (shouldResetAttachmentFilterOnInput(e.target.value)) setSearchHasAttachments(false); }}
+                      aria-label={t('search.aria_label')}
+                      placeholder={t('search.placeholder')}
+                      className="w-full h-9 pl-8 pr-8 rounded-xl bg-white/[0.04] border border-white/[0.08] text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-primary-500/50 focus:border-primary-500/30 transition-all"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={resetSearch}
+                        aria-label={t('search.clear')}
+                        title={t('search.clear')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                  <AttachmentSearchToggle
+                    isActive={searchHasAttachments}
+                    label={t('search.filter_attachments')}
+                    isRTL={isCategoryPillBarRTL}
+                    disabled={shouldDisableAttachmentToggle(searchQuery)}
+                    onToggle={() => setSearchHasAttachments(v => !v)}
                   />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                      aria-label={t('search.clear')}
-                      title={t('search.clear')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
-                    >
-                      <X size={13} />
-                    </button>
-                  )}
                 </div>
               </div>
             )}
@@ -2489,30 +2510,39 @@ export const App = () => {
           {/* Mobile-only search row — below primary row, above session row */}
           {activeEmail && (
             <div className="sm:hidden mt-2">
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" aria-hidden="true" />
-                <input
-                  ref={mobileSearchInputRef}
-                  id="email-search-mobile"
-                  name="email_search_mobile"
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  aria-label={t('search.aria_label')}
-                  placeholder={t('search.placeholder')}
-                  className="w-full h-10 pl-8 pr-8 rounded-xl bg-white/[0.04] border border-white/[0.08] text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-primary-500/50 focus:border-primary-500/30 transition-all"
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" aria-hidden="true" />
+                  <input
+                    ref={mobileSearchInputRef}
+                    id="email-search-mobile"
+                    name="email_search_mobile"
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => { setSearchQuery(e.target.value); if (shouldResetAttachmentFilterOnInput(e.target.value)) setSearchHasAttachments(false); }}
+                    aria-label={t('search.aria_label')}
+                    placeholder={t('search.placeholder')}
+                    className="w-full h-10 pl-8 pr-8 rounded-xl bg-white/[0.04] border border-white/[0.08] text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-primary-500/50 focus:border-primary-500/30 transition-all"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={resetSearch}
+                      aria-label={t('search.clear')}
+                      title={t('search.clear')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+                <AttachmentSearchToggle
+                  isActive={searchHasAttachments}
+                  label={t('search.filter_attachments')}
+                  isRTL={isCategoryPillBarRTL}
+                  disabled={shouldDisableAttachmentToggle(searchQuery)}
+                  onToggle={() => setSearchHasAttachments(v => !v)}
                 />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    aria-label={t('search.clear')}
-                    title={t('search.clear')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
-                  >
-                    <X size={13} />
-                  </button>
-                )}
               </div>
             </div>
           )}
@@ -2706,7 +2736,7 @@ export const App = () => {
                   )}
                 </button>
                 <button
-                  onClick={() => setActiveTab('sent')}
+                  onClick={() => { setActiveTab('sent'); resetSearch(); }}
                   className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'sent' ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20' : 'text-slate-500 hover:text-slate-300 bg-white/[0.02] border border-white/5'}`}
                 >
                   <Send size={13} />
@@ -2815,7 +2845,7 @@ export const App = () => {
                     </div>
                     <div>
                       <h3 className="text-xl font-black text-white mb-1">{t('search.no_results_title')}</h3>
-                      <p className="text-slate-500 text-sm max-w-xs font-medium">{t('search.no_results_body')}</p>
+                      <p className="text-slate-500 text-sm max-w-xs font-medium">{t(resolveSearchEmptyBodyKey(searchHasAttachments))}</p>
                     </div>
                   </motion.div>
                 )}
