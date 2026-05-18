@@ -307,7 +307,18 @@
         "attachment_size_error": "Ekler 25 MB sınırını aşıyor.",
         "attachment_blocked_type_error": "Bir veya daha fazla ekte engellenen bir dosya türü kullanılıyor.",
         "attachment_scope_required": "Ek göndermek için bu hesabı yeniden bağlayın.",
-        "attachment_privacy_notice": "Dosyalar yalnızca Gmail üzerinden gönderilir ve Executive Brain tarafından asla saklanmaz."
+        "attachment_privacy_notice": "Dosyalar yalnızca Gmail üzerinden gönderilir ve Executive Brain tarafından asla saklanmaz.",
+        "context": {
+            "strip_aria_label": "Konu bağlamı sinyalleri",
+            "urgency_high": "Aciliyet: yüksek",
+            "urgency_high_aria": "Bu konunun aciliyeti yüksek",
+            "urgency_medium": "Aciliyet: orta",
+            "urgency_medium_aria": "Bu konunun aciliyeti orta",
+            "has_attachments": "Konuda ek var",
+            "has_attachments_aria": "Bu konuda ekler bulunuyor",
+            "thread_depth": "Bu konuda {{count}} ileti",
+            "thread_depth_aria": "Bu konuda {{count}} ileti bulunuyor"
+        }
     },
     "sent": {
         "loading": "Gönderilen e-postalar yükleniyor...",

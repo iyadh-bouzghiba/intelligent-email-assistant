@@ -307,7 +307,18 @@
         "attachment_size_error": "Attachments exceed the 25 MB limit.",
         "attachment_blocked_type_error": "One or more attachments use a blocked file type.",
         "attachment_scope_required": "Reconnect this account to send attachments.",
-        "attachment_privacy_notice": "Files are sent through Gmail only and are never stored by Executive Brain."
+        "attachment_privacy_notice": "Files are sent through Gmail only and are never stored by Executive Brain.",
+        "context": {
+            "strip_aria_label": "Thread context signals",
+            "urgency_high": "Urgency: high",
+            "urgency_high_aria": "Thread urgency is high",
+            "urgency_medium": "Urgency: medium",
+            "urgency_medium_aria": "Thread urgency is medium",
+            "has_attachments": "Thread has attachments",
+            "has_attachments_aria": "This thread has attachments",
+            "thread_depth": "{{count}} messages in this thread",
+            "thread_depth_aria": "This thread has {{count}} messages"
+        }
     },
     "sent": {
         "loading": "Loading sent emails...",

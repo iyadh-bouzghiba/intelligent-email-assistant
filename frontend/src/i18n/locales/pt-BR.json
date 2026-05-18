@@ -307,7 +307,18 @@
         "attachment_size_error": "Os anexos excedem o limite de 25 MB.",
         "attachment_blocked_type_error": "Um ou mais anexos usam um tipo de arquivo bloqueado.",
         "attachment_scope_required": "Reconecte esta conta para enviar anexos.",
-        "attachment_privacy_notice": "Os arquivos são enviados somente pelo Gmail e nunca são armazenados pelo Executive Brain."
+        "attachment_privacy_notice": "Os arquivos são enviados somente pelo Gmail e nunca são armazenados pelo Executive Brain.",
+        "context": {
+            "strip_aria_label": "Sinais de contexto do tópico",
+            "urgency_high": "Urgência: alta",
+            "urgency_high_aria": "A urgência deste tópico é alta",
+            "urgency_medium": "Urgência: média",
+            "urgency_medium_aria": "A urgência deste tópico é média",
+            "has_attachments": "Tópico com anexos",
+            "has_attachments_aria": "Este tópico tem anexos",
+            "thread_depth": "{{count}} mensagens neste tópico",
+            "thread_depth_aria": "Este tópico tem {{count}} mensagens"
+        }
     },
     "sent": {
         "loading": "Carregando e-mails enviados...",

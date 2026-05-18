@@ -305,7 +305,18 @@
         "attachment_size_error": "첨부파일이 25MB 제한을 초과했습니다.",
         "attachment_blocked_type_error": "하나 이상의 첨부파일에 차단된 파일 형식이 사용되었습니다.",
         "attachment_scope_required": "첨부파일을 보내려면 이 계정을 다시 연결하세요.",
-        "attachment_privacy_notice": "파일은 Gmail을 통해서만 전송되며 Executive Brain에는 절대 저장되지 않습니다."
+        "attachment_privacy_notice": "파일은 Gmail을 통해서만 전송되며 Executive Brain에는 절대 저장되지 않습니다.",
+        "context": {
+            "strip_aria_label": "스레드 컨텍스트 신호",
+            "urgency_high": "긴급도: 높음",
+            "urgency_high_aria": "이 스레드의 긴급도는 높음입니다",
+            "urgency_medium": "긴급도: 보통",
+            "urgency_medium_aria": "이 스레드의 긴급도는 보통입니다",
+            "has_attachments": "첨부 파일 있음",
+            "has_attachments_aria": "이 스레드에 첨부 파일이 있습니다",
+            "thread_depth": "이 스레드에 {{count}}개 메시지",
+            "thread_depth_aria": "이 스레드에 {{count}}개의 메시지가 있습니다"
+        }
     },
     "sent": {
         "loading": "보낸 이메일 불러오는 중...",
