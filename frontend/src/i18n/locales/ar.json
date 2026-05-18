@@ -346,7 +346,9 @@
         "error_title": "البحث غير متاح",
         "error_body": "تعذّر تحميل نتائج البحث الآن.",
         "clear": "مسح البحث",
-        "results_count": "{{count}} نتيجة"
+        "results_count": "{{count}} نتيجة",
+        "filter_attachments": "يحتوي على مرفقات",
+        "no_attachment_results": "لم يتم العثور على رسائل تحتوي على مرفقات"
     },
     "notification": {
         "open": "فتح الإشعارات",

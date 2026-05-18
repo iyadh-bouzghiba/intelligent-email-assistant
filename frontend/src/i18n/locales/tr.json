@@ -346,7 +346,9 @@
         "error_title": "Arama kullanılamıyor",
         "error_body": "Arama sonuçları şu anda yüklenemedi.",
         "clear": "Aramayı temizle",
-        "results_count": "{{count}} sonuç"
+        "results_count": "{{count}} sonuç",
+        "filter_attachments": "Ek içeren",
+        "no_attachment_results": "Ek içeren e-posta bulunamadı"
     },
     "notification": {
         "open": "Bildirimleri aç",

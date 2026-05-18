@@ -344,7 +344,9 @@
         "error_title": "Pencarian tidak tersedia",
         "error_body": "Hasil pencarian tidak dapat dimuat saat ini.",
         "clear": "Hapus pencarian",
-        "results_count": "{{count}} hasil"
+        "results_count": "{{count}} hasil",
+        "filter_attachments": "Memiliki lampiran",
+        "no_attachment_results": "Tidak ada email dengan lampiran yang ditemukan"
     },
     "notification": {
         "open": "Buka notifikasi",

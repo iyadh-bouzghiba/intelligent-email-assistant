@@ -2565,11 +2565,12 @@ async def search_emails(
     account_id: str = Query(...),
     preferred_language: str = Query("en"),
     limit: int = Query(50),
+    has_attachments: Optional[bool] = Query(None),
 ):
     """
     Full-text search over the inbox.  Returns InboxThreadRow-compatible dicts.
 
-    Uses the DB function search_emails_ranked_v2 (ts_rank over search_vector) for
+    Uses the DB function search_emails_ranked_v3 (ts_rank over search_vector) for
     server-side ranked candidates, then applies the same summary-enrichment,
     sent-activity merge, thread-collapse, and unread-propagation logic as
     /api/inbox.  Results are sorted by relevance DESC, latest activity DESC.
@@ -2589,8 +2590,8 @@ async def search_emails(
         # 1. Fetch ranked candidates from the DB function (bounded at 200)
         rpc_result = await asyncio.to_thread(
             lambda: store.client.rpc(
-                "search_emails_ranked_v2",
-                {"p_account_id": account_id, "p_query": q, "p_limit": 200},
+                "search_emails_ranked_v3",
+                {"p_account_id": account_id, "p_query": q, "p_limit": 200, "p_has_attachments": has_attachments},
             ).execute()
         )
         candidates = rpc_result.data or []

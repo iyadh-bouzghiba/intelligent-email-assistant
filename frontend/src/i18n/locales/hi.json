@@ -344,7 +344,9 @@
         "error_title": "खोज उपलब्ध नहीं है",
         "error_body": "अभी खोज परिणाम लोड नहीं किए जा सके।",
         "clear": "खोज साफ़ करें",
-        "results_count": "{{count}} परिणाम"
+        "results_count": "{{count}} परिणाम",
+        "filter_attachments": "अटैचमेंट के साथ",
+        "no_attachment_results": "अटैचमेंट वाला कोई ईमेल नहीं मिला"
     },
     "notification": {
         "open": "सूचनाएँ खोलें",

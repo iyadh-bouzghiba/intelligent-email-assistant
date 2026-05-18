@@ -344,7 +344,9 @@
         "error_title": "検索を利用できません",
         "error_body": "現在、検索結果を読み込めませんでした。",
         "clear": "検索をクリア",
-        "results_count": "{{count}} 件の結果"
+        "results_count": "{{count}} 件の結果",
+        "filter_attachments": "添付ファイルあり",
+        "no_attachment_results": "添付ファイルのあるメールは見つかりませんでした"
     },
     "notification": {
         "open": "通知を開く",
