@@ -307,7 +307,18 @@
         "attachment_size_error": "تتجاوز المرفقات حد 25 ميغابايت.",
         "attachment_blocked_type_error": "يستخدم مرفق واحد أو أكثر نوع ملف محظورًا.",
         "attachment_scope_required": "أعد ربط هذا الحساب لإرسال المرفقات.",
-        "attachment_privacy_notice": "تُرسل الملفات عبر Gmail فقط ولا يتم تخزينها مطلقًا بواسطة Executive Brain."
+        "attachment_privacy_notice": "تُرسل الملفات عبر Gmail فقط ولا يتم تخزينها مطلقًا بواسطة Executive Brain.",
+        "context": {
+            "strip_aria_label": "إشارات سياق المحادثة",
+            "urgency_high": "الأولوية: عالية",
+            "urgency_high_aria": "أولوية هذه المحادثة عالية",
+            "urgency_medium": "الأولوية: متوسطة",
+            "urgency_medium_aria": "أولوية هذه المحادثة متوسطة",
+            "has_attachments": "المحادثة تحتوي على مرفقات",
+            "has_attachments_aria": "هذه المحادثة تحتوي على مرفقات",
+            "thread_depth": "{{count}} رسائل في هذه المحادثة",
+            "thread_depth_aria": "هذه المحادثة تحتوي على {{count}} رسائل"
+        }
     },
     "sent": {
         "loading": "جارٍ تحميل الرسائل المرسلة...",

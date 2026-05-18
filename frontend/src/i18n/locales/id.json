@@ -305,7 +305,18 @@
         "attachment_size_error": "Lampiran melebihi batas 25 MB.",
         "attachment_blocked_type_error": "Satu atau lebih lampiran menggunakan jenis file yang diblokir.",
         "attachment_scope_required": "Hubungkan ulang akun ini untuk mengirim lampiran.",
-        "attachment_privacy_notice": "File dikirim hanya melalui Gmail dan tidak pernah disimpan oleh Executive Brain."
+        "attachment_privacy_notice": "File dikirim hanya melalui Gmail dan tidak pernah disimpan oleh Executive Brain.",
+        "context": {
+            "strip_aria_label": "Sinyal konteks utas",
+            "urgency_high": "Urgensi: tinggi",
+            "urgency_high_aria": "Urgensi utas ini tinggi",
+            "urgency_medium": "Urgensi: sedang",
+            "urgency_medium_aria": "Urgensi utas ini sedang",
+            "has_attachments": "Utas memiliki lampiran",
+            "has_attachments_aria": "Utas ini memiliki lampiran",
+            "thread_depth": "{{count}} pesan dalam utas ini",
+            "thread_depth_aria": "Utas ini memiliki {{count}} pesan"
+        }
     },
     "sent": {
         "loading": "Memuat email terkirim...",

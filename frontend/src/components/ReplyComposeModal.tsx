@@ -5,7 +5,9 @@ import { useTranslation } from 'react-i18next';
 import { EmailViewModel, DraftTone, SupportedTone, EmailTemplate, ReplyAttachmentDraft } from '@types';
 import { FocusTrap } from './FocusTrap';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
+import { deriveThreadContext } from '@utils/deriveThreadContext';
 import AiSummaryConfidence from './AiSummaryConfidence';
+import ThreadContextSignal from './ThreadContextSignal';
 
 interface Props {
   email: EmailViewModel;
@@ -169,6 +171,8 @@ export function ReplyComposeModal({
     () => templateOptions.find((template) => template.id === selectedTemplateId) ?? null,
     [templateOptions, selectedTemplateId]
   );
+
+  const threadContext = useMemo(() => deriveThreadContext(email), [email]);
 
   const handleToneSelection = (tone: DraftTone) => {
     if (onToneChange) {
@@ -462,6 +466,8 @@ export function ReplyComposeModal({
                   </div>
                 )}
               </div>
+
+              <ThreadContextSignal result={threadContext} />
 
               <div className="rounded-2xl border border-primary-500/[0.14] bg-white/[0.035] px-3 py-3 sm:px-4 sm:py-4 space-y-2 shadow-lg shadow-black/10 transition-colors duration-150 focus-within:border-primary-500/[0.26] focus-within:bg-white/[0.05]">
                 <div className="space-y-1">

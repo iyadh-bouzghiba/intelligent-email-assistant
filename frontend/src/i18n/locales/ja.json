@@ -305,7 +305,18 @@
         "attachment_size_error": "添付ファイルが25MBの上限を超えています。",
         "attachment_blocked_type_error": "1つ以上の添付ファイルでブロックされたファイル形式が使用されています。",
         "attachment_scope_required": "添付ファイルを送信するには、このアカウントを再接続してください。",
-        "attachment_privacy_notice": "ファイルは Gmail 経由でのみ送信され、Executive Brain に保存されることはありません。"
+        "attachment_privacy_notice": "ファイルは Gmail 経由でのみ送信され、Executive Brain に保存されることはありません。",
+        "context": {
+            "strip_aria_label": "スレッドコンテキスト",
+            "urgency_high": "緊急度：高",
+            "urgency_high_aria": "このスレッドの緊急度は高です",
+            "urgency_medium": "緊急度：中",
+            "urgency_medium_aria": "このスレッドの緊急度は中です",
+            "has_attachments": "添付ファイルあり",
+            "has_attachments_aria": "このスレッドには添付ファイルがあります",
+            "thread_depth": "このスレッドに{{count}}件のメッセージ",
+            "thread_depth_aria": "このスレッドには{{count}}件のメッセージがあります"
+        }
     },
     "sent": {
         "loading": "送信済みメールを読み込み中...",

@@ -305,7 +305,18 @@
         "attachment_size_error": "संलग्नक 25 MB सीमा से अधिक हैं।",
         "attachment_blocked_type_error": "एक या अधिक संलग्नकों में अवरुद्ध फ़ाइल प्रकार का उपयोग किया गया है।",
         "attachment_scope_required": "संलग्नक भेजने के लिए इस खाते को फिर से कनेक्ट करें।",
-        "attachment_privacy_notice": "फ़ाइलें केवल Gmail के माध्यम से भेजी जाती हैं और Executive Brain द्वारा कभी संग्रहीत नहीं की जातीं।"
+        "attachment_privacy_notice": "फ़ाइलें केवल Gmail के माध्यम से भेजी जाती हैं और Executive Brain द्वारा कभी संग्रहीत नहीं की जातीं।",
+        "context": {
+            "strip_aria_label": "थ्रेड संदर्भ संकेत",
+            "urgency_high": "तात्कालिकता: उच्च",
+            "urgency_high_aria": "इस थ्रेड की तात्कालिकता उच्च है",
+            "urgency_medium": "तात्कालिकता: मध्यम",
+            "urgency_medium_aria": "इस थ्रेड की तात्कालिकता मध्यम है",
+            "has_attachments": "थ्रेड में अनुलग्नक हैं",
+            "has_attachments_aria": "इस थ्रेड में अनुलग्नक हैं",
+            "thread_depth": "इस थ्रेड में {{count}} संदेश",
+            "thread_depth_aria": "इस थ्रेड में {{count}} संदेश हैं"
+        }
     },
     "sent": {
         "loading": "भेजे गए ईमेल लोड हो रहे हैं...",
