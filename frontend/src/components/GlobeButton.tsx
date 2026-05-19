@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import type { AppShellLanguage } from '../i18n';
+import { changeAppLanguage, type AppShellLanguage } from '../i18n';
 
 const LANGUAGE_OPTIONS: Array<{
     code: AppShellLanguage;
@@ -103,7 +103,7 @@ export function GlobeButton() {
 
     const handleLanguageSelect = (language: AppShellLanguage) => {
         if (language !== activeLanguage) {
-            void i18n.changeLanguage(language);
+            void changeAppLanguage(language);
         }
 
         setIsOpen(false);
