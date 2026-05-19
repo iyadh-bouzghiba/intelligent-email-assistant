@@ -8,6 +8,7 @@
     "build": "node scripts/verify-env.js && tsc && vite build && npm run verify:dist",
     "build:skip-verify": "tsc && vite build",
     "verify:dist": "node scripts/verify-dist.js",
+    "i18n:check": "node scripts/check-i18n-parity.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run"
