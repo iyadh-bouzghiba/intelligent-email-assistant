@@ -56,6 +56,7 @@ interface Props {
   attachmentsDisabled?: boolean;
   onAddAttachments?: (files: File[]) => void;
   onRemoveAttachment?: (index: number) => void;
+  accountEmail?: string;
 }
 
 const TITLE_ID = 'reply-compose-title';
@@ -122,6 +123,7 @@ export function ReplyComposeModal({
   attachmentsDisabled = false,
   onAddAttachments,
   onRemoveAttachment,
+  accountEmail,
 }: Props) {
   const { t } = useTranslation();
 
@@ -172,7 +174,10 @@ export function ReplyComposeModal({
     [templateOptions, selectedTemplateId]
   );
 
-  const threadContext = useMemo(() => deriveThreadContext(email), [email]);
+  const threadContext = useMemo(
+    () => deriveThreadContext(email, accountEmail),
+    [email, accountEmail]
+  );
 
   const handleToneSelection = (tone: DraftTone) => {
     if (onToneChange) {

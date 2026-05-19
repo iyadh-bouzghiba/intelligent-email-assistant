@@ -2510,13 +2510,12 @@ async def get_inbox_threads(account_id: str = Query(...), limit: int = Query(50)
             inbox_ts = rep.get("date") or rep.get("created_at") or ""
             sent_ts = sent_latest.get(thread_id, "") if thread_id else ""
             latest_dt = max(_parse_ts(inbox_ts), _parse_ts(sent_ts))
-            row["_latest_activity"] = latest_dt.isoformat()
+            row["last_activity_iso"] = latest_dt.isoformat()
+            row["last_sender"] = row.get("sender", "")
             rows.append(row)
 
-        # Sort by latest activity DESC, strip internal sort key
-        rows.sort(key=lambda r: r.get("_latest_activity", ""), reverse=True)
-        for row in rows:
-            row.pop("_latest_activity", None)
+        # Sort by latest activity DESC
+        rows.sort(key=lambda r: r.get("last_activity_iso", ""), reverse=True)
 
         logger.info(f"[INBOX] Returning {min(len(rows), limit)} threads for account={account_id}")
         return rows[:limit]
@@ -2741,16 +2740,19 @@ async def search_emails(
             row = dict(rep)
             row["is_read"] = not has_unread[key]
             row["_rank"] = best_rank[key]
-            row["_latest_activity"] = thread_latest_activity[key].isoformat()
+            row["last_activity_iso"] = thread_latest_activity[key].isoformat()
+            # last_sender from highest-rank representative.
+            # Recency not guaranteed. Inbox route preferred
+            # for polarity derivation.
+            row["last_sender"] = row.get("sender", "")
             rows.append(row)
 
         rows.sort(
-            key=lambda r: (r.get("_rank", 0.0), r.get("_latest_activity", "")),
+            key=lambda r: (r.get("_rank", 0.0), r.get("last_activity_iso", "")),
             reverse=True,
         )
         for row in rows:
             row.pop("_rank", None)
-            row.pop("_latest_activity", None)
             row.pop("rank", None)
 
         logger.info(f"[SEARCH] Returning {min(len(rows), limit)} threads for q={q!r} account={account_id}")
