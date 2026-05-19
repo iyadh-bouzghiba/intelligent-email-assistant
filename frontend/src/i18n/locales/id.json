@@ -138,6 +138,8 @@
         "ask_ai_assistant": "Tanya Asisten AI",
         "mark_read_failed": "Gagal menandai sebagai sudah dibaca.",
         "mark_unread_failed": "Gagal menandai sebagai belum dibaca.",
+        "fallback_translation_title": "Tampilan terjemahan sederhana",
+        "fallback_translation_notice": "Sebagian format asli tidak dapat dipertahankan.",
         "confidence_label": "Kepercayaan AI",
         "confidence_high": "Tinggi",
         "confidence_medium": "Sedang",

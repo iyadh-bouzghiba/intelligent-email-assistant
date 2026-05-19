@@ -138,6 +138,8 @@
         "ask_ai_assistant": "AIアシスタントに質問",
         "mark_read_failed": "既読にする処理に失敗しました。",
         "mark_unread_failed": "未読にする処理に失敗しました。",
+        "fallback_translation_title": "簡易翻訳ビュー",
+        "fallback_translation_notice": "元の書式の一部は保持できませんでした。",
         "confidence_label": "AI信頼度",
         "confidence_high": "高",
         "confidence_medium": "中",
