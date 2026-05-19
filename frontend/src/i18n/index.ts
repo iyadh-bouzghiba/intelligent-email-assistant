@@ -1,23 +1,33 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
-import en from './locales/en.json';
-import ar from './locales/ar.json';
-import fr from './locales/fr.json';
-import ptBR from './locales/pt-BR.json';
-import tr from './locales/tr.json';
-import ja from './locales/ja.json';
-import ko from './locales/ko.json';
-import hi from './locales/hi.json';
-import id from './locales/id.json';
-
 export const APP_LANG_STORAGE_KEY = 'eb_lang';
 
 export type AppShellLanguage = 'en' | 'ar' | 'fr' | 'pt-BR' | 'tr' | 'ja' | 'ko' | 'hi' | 'id';
 
 export const SUPPORTED_APP_LANGUAGES: AppShellLanguage[] = ['en', 'ar', 'fr', 'pt-BR', 'tr', 'ja', 'ko', 'hi', 'id'];
 
-const isSupportedAppLanguage = (value: string | null): value is AppShellLanguage => {
+type TranslationMessages = Record<string, unknown>;
+type LocaleModule = { default: TranslationMessages };
+
+const localeLoaders: Record<AppShellLanguage, () => Promise<LocaleModule>> = {
+    en: () => import('./locales/en.json'),
+    ar: () => import('./locales/ar.json'),
+    fr: () => import('./locales/fr.json'),
+    'pt-BR': () => import('./locales/pt-BR.json'),
+    tr: () => import('./locales/tr.json'),
+    ja: () => import('./locales/ja.json'),
+    ko: () => import('./locales/ko.json'),
+    hi: () => import('./locales/hi.json'),
+    id: () => import('./locales/id.json'),
+};
+
+const loadedLanguages = new Set<AppShellLanguage>();
+
+let initializationPromise: Promise<typeof i18n> | null = null;
+let languageChangedHandlerAttached = false;
+
+const isSupportedAppLanguage = (value: string | null | undefined): value is AppShellLanguage => {
     return value === 'en' || value === 'ar' || value === 'fr' || value === 'pt-BR' || value === 'tr'
         || value === 'ja' || value === 'ko' || value === 'hi' || value === 'id';
 };
@@ -40,48 +50,150 @@ export const applyDocumentLanguage = (language: AppShellLanguage) => {
     document.documentElement.dir = getDocumentDirection(language);
 };
 
-const initialLanguage = getStoredAppLanguage();
-
-const resources = {
-    en: { translation: en },
-    ar: { translation: ar },
-    fr: { translation: fr },
-    'pt-BR': { translation: ptBR },
-    tr: { translation: tr },
-    ja: { translation: ja },
-    ko: { translation: ko },
-    hi: { translation: hi },
-    id: { translation: id },
-};
-
-void i18n
-    .use(initReactI18next)
-    .init({
-        resources,
-        lng: initialLanguage,
-        fallbackLng: 'en',
-        supportedLngs: SUPPORTED_APP_LANGUAGES,
-        defaultNS: 'translation',
-        ns: ['translation'],
-        interpolation: {
-            escapeValue: false,
-        },
-        returnNull: false,
-        react: {
-            useSuspense: false,
-        },
-    });
-
-applyDocumentLanguage(initialLanguage);
-
-i18n.on('languageChanged', (language) => {
-    const resolvedLanguage: AppShellLanguage = isSupportedAppLanguage(language) ? language : 'en';
-
+const persistResolvedLanguage = (language: AppShellLanguage) => {
     if (typeof window !== 'undefined') {
-        window.localStorage.setItem(APP_LANG_STORAGE_KEY, resolvedLanguage);
+        window.localStorage.setItem(APP_LANG_STORAGE_KEY, language);
     }
 
-    applyDocumentLanguage(resolvedLanguage);
-});
+    applyDocumentLanguage(language);
+};
+
+const attachLanguageChangedHandler = () => {
+    if (languageChangedHandlerAttached) return;
+
+    i18n.on('languageChanged', (language) => {
+        const resolvedLanguage: AppShellLanguage = isSupportedAppLanguage(language) ? language : 'en';
+        persistResolvedLanguage(resolvedLanguage);
+    });
+
+    languageChangedHandlerAttached = true;
+};
+
+const loadLocaleMessages = async (language: AppShellLanguage): Promise<TranslationMessages> => {
+    const module = await localeLoaders[language]();
+    return module.default;
+};
+
+const registerLocaleBundle = (language: AppShellLanguage, messages: TranslationMessages) => {
+    if (i18n.hasResourceBundle(language, 'translation')) {
+        loadedLanguages.add(language);
+        return;
+    }
+
+    i18n.addResourceBundle(language, 'translation', messages, true, true);
+    loadedLanguages.add(language);
+};
+
+const resolveInitialLocale = async (requestedLanguage: AppShellLanguage): Promise<{
+    language: AppShellLanguage;
+    messages: TranslationMessages;
+}> => {
+    try {
+        const messages = await loadLocaleMessages(requestedLanguage);
+        return {
+            language: requestedLanguage,
+            messages,
+        };
+    } catch (error) {
+        console.error(`[i18n] Failed to load initial locale chunk "${requestedLanguage}". Falling back to "en".`, error);
+
+        const fallbackMessages = await loadLocaleMessages('en');
+        return {
+            language: 'en',
+            messages: fallbackMessages,
+        };
+    }
+};
+
+const ensureLocaleLoaded = async (language: AppShellLanguage): Promise<AppShellLanguage> => {
+    if (loadedLanguages.has(language) || i18n.hasResourceBundle(language, 'translation')) {
+        loadedLanguages.add(language);
+        return language;
+    }
+
+    try {
+        const messages = await loadLocaleMessages(language);
+        registerLocaleBundle(language, messages);
+        return language;
+    } catch (error) {
+        console.error(`[i18n] Failed to load locale chunk "${language}". Falling back to "en".`, error);
+
+        if (!loadedLanguages.has('en') && !i18n.hasResourceBundle('en', 'translation')) {
+            const fallbackMessages = await loadLocaleMessages('en');
+            registerLocaleBundle('en', fallbackMessages);
+        }
+
+        return 'en';
+    }
+};
+
+export const initializeI18n = async (): Promise<typeof i18n> => {
+    if (i18n.isInitialized) {
+        attachLanguageChangedHandler();
+        return i18n;
+    }
+
+    if (initializationPromise) {
+        return initializationPromise;
+    }
+
+    initializationPromise = (async () => {
+        const requestedInitialLanguage = getStoredAppLanguage();
+        const initialLocale = await resolveInitialLocale(requestedInitialLanguage);
+
+        await i18n
+            .use(initReactI18next)
+            .init({
+                resources: {
+                    [initialLocale.language]: {
+                        translation: initialLocale.messages,
+                    },
+                },
+                lng: initialLocale.language,
+                fallbackLng: 'en',
+                supportedLngs: SUPPORTED_APP_LANGUAGES,
+                defaultNS: 'translation',
+                ns: ['translation'],
+                interpolation: {
+                    escapeValue: false,
+                },
+                returnNull: false,
+                react: {
+                    useSuspense: false,
+                },
+            });
+
+        loadedLanguages.add(initialLocale.language);
+        persistResolvedLanguage(initialLocale.language);
+        attachLanguageChangedHandler();
+
+        return i18n;
+    })();
+
+    try {
+        return await initializationPromise;
+    } catch (error) {
+        initializationPromise = null;
+        throw error;
+    }
+};
+
+export const changeAppLanguage = async (language: AppShellLanguage): Promise<AppShellLanguage> => {
+    await initializeI18n();
+
+    const requestedLanguage = isSupportedAppLanguage(language) ? language : 'en';
+
+    try {
+        const resolvedLanguage = await ensureLocaleLoaded(requestedLanguage);
+        await i18n.changeLanguage(resolvedLanguage);
+        return resolvedLanguage;
+    } catch (error) {
+        console.error(`[i18n] Failed to switch app language to "${requestedLanguage}". Falling back to "en".`, error);
+
+        const fallbackLanguage = await ensureLocaleLoaded('en');
+        await i18n.changeLanguage(fallbackLanguage);
+        return fallbackLanguage;
+    }
+};
 
 export default i18n;
