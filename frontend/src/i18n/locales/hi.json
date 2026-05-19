@@ -138,6 +138,8 @@
         "ask_ai_assistant": "AI सहायक से पूछें",
         "mark_read_failed": "पठित के रूप में चिह्नित करने में विफल।",
         "mark_unread_failed": "अपठित के रूप में चिह्नित करने में विफल।",
+        "fallback_translation_title": "सरलीकृत अनूदित दृश्य",
+        "fallback_translation_notice": "मूल फ़ॉर्मैटिंग का कुछ हिस्सा सुरक्षित नहीं रखा जा सका।",
         "confidence_label": "AI विश्वसनीयता",
         "confidence_high": "उच्च",
         "confidence_medium": "मध्यम",
