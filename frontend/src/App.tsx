@@ -372,6 +372,8 @@ export const App = () => {
       thread_count: typeof e.thread_count === 'number' && e.thread_count >= 1 ? e.thread_count : 1,
       is_read: e.is_read !== undefined ? Boolean(e.is_read) : undefined,
       has_attachments: e.has_attachments ?? undefined,
+      last_activity_iso: e.last_activity_iso ?? null,
+      last_sender: e.last_sender ?? null,
     };
     if (triggerAlerts && emailViewModel.should_alert) {
       setTimeout(() => triggerSentinelAlert(emailViewModel), 500);
@@ -3340,6 +3342,7 @@ export const App = () => {
         {selectedEmailDetail && activeModal === 'compose' && (
           <ReplyComposeModal
             email={selectedEmailDetail}
+            accountEmail={activeEmail ?? undefined}
             replyBody={replyBody}
             replySubject={replySubject}
             replyCC={replyCC}

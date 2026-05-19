@@ -73,6 +73,8 @@ export interface InboxThreadRow {
     thread_count?: number | null;
     is_read?: unknown;
     has_attachments?: boolean | null;
+    last_activity_iso?: string | null;
+    last_sender?: string | null;
 }
 
 export interface SimulateEmailRequest {
@@ -123,6 +125,8 @@ export interface EmailViewModel {
     thread_count?: number;
     is_read?: boolean;  // false = unread (UNREAD label present in Gmail)
     has_attachments?: boolean;
+    last_activity_iso?: string | null;
+    last_sender?: string | null;
 }
 
 export interface SentEmail {
