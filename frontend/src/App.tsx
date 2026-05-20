@@ -565,16 +565,22 @@ export const App = () => {
     };
   }, []);
 
-  // Reset keyboard mode on pointer/touch interaction so ring only appears after keyboard use
+  // Reset keyboard mode AND virtual selection on any pointer/wheel interaction
+  // This prevents stale focusedItemIndex from surviving mouse/touch exits
   useEffect(() => {
-    const handlePointerInteraction = () => setKeyboardMode(false);
+    const handlePointerInteraction = () => {
+      setKeyboardMode(false);
+      setFocusedItemIndex(null);
+    };
     window.addEventListener('pointerdown', handlePointerInteraction);
     window.addEventListener('mousedown', handlePointerInteraction);
     window.addEventListener('touchstart', handlePointerInteraction);
+    window.addEventListener('wheel', handlePointerInteraction, { passive: true });
     return () => {
       window.removeEventListener('pointerdown', handlePointerInteraction);
       window.removeEventListener('mousedown', handlePointerInteraction);
       window.removeEventListener('touchstart', handlePointerInteraction);
+      window.removeEventListener('wheel', handlePointerInteraction);
     };
   }, []);
 
@@ -2299,20 +2305,20 @@ export const App = () => {
         case 'Enter': {
           if (activeModal !== 'none') return;
           if (isSearchActive) return;
+          if (!keyboardMode) return;
           if (focusedItemIndex === null) return;
           if (!displayItems[focusedItemIndex]) return;
           e.preventDefault();
-          setKeyboardMode(true);
           openEmailDetail(displayItems[focusedItemIndex]);
           break;
         }
         case 'r': {
           if (activeModal !== 'none') return;
           if (isSearchActive) return;
+          if (!keyboardMode) return;
           if (focusedItemIndex === null) return;
           if (!displayItems[focusedItemIndex]) return;
           e.preventDefault();
-          setKeyboardMode(true);
           openReplyComposeForItem(displayItems[focusedItemIndex]);
           break;
         }
@@ -2324,7 +2330,7 @@ export const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shortcutsDisabledOnTouch, activeEmail, activeTab, activeModal, isSearchActive, displayItems, focusedItemIndex]);
 
-  // I: Scroll focused card into view and focus it for keyboard ring
+  // I: Scroll focused card into view (virtual selection — no DOM focus transfer)
   useEffect(() => {
     if (focusedItemIndex === null) return;
     if (shortcutsDisabledOnTouch) return;
@@ -2334,8 +2340,9 @@ export const App = () => {
     const el = document.getElementById(domId);
     if (!el) return;
 
-    (el as HTMLElement).focus({ preventScroll: true });
-    el.scrollIntoView({ block: 'nearest' });
+    requestAnimationFrame(() => {
+      el.scrollIntoView({ block: 'nearest' });
+    });
   }, [focusedItemIndex, shortcutsDisabledOnTouch, displayItems]);
 
   // J: Reset focusedItemIndex on modal open, account/tab/search/page/category changes
@@ -3096,8 +3103,6 @@ export const App = () => {
                         key={cardId}
                         id={domId}
                         role="listitem"
-                        tabIndex={focusedItemIndex === index ? 0 : -1}
-                        onFocus={() => setFocusedItemIndex(index)}
                         layout
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
