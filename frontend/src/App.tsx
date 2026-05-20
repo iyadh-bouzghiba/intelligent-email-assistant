@@ -19,6 +19,8 @@ import { getAccountColor, getEmailInitials } from './components/accountSwitcherH
 import CategoryPillBar from './components/CategoryPillBar';
 import AttachmentSearchToggle from './components/AttachmentSearchToggle';
 import { isSearchQueryActive, shouldDisableAttachmentToggle, shouldResetAttachmentFilterOnInput, resolveSearchEmptyBodyKey } from './utils/searchFilterState';
+import { deriveSpineSignals } from '@utils/deriveSpineSignals';
+import { ThreadSpine } from './components/ThreadSpine';
 
 const devLog = (...args: unknown[]) => {
   if (import.meta.env.DEV) {
@@ -2917,6 +2919,15 @@ export const App = () => {
                             </div>
                           )}
                         </div>
+
+                        {/* Executive Conversation Spine */}
+                        {(() => {
+                          const spine = deriveSpineSignals(
+                            item, activeEmail ?? '');
+                          return spine.hasAnySignal
+                            ? <ThreadSpine result={spine} />
+                            : null;
+                        })()}
 
                         {/* Subject and sender */}
                         <div className="mb-3">

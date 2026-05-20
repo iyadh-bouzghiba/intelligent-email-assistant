@@ -368,5 +368,15 @@
         "browser_alerts_off": "التنبيهات متوقفة",
         "permission_required": "إذن الإشعارات مطلوب",
         "close": "إغلاق"
+    },
+    "spine": {
+        "thread_context": "سياق المحادثة",
+        "urgency_high": "أولوية عالية",
+        "urgency_medium": "أولوية متوسطة",
+        "has_attachments": "يحتوي على مرفقات",
+        "recency_today": "نشط اليوم",
+        "recency_days": "منذ {{count}} أيام",
+        "reply_pending": "{{count}} أيام — رد معلق",
+        "thread_depth": "{{count}} رسائل"
     }
 }

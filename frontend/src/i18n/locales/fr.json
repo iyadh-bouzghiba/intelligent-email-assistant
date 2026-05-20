@@ -368,5 +368,15 @@
         "browser_alerts_off": "Alertes désactivées",
         "permission_required": "Autorisation de notification requise",
         "close": "Fermer"
+    },
+    "spine": {
+        "thread_context": "Contexte du fil",
+        "urgency_high": "Priorité haute",
+        "urgency_medium": "Priorité modérée",
+        "has_attachments": "Pièces jointes",
+        "recency_today": "Actif aujourd'hui",
+        "recency_days": "il y a {{count}} jours",
+        "reply_pending": "{{count}}j — réponse en attente",
+        "thread_depth": "{{count}} messages"
     }
 }

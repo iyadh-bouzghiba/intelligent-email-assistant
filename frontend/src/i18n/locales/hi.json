@@ -368,5 +368,15 @@
         "browser_alerts_off": "सूचनाएँ बंद",
         "permission_required": "सूचना अनुमति आवश्यक है",
         "close": "बंद करें"
+    },
+    "spine": {
+        "thread_context": "थ्रेड संदर्भ",
+        "urgency_high": "उच्च प्राथमिकता",
+        "urgency_medium": "मध्यम प्राथमिकता",
+        "has_attachments": "अटैचमेंट है",
+        "recency_today": "आज सक्रिय",
+        "recency_days": "{{count}} दिन पहले",
+        "reply_pending": "{{count}} दिन — उत्तर लंबित",
+        "thread_depth": "{{count}} संदेश"
     }
 }

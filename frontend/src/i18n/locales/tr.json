@@ -368,5 +368,15 @@
         "browser_alerts_off": "Bildirimler kapalı",
         "permission_required": "Bildirim izni gerekli",
         "close": "Kapat"
+    },
+    "spine": {
+        "thread_context": "Konu bağlamı",
+        "urgency_high": "Yüksek öncelik",
+        "urgency_medium": "Orta öncelik",
+        "has_attachments": "Ek var",
+        "recency_today": "Bugün aktif",
+        "recency_days": "{{count}} gün önce",
+        "reply_pending": "{{count}}g — yanıt bekliyor",
+        "thread_depth": "{{count}} mesaj"
     }
 }
