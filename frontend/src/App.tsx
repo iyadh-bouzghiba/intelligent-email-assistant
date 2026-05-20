@@ -125,6 +125,15 @@ export const App = () => {
     typeof window !== 'undefined' ? window.innerWidth >= 640 : true
   );
   const knownHighUrgencyIdsRef = useRef<Set<string>>(new Set());
+  const [focusedItemIndex, setFocusedItemIndex] = useState<number | null>(null);
+  const [keyboardMode, setKeyboardMode] = useState(false);
+  const [shortcutsDisabledOnTouch, setShortcutsDisabledOnTouch] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      window.matchMedia('(hover: none)').matches ||
+      window.matchMedia('(pointer: coarse)').matches
+    );
+  });
   const [offlineAccounts, setOfflineAccounts] = useState<Set<string>>(new Set());
   const [scrollToActions, setScrollToActions] = useState(false);
   const actionItemsRef = useRef<HTMLDivElement | null>(null);
@@ -519,6 +528,54 @@ export const App = () => {
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Touch-capability tracking — disables keyboard shortcuts on touch-primary devices
+  useEffect(() => {
+    const hoverQuery = window.matchMedia('(hover: none)');
+    const pointerQuery = window.matchMedia('(pointer: coarse)');
+
+    const recalculate = () => {
+      const disabled = hoverQuery.matches || pointerQuery.matches;
+      setShortcutsDisabledOnTouch(disabled);
+      if (disabled) {
+        setFocusedItemIndex(null);
+        setKeyboardMode(false);
+      }
+    };
+
+    recalculate();
+
+    if (typeof hoverQuery.addEventListener === 'function') {
+      hoverQuery.addEventListener('change', recalculate);
+      pointerQuery.addEventListener('change', recalculate);
+
+      return () => {
+        hoverQuery.removeEventListener('change', recalculate);
+        pointerQuery.removeEventListener('change', recalculate);
+      };
+    }
+
+    hoverQuery.addListener(recalculate);
+    pointerQuery.addListener(recalculate);
+
+    return () => {
+      hoverQuery.removeListener(recalculate);
+      pointerQuery.removeListener(recalculate);
+    };
+  }, []);
+
+  // Reset keyboard mode on pointer/touch interaction so ring only appears after keyboard use
+  useEffect(() => {
+    const handlePointerInteraction = () => setKeyboardMode(false);
+    window.addEventListener('pointerdown', handlePointerInteraction);
+    window.addEventListener('mousedown', handlePointerInteraction);
+    window.addEventListener('touchstart', handlePointerInteraction);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerInteraction);
+      window.removeEventListener('mousedown', handlePointerInteraction);
+      window.removeEventListener('touchstart', handlePointerInteraction);
+    };
   }, []);
 
   // Keyboard shortcut for scroll to top (Ctrl+Home or Cmd+Home)
@@ -1409,6 +1466,17 @@ export const App = () => {
     }
   };
 
+  const getKeyboardCardDomId = (item: EmailViewModel, index: number): string => {
+    const raw = item.gmail_message_id || item.thread_id || item.subject || `index-${index}`;
+    const safe = raw.replace(/[^a-zA-Z0-9_-]/g, '-');
+    return `inbox-card-${safe}-${index}`;
+  };
+
+  const isShortcutBlockedTarget = (target: EventTarget | null): boolean => {
+    if (!(target instanceof Element)) return false;
+    return target.closest('input, textarea, select, button, a, [contenteditable="true"], [role="button"]') !== null;
+  };
+
   const handleDisconnect = async (account_id: string) => {
     setConfirmDisconnect(null);
     devLog(`[DISCONNECT] Disconnecting account: ${account_id}`);
@@ -1901,21 +1969,31 @@ export const App = () => {
     setReplyAttachmentError(null);
   };
 
-  // Extracted: open compose in standalone modal; called by EmailDetailModal
-  const handleOpenReply = () => {
-    setPanelError(null);
-    setTemplatesError(null);
-    if (!selectedEmailDetail?.thread_id) {
+  // Shared reply-compose entry path used by both keyboard shortcuts and modal UI
+  const openReplyComposeForItem = (item: EmailViewModel) => {
+    if (!item.thread_id) {
+      openEmailDetail(item);
       setPanelError(t('compose.cannot_reply_missing_thread'));
       return;
     }
-    const subject = normalizeReplySubject(selectedEmailDetail.subject || '');
-    setReplySubject(subject);
+    openEmailDetail(item);
+    setTemplatesError(null);
+    setPanelError(null);
+    setReplySubject(normalizeReplySubject(item.subject || ''));
     setReplyBody('');
     setReplyCC('');
     setSelectedTone('professional');
-    setActiveModal('compose');
     setSendSuccess(false);
+    setActiveModal('compose');
+  };
+
+  // Extracted: open compose in standalone modal; called by EmailDetailModal
+  const handleOpenReply = () => {
+    if (!selectedEmailDetail) {
+      setPanelError(t('compose.cannot_reply_missing_thread'));
+      return;
+    }
+    openReplyComposeForItem(selectedEmailDetail);
   };
 
   // Open AI assistant panel for the current email
@@ -2118,10 +2196,10 @@ export const App = () => {
     subject: se.subject || t('sent.no_subject'),
     sender: se.cc_addresses
       ? t('sent.you_to_recipient_with_cc', {
-          recipient: se.to_address || t('sent.unknown_recipient'),
-          ccLabel: t('sent.cc_label'),
-          cc: se.cc_addresses,
-        })
+        recipient: se.to_address || t('sent.unknown_recipient'),
+        ccLabel: t('sent.cc_label'),
+        cc: se.cc_addresses,
+      })
       : t('sent.you_to_recipient', { recipient: se.to_address || t('sent.unknown_recipient') }),
     date: formatDisplayDate(se.sent_at, se.sent_at),
     date_iso: se.sent_at ?? null,
@@ -2170,6 +2248,131 @@ export const App = () => {
       setIsNotificationCenterOpen(false);
     }
   }, [activeEmail, accounts]);
+
+  // ── Keyboard navigation effects ────────────────────────────────────────────
+
+  // H: Inbox keyboard navigation (j/k/ArrowDown/ArrowUp, o/Enter, r, /)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (shortcutsDisabledOnTouch) return;
+      if (!activeEmail) return;
+      if (activeTab !== 'inbox') return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (isShortcutBlockedTarget(e.target)) return;
+
+      switch (e.key) {
+        case '/': {
+          if (activeModal !== 'none') return;
+          e.preventDefault();
+          setKeyboardMode(true);
+          setFocusedItemIndex(null);
+          activeSearchInputRef()?.focus();
+          break;
+        }
+        case 'j':
+        case 'ArrowDown': {
+          if (activeModal !== 'none') return;
+          if (isSearchActive) return;
+          if (displayItems.length === 0) return;
+          e.preventDefault();
+          setKeyboardMode(true);
+          setFocusedItemIndex(prev =>
+            prev === null ? 0 : Math.min(prev + 1, displayItems.length - 1)
+          );
+          break;
+        }
+        case 'k':
+        case 'ArrowUp': {
+          if (activeModal !== 'none') return;
+          if (isSearchActive) return;
+          if (displayItems.length === 0) return;
+          e.preventDefault();
+          setKeyboardMode(true);
+          setFocusedItemIndex(prev => {
+            if (prev === null) return null;
+            if (prev === 0) return null;
+            return prev - 1;
+          });
+          break;
+        }
+        case 'o':
+        case 'Enter': {
+          if (activeModal !== 'none') return;
+          if (isSearchActive) return;
+          if (focusedItemIndex === null) return;
+          if (!displayItems[focusedItemIndex]) return;
+          e.preventDefault();
+          setKeyboardMode(true);
+          openEmailDetail(displayItems[focusedItemIndex]);
+          break;
+        }
+        case 'r': {
+          if (activeModal !== 'none') return;
+          if (isSearchActive) return;
+          if (focusedItemIndex === null) return;
+          if (!displayItems[focusedItemIndex]) return;
+          e.preventDefault();
+          setKeyboardMode(true);
+          openReplyComposeForItem(displayItems[focusedItemIndex]);
+          break;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shortcutsDisabledOnTouch, activeEmail, activeTab, activeModal, isSearchActive, displayItems, focusedItemIndex]);
+
+  // I: Scroll focused card into view and focus it for keyboard ring
+  useEffect(() => {
+    if (focusedItemIndex === null) return;
+    if (shortcutsDisabledOnTouch) return;
+    if (!displayItems[focusedItemIndex]) return;
+
+    const domId = getKeyboardCardDomId(displayItems[focusedItemIndex], focusedItemIndex);
+    const el = document.getElementById(domId);
+    if (!el) return;
+
+    (el as HTMLElement).focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'nearest' });
+  }, [focusedItemIndex, shortcutsDisabledOnTouch, displayItems]);
+
+  // J: Reset focusedItemIndex on modal open, account/tab/search/page/category changes
+  useEffect(() => {
+    if (activeModal !== 'none') setFocusedItemIndex(null);
+  }, [activeModal]);
+
+  useEffect(() => {
+    setFocusedItemIndex(null);
+  }, [activeEmail]);
+
+  useEffect(() => {
+    setFocusedItemIndex(null);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (isSearchActive) setFocusedItemIndex(null);
+  }, [isSearchActive]);
+
+  useEffect(() => {
+    setFocusedItemIndex(null);
+  }, [currentPage]);
+
+  useEffect(() => {
+    setFocusedItemIndex(null);
+  }, [filterCategory]);
+
+  // K: Clamp focusedItemIndex when displayItems shrinks
+  useEffect(() => {
+    setFocusedItemIndex(prev => {
+      if (prev === null) return null;
+      if (displayItems.length === 0) return null;
+      return Math.min(prev, displayItems.length - 1);
+    });
+  }, [displayItems.length]);
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   // ── Notification Center derived values ─────────────────────────────────────
 
@@ -2802,7 +3005,11 @@ export const App = () => {
 
           {/* Inbox view */}
           {activeTab === 'inbox' && (
-            <div className="flex flex-col gap-4 mb-12 max-w-[720px] mx-auto">
+            <div
+              className="flex flex-col gap-4 mb-12 max-w-[720px] mx-auto"
+              role={!(isSearchActive && searchLoading) && !(loading && !isSearchActive) && displayItems.length > 0 ? 'list' : undefined}
+              aria-label={!(isSearchActive && searchLoading) && !(loading && !isSearchActive) && displayItems.length > 0 ? t('nav.inbox_tab') : undefined}
+            >
               <AnimatePresence mode="popLayout">
                 {/* Search loading skeletons */}
                 {isSearchActive && searchLoading && [...Array(3)].map((_, i) => (
@@ -2882,14 +3089,20 @@ export const App = () => {
                       }
                     };
 
+                    const domId = getKeyboardCardDomId(item, index);
+
                     return (
                       <motion.div
                         key={cardId}
+                        id={domId}
+                        role="listitem"
+                        tabIndex={focusedItemIndex === index ? 0 : -1}
+                        onFocus={() => setFocusedItemIndex(index)}
                         layout
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.3, delay: index * 0.03 }}
-                        className={`group relative flex flex-col p-6 rounded-2xl border hover:bg-white/[0.04] hover:border-white/10 transition-all duration-300 shadow-xl hover:shadow-primary-500/5 ${item.is_read === false ? 'bg-white/[0.035] border-primary-500/[0.15]' : 'bg-white/[0.02] border-white/5'}`}
+                        className={`group relative flex flex-col p-6 rounded-2xl border hover:bg-white/[0.04] hover:border-white/10 transition-all duration-300 shadow-xl hover:shadow-primary-500/5 focus:outline-none ${focusedItemIndex === index && keyboardMode ? 'ring-2 ring-primary-500/50 ring-offset-1 ring-offset-slate-900' : ''} ${item.is_read === false ? 'bg-white/[0.035] border-primary-500/[0.15]' : 'bg-white/[0.02] border-white/5'}`}
                       >
                         {/* Header row: badges + AI indicator */}
                         <div className="flex items-center justify-between mb-3">
