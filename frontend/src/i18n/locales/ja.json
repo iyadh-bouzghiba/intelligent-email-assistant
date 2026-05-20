@@ -368,5 +368,15 @@
         "browser_alerts_off": "通知オフ",
         "permission_required": "通知の許可が必要です",
         "close": "閉じる"
+    },
+    "spine": {
+        "thread_context": "スレッドのコンテキスト",
+        "urgency_high": "高優先度",
+        "urgency_medium": "中程度の優先度",
+        "has_attachments": "添付あり",
+        "recency_today": "本日アクティブ",
+        "recency_days": "{{count}}日前",
+        "reply_pending": "{{count}}日 — 返信待ち",
+        "thread_depth": "{{count}}件"
     }
 }

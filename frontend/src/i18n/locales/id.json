@@ -368,5 +368,15 @@
         "browser_alerts_off": "Peringatan nonaktif",
         "permission_required": "Izin notifikasi diperlukan",
         "close": "Tutup"
+    },
+    "spine": {
+        "thread_context": "Konteks utas",
+        "urgency_high": "Prioritas tinggi",
+        "urgency_medium": "Prioritas sedang",
+        "has_attachments": "Ada lampiran",
+        "recency_today": "Aktif hari ini",
+        "recency_days": "{{count}} hari lalu",
+        "reply_pending": "{{count}}h — menunggu balasan",
+        "thread_depth": "{{count}} pesan"
     }
 }

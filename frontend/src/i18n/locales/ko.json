@@ -368,5 +368,15 @@
         "browser_alerts_off": "알림 꺼짐",
         "permission_required": "알림 권한이 필요합니다",
         "close": "닫기"
+    },
+    "spine": {
+        "thread_context": "스레드 컨텍스트",
+        "urgency_high": "높은 우선순위",
+        "urgency_medium": "중간 우선순위",
+        "has_attachments": "첨부 있음",
+        "recency_today": "오늘 활동",
+        "recency_days": "{{count}}일 전",
+        "reply_pending": "{{count}}일 — 답장 대기",
+        "thread_depth": "{{count}}개"
     }
 }

@@ -368,5 +368,15 @@
         "browser_alerts_off": "Alerts off",
         "permission_required": "Notification permission required",
         "close": "Close"
+    },
+    "spine": {
+        "thread_context": "Thread context",
+        "urgency_high": "High priority",
+        "urgency_medium": "Moderate priority",
+        "has_attachments": "Has attachments",
+        "recency_today": "Active today",
+        "recency_days": "{{count}} days ago",
+        "reply_pending": "{{count}}d — reply pending",
+        "thread_depth": "{{count}} messages"
     }
 }

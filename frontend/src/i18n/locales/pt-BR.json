@@ -368,5 +368,15 @@
         "browser_alerts_off": "Alertas desativados",
         "permission_required": "Permissão de notificação necessária",
         "close": "Fechar"
+    },
+    "spine": {
+        "thread_context": "Contexto da conversa",
+        "urgency_high": "Alta prioridade",
+        "urgency_medium": "Prioridade moderada",
+        "has_attachments": "Com anexos",
+        "recency_today": "Ativo hoje",
+        "recency_days": "há {{count}} dias",
+        "reply_pending": "{{count}}d — resposta pendente",
+        "thread_depth": "{{count}} mensagens"
     }
 }
