@@ -8,8 +8,8 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) => {
       if (key === 'spine.thread_context') return 'Thread context';
-      if (key === 'spine.urgency_high') return 'High priority';
-      if (key === 'spine.urgency_medium') return 'Moderate priority';
+      if (key === 'spine.urgency_high') return 'Verify — Financial';
+      if (key === 'spine.urgency_medium') return 'Needs Review';
       if (key === 'spine.has_attachments') return 'Has attachments';
       if (key === 'spine.recency_today') return 'Active today';
       if (key === 'spine.recency_days') return `${opts?.count} days ago`;
@@ -51,8 +51,8 @@ describe('ThreadSpine', () => {
     const group = screen.getByRole('group', { name: 'Thread context' });
     expect(group).toBeInTheDocument();
     expect(group).toHaveAttribute('dir', 'auto');
-    const chip = screen.getByRole('img', { name: 'High priority' });
-    expect(chip).toHaveAttribute('title', 'High priority');
+    const chip = screen.getByRole('img', { name: 'Verify — Financial' });
+    expect(chip).toHaveAttribute('title', 'Verify — Financial');
   });
 
   it('renders exactly 4 chips when all visible signals are present', () => {
@@ -70,7 +70,7 @@ describe('ThreadSpine', () => {
     );
     const chips = screen.getAllByRole('img');
     expect(chips).toHaveLength(4);
-    expect(chips[0]).toHaveAttribute('aria-label', 'Moderate priority');
+    expect(chips[0]).toHaveAttribute('aria-label', 'Needs Review');
     expect(chips[1]).toHaveAttribute('aria-label', 'Has attachments');
     expect(chips[2]).toHaveAttribute('aria-label', '3d — reply pending');
     expect(chips[3]).toHaveAttribute('aria-label', '7 messages');

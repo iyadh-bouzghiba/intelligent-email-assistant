@@ -51,6 +51,10 @@ export function deriveThreadContext(email: Input, accountEmail?: string): Thread
       : null;
 
   const confidence = deriveAiSummaryConfidence(email);
+  // Trust / verification urgency only:
+  // low AI-summary confidence means the user should verify before acting.
+  // "high" is Financial + low confidence; "medium" is other low-confidence categories.
+  // This is not a business-priority classifier.
   let urgencyLevel: ThreadContextUrgencyLevel = 'none';
   if (confidence.level === 'low') {
     urgencyLevel = email.category === 'Financial' ? 'high' : 'medium';

@@ -37,6 +37,10 @@ export function deriveSpineSignals(
   accountEmail: string,
 ): SpineSignalResult {
   const conf = deriveAiSummaryConfidence(email);
+  // Trust / verification urgency only:
+  // low AI-summary confidence means the user should verify before acting.
+  // "high" is Financial + low confidence; "medium" is other low-confidence categories.
+  // This is not a business-priority classifier.
   const urgencyLevel: SpineSignalResult['urgencyLevel'] =
     conf.level === 'low'
       ? email.category === 'Financial' ? 'high' : 'medium'

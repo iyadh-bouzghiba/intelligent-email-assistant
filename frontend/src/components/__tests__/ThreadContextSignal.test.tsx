@@ -12,10 +12,10 @@ vi.mock('react-i18next', () => ({
     t: (key: string, opts?: Record<string, unknown>) => {
       const map: Record<string, string> = {
         'compose.context.strip_aria_label': 'Thread context signals',
-        'compose.context.urgency_high': 'Urgency: high',
-        'compose.context.urgency_high_aria': 'Thread urgency is high',
-        'compose.context.urgency_medium': 'Urgency: medium',
-        'compose.context.urgency_medium_aria': 'Thread urgency is medium',
+        'compose.context.urgency_high': 'Verify — Financial',
+        'compose.context.urgency_high_aria': 'Low-confidence AI summary for a financial thread. Verify before acting.',
+        'compose.context.urgency_medium': 'Needs Review',
+        'compose.context.urgency_medium_aria': 'Low-confidence AI summary. Review before acting.',
         'compose.context.has_attachments': 'Thread has attachments',
         'compose.context.has_attachments_aria': 'This thread has attachments',
         'compose.context.thread_depth': `${opts?.count} messages in this thread`,
@@ -65,12 +65,12 @@ describe('ThreadContextSignal', () => {
 
   it('renders the urgency high chip', () => {
     render(<ThreadContextSignal result={{ ...noSignals, urgencyLevel: 'high' }} />);
-    expect(screen.getByText('Urgency: high')).toBeInTheDocument();
+    expect(screen.getByText('Verify — Financial')).toBeInTheDocument();
   });
 
   it('renders the urgency medium chip', () => {
     render(<ThreadContextSignal result={{ ...noSignals, urgencyLevel: 'medium' }} />);
-    expect(screen.getByText('Urgency: medium')).toBeInTheDocument();
+    expect(screen.getByText('Needs Review')).toBeInTheDocument();
   });
 
   it('renders the attachment chip when threadHasAttachments === true', () => {
@@ -98,7 +98,7 @@ describe('ThreadContextSignal', () => {
     const group = screen.getByRole('group');
     const chips = Array.from(group.children) as HTMLElement[];
     expect(chips).toHaveLength(3);
-    expect(chips[0]).toHaveAttribute('aria-label', 'Thread urgency is high');
+    expect(chips[0]).toHaveAttribute('aria-label', 'Low-confidence AI summary for a financial thread. Verify before acting.');
     expect(chips[1]).toHaveAttribute('aria-label', 'This thread has attachments');
     expect(chips[2]).toHaveAttribute('aria-label', 'This thread has 5 messages');
   });
