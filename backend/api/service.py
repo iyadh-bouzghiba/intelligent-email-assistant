@@ -44,7 +44,13 @@ import socketio
 
 from backend.infrastructure.supabase_store import SupabaseStore
 from backend.infrastructure.mistral_governor import get_governor as _get_mistral_governor
-from backend.languages import normalize_language, SUPPORTED_LANGUAGES
+from backend.languages import (
+    normalize_language,
+    normalize_translation_language,
+    get_translation_label,
+    SUPPORTED_LANGUAGES,
+    TRANSLATION_LANGUAGES,
+)
 from backend.tones import SUPPORTED_TONES, normalize_tone, list_supported_tones
 from backend.summary_versions import EMAIL_SUMMARY_PROMPT_VERSION
 from backend.engine.nlp_engine import MistralEngine
@@ -3215,7 +3221,7 @@ def _build_translation_system_prompt(
     target_language: str,
     protected_tokens: Optional[List[str]] = None,
 ) -> str:
-    target_label = SUPPORTED_LANGUAGES[target_language]["label"]
+    target_label = get_translation_label(target_language)
     protected_rule = ""
     if protected_tokens:
         token_list = " ".join(protected_tokens)
@@ -4434,7 +4440,7 @@ def _collect_translatable_nodes(soup) -> List:
 
 
 def _build_structured_translation_system_prompt(target_language: str) -> str:
-    target_label = SUPPORTED_LANGUAGES[target_language]["label"]
+    target_label = get_translation_label(target_language)
     return (
         f"You are a professional email translator. Translate text segments into {target_label}.\n\n"
         "You will receive a JSON object with a \"segments\" array of text strings extracted "
@@ -4494,7 +4500,7 @@ async def _attempt_structured_html_translation(
 
     prompt = (
         f"Translate the following {len(input_segments)} text segments into "
-        f"{SUPPORTED_LANGUAGES[target_language]['label']}.\n\n"
+        f"{get_translation_label(target_language)}.\n\n"
         f"{json.dumps({'segments': input_segments}, ensure_ascii=False)}"
     )
 
@@ -4727,18 +4733,16 @@ async def update_preferences(request: PreferencesUpdateRequest):
     """
     Upsert per-account AI language preference.
 
-    Accepted values:
-    - en
-    - fr
-    - ar
+    Accepted values (DIM2 target set):
+    - en, de, fr, es, pt-BR, ar, zh, ja, ko
     """
-    requested = (request.ai_language or "").strip().lower()
+    requested = (request.ai_language or "").strip()
     normalized = normalize_language(requested)
 
     if normalized != requested:
         raise HTTPException(
             status_code=400,
-            detail="ai_language must be one of: en, fr, ar",
+            detail="ai_language must be one of: en, de, fr, es, pt-BR, ar, zh, ja, ko",
         )
 
     try:
@@ -4787,8 +4791,8 @@ async def translate_email_body(request: TranslateEmailRequest):
         raise HTTPException(status_code=400, detail="Email body is required")
 
     requested_language = (request.target_language or "").strip().lower()
-    normalized_language = normalize_language(requested_language)
-    if normalized_language != requested_language or normalized_language not in SUPPORTED_LANGUAGES:
+    normalized_language = normalize_translation_language(requested_language)
+    if normalized_language != requested_language or normalized_language not in TRANSLATION_LANGUAGES:
         raise HTTPException(
             status_code=400,
             detail="target_language must be one of: en, fr, ar",
@@ -4858,8 +4862,8 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
         raise HTTPException(status_code=404, detail="Account not found for email")
 
     requested_language = (request.target_language or "").strip().lower()
-    normalized_language = normalize_language(requested_language)
-    if normalized_language != requested_language or normalized_language not in SUPPORTED_LANGUAGES:
+    normalized_language = normalize_translation_language(requested_language)
+    if normalized_language != requested_language or normalized_language not in TRANSLATION_LANGUAGES:
         raise HTTPException(
             status_code=400,
             detail="target_language must be one of: en, fr, ar",

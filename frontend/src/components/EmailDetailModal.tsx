@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { X, MailOpen, Mail, RefreshCw } from 'lucide-react';
-import { AILanguage, EmailViewModel, TranslateRenderResponse } from '@types';
+import { TranslationLanguage, EmailViewModel, TranslateRenderResponse } from '@types';
 import { apiService } from '../services/api';
 import { FocusTrap } from './FocusTrap';
 import { EmailQuickView } from './EmailQuickView';
@@ -133,7 +133,7 @@ export function EmailDetailModal({
     ? (sentMeta?.bodyPreview || email.body || email.summary || '')
     : (email.body || email.summary || '');
 
-  const normalizedTranslationLanguage: AILanguage =
+  const normalizedTranslationLanguage: TranslationLanguage =
     effectivePreferredLanguage === 'fr' || effectivePreferredLanguage === 'ar'
       ? effectivePreferredLanguage
       : 'en';
@@ -145,7 +145,7 @@ export function EmailDetailModal({
   const [translatedBody, setTranslatedBody] = useState<string | null>(null);
   const [translatedBodyHtml, setTranslatedBodyHtml] = useState<string | null>(null);
   const [translationError, setTranslationError] = useState<string | null>(null);
-  const [translationTargetLanguage, setTranslationTargetLanguage] = useState<AILanguage | null>(null);
+  const [translationTargetLanguage, setTranslationTargetLanguage] = useState<TranslationLanguage | null>(null);
   const [translationMode, setTranslationMode] = useState<'structured_html' | 'text_fallback' | null>(null);
   const [translationFidelity, setTranslationFidelity] = useState<'preserved' | 'simplified' | null>(null);
 

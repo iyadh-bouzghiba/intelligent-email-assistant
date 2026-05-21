@@ -60,11 +60,30 @@ const LANGUAGE_OPTIONS: Array<{
             nativeLabel: 'Bahasa Indonesia',
             shortLabel: 'ID',
         },
+        // Pending native-speaker review before broader production activation.
+        {
+            code: 'zh',
+            nativeLabel: '简体中文',
+            shortLabel: 'ZH',
+        },
+        // Pending native-speaker review before broader production activation.
+        {
+            code: 'de',
+            nativeLabel: 'Deutsch',
+            shortLabel: 'DE',
+        },
+        // Pending native-speaker review before broader production activation.
+        {
+            code: 'es',
+            nativeLabel: 'Español',
+            shortLabel: 'ES',
+        },
     ];
 
 const resolveAppLanguage = (language: string | undefined): AppShellLanguage => {
     return language === 'ar' || language === 'fr' || language === 'pt-BR' || language === 'tr'
         || language === 'ja' || language === 'ko' || language === 'hi' || language === 'id'
+        || language === 'zh' || language === 'de' || language === 'es'
         ? language : 'en';
 };
 

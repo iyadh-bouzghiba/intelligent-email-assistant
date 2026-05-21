@@ -3,9 +3,9 @@ import { initReactI18next } from 'react-i18next';
 
 export const APP_LANG_STORAGE_KEY = 'eb_lang';
 
-export type AppShellLanguage = 'en' | 'ar' | 'fr' | 'pt-BR' | 'tr' | 'ja' | 'ko' | 'hi' | 'id';
+export type AppShellLanguage = 'en' | 'ar' | 'fr' | 'pt-BR' | 'tr' | 'ja' | 'ko' | 'hi' | 'id' | 'zh' | 'de' | 'es';
 
-export const SUPPORTED_APP_LANGUAGES: AppShellLanguage[] = ['en', 'ar', 'fr', 'pt-BR', 'tr', 'ja', 'ko', 'hi', 'id'];
+export const SUPPORTED_APP_LANGUAGES: AppShellLanguage[] = ['en', 'ar', 'fr', 'pt-BR', 'tr', 'ja', 'ko', 'hi', 'id', 'zh', 'de', 'es'];
 
 type TranslationMessages = Record<string, unknown>;
 type LocaleModule = { default: TranslationMessages };
@@ -20,6 +20,9 @@ const localeLoaders: Record<AppShellLanguage, () => Promise<LocaleModule>> = {
     ko: () => import('./locales/ko.json'),
     hi: () => import('./locales/hi.json'),
     id: () => import('./locales/id.json'),
+    zh: () => import('./locales/zh.json'),
+    de: () => import('./locales/de.json'),
+    es: () => import('./locales/es.json'),
 };
 
 const loadedLanguages = new Set<AppShellLanguage>();
@@ -29,7 +32,8 @@ let languageChangedHandlerAttached = false;
 
 const isSupportedAppLanguage = (value: string | null | undefined): value is AppShellLanguage => {
     return value === 'en' || value === 'ar' || value === 'fr' || value === 'pt-BR' || value === 'tr'
-        || value === 'ja' || value === 'ko' || value === 'hi' || value === 'id';
+        || value === 'ja' || value === 'ko' || value === 'hi' || value === 'id'
+        || value === 'zh' || value === 'de' || value === 'es';
 };
 
 export const getStoredAppLanguage = (): AppShellLanguage => {

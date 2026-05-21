@@ -79,8 +79,14 @@ const resolveUrgencyLabelKey = (urgency: string) => {
 
 const FALLBACK_LANGUAGE_OPTIONS: SupportedLanguage[] = [
   { code: 'en', label: 'English', native: 'English' },
+  { code: 'de', label: 'German', native: 'Deutsch' },
   { code: 'fr', label: 'French', native: 'Français' },
+  { code: 'es', label: 'Spanish', native: 'Español' },
+  { code: 'pt-BR', label: 'Portuguese (Brazil)', native: 'Português (Brasil)' },
   { code: 'ar', label: 'Arabic', native: 'العربية' },
+  { code: 'zh', label: 'Chinese (Simplified)', native: '简体中文' },
+  { code: 'ja', label: 'Japanese', native: '日本語' },
+  { code: 'ko', label: 'Korean', native: '한국어' },
 ];
 
 export const App = () => {
