@@ -4733,18 +4733,16 @@ async def update_preferences(request: PreferencesUpdateRequest):
     """
     Upsert per-account AI language preference.
 
-    Accepted values:
-    - en
-    - fr
-    - ar
+    Accepted values (DIM2 target set):
+    - en, de, fr, es, pt-BR, ar, zh, ja, ko
     """
-    requested = (request.ai_language or "").strip().lower()
+    requested = (request.ai_language or "").strip()
     normalized = normalize_language(requested)
 
     if normalized != requested:
         raise HTTPException(
             status_code=400,
-            detail="ai_language must be one of: en, fr, ar",
+            detail="ai_language must be one of: en, de, fr, es, pt-BR, ar, zh, ja, ko",
         )
 
     try:

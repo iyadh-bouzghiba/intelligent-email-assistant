@@ -165,7 +165,7 @@ export function AccountSwitcherList({
               {t('settings.use_this_language_for_new_ai_results')}
             </p>
             <div
-              className={`flex rounded-xl bg-white/[0.03] border border-white/[0.08] p-1 gap-1 ${aiLanguageLoading || aiLanguageSaving ? 'opacity-60 pointer-events-none' : ''}`}
+              className={`grid grid-cols-3 rounded-xl bg-white/[0.03] border border-white/[0.08] p-1 gap-1 ${aiLanguageLoading || aiLanguageSaving ? 'opacity-60 pointer-events-none' : ''}`}
               role="radiogroup"
               aria-labelledby={languageLabelId}
               aria-describedby={languageHelpId}
@@ -178,8 +178,9 @@ export function AccountSwitcherList({
                     type="button"
                     role="radio"
                     aria-checked={isActive}
+                    title={option.native}
                     onClick={() => onAiLanguageChange(option.code)}
-                    className={`flex-1 rounded-lg py-2 px-3 text-xs font-semibold transition-all duration-150 border ${isActive
+                    className={`rounded-lg py-2 px-1.5 text-[10px] font-semibold transition-all duration-150 border truncate ${isActive
                       ? 'bg-primary-500/16 border-primary-400/30 text-primary-100 shadow-sm shadow-primary-950/20'
                       : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
                       }`}
