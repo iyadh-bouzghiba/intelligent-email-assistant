@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const BASELINE_LOCALE = 'en';
-const LOCALES = ['en', 'ar', 'fr', 'pt-BR', 'tr', 'ja', 'ko', 'hi', 'id'];
+const LOCALES = ['en', 'ar', 'fr', 'pt-BR', 'tr', 'ja', 'ko', 'hi', 'id', 'zh', 'de', 'es'];
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
