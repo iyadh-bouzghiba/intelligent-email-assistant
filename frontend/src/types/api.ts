@@ -1,4 +1,5 @@
 export type AILanguage = "en" | "fr" | "ar";
+export type TranslationLanguage = "en" | "fr" | "ar";
 export type DraftTone = "professional" | "casual" | "concise" | "empathetic";
 export type TemplateLanguage = AILanguage | "neutral";
 

@@ -17,12 +17,13 @@ import {
     CreateTemplateRequest,
     DeleteTemplateResponse,
     AILanguage,
+    TranslationLanguage,
     TemplateLanguage,
     TranslateRenderResponse,
     ReplyAttachmentDraft,
 } from "@types";
 
-export type { AILanguage } from "@types";
+export type { AILanguage, TranslationLanguage } from "@types";
 
 export interface PreferencesResponse {
     account_id: string;
@@ -217,7 +218,7 @@ export const apiService = {
 
     translateRenderEmail: async (
         gmail_message_id: string,
-        target_language: AILanguage
+        target_language: TranslationLanguage
     ): Promise<TranslateRenderResponse> => {
         try {
             const response = await api.post(
@@ -253,7 +254,7 @@ export const apiService = {
 
     translateEmailBody: async (
         body: string,
-        target_language: AILanguage
+        target_language: TranslationLanguage
     ): Promise<TranslateEmailResponse> => {
         try {
             const response = await api.post(`${API_ROOT}/translate`, {

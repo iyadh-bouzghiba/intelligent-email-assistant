@@ -60,6 +60,17 @@ SUPPORTED_LANGUAGES: dict = {
 
 DEFAULT_LANGUAGE = "en"
 
+# DIM3 translation-language contract — independent from DIM2 SUPPORTED_LANGUAGES.
+# Expand this set separately when new translation targets are enabled.
+TRANSLATION_LANGUAGES: frozenset = frozenset({"en", "fr", "ar"})
+DEFAULT_TRANSLATION_LANGUAGE = "en"
+
+TRANSLATION_LANGUAGE_LABELS: dict = {
+    "en": "English",
+    "fr": "French",
+    "ar": "Arabic",
+}
+
 
 def normalize_language(value) -> str:
     """Normalize any value to a supported language code, defaulting to English."""
@@ -67,6 +78,21 @@ def normalize_language(value) -> str:
     if normalized in SUPPORTED_LANGUAGES:
         return normalized
     return DEFAULT_LANGUAGE
+
+
+def normalize_translation_language(value) -> str:
+    """Normalize any value to a supported DIM3 translation language code, defaulting to English."""
+    normalized = (value or DEFAULT_TRANSLATION_LANGUAGE).strip().lower()
+    if normalized in TRANSLATION_LANGUAGES:
+        return normalized
+    return DEFAULT_TRANSLATION_LANGUAGE
+
+
+def get_translation_label(language: str) -> str:
+    """Return the display label for a DIM3 translation language code."""
+    return TRANSLATION_LANGUAGE_LABELS.get(
+        normalize_translation_language(language), "English"
+    )
 
 
 def get_summary_instruction(language: str) -> str:
