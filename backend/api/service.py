@@ -50,6 +50,7 @@ from backend.languages import (
     get_translation_label,
     SUPPORTED_LANGUAGES,
     TRANSLATION_LANGUAGES,
+    DEFAULT_LANGUAGE,
 )
 from backend.tones import SUPPORTED_TONES, normalize_tone, list_supported_tones
 from backend.summary_versions import EMAIL_SUMMARY_PROMPT_VERSION
@@ -4583,15 +4584,21 @@ async def list_templates(account_id: str, language: str = Query("en")):
         raise HTTPException(status_code=503, detail="Storage unavailable")
 
     effective_account_id = resolve_account_id(None, account_id)
-    requested_language = (language or "en").strip().lower()
+    requested_language = (language or "en").strip()
 
-    if requested_language == "neutral":
+    if requested_language.lower() == "neutral":
         language_filter = ["neutral"]
-    elif requested_language in SUPPORTED_LANGUAGES:
-        normalized_language = normalize_language(requested_language)
-        language_filter = [normalized_language, "neutral"]
     else:
-        raise HTTPException(status_code=400, detail="Unsupported language")
+        normalized_language = normalize_language(requested_language)
+        if (
+            normalized_language == DEFAULT_LANGUAGE
+            and requested_language.lower() not in {
+                k.lower() for k in SUPPORTED_LANGUAGES
+            }
+            and requested_language.lower() != DEFAULT_LANGUAGE
+        ):
+            raise HTTPException(status_code=400, detail="Unsupported language")
+        language_filter = [normalized_language, "neutral"]
 
     try:
         result = await asyncio.to_thread(
@@ -4621,7 +4628,7 @@ async def create_template(request: TemplateCreateRequest):
     name = (request.name or "").strip()
     body = (request.body or "").strip()
     requested_tone = (request.tone or "professional").strip().lower()
-    requested_language = (request.language or "").strip().lower()
+    requested_language = (request.language or "").strip()
 
     if not name:
         raise HTTPException(status_code=400, detail="Template name is required")
@@ -4632,12 +4639,19 @@ async def create_template(request: TemplateCreateRequest):
     if requested_tone not in SUPPORTED_TONES:
         raise HTTPException(status_code=400, detail="Unsupported tone")
 
-    if requested_language == "neutral":
+    if requested_language.lower() == "neutral":
         stored_language = "neutral"
-    elif requested_language in SUPPORTED_LANGUAGES:
-        stored_language = normalize_language(requested_language)
     else:
-        raise HTTPException(status_code=400, detail="Unsupported language")
+        normalized_language = normalize_language(requested_language)
+        if (
+            normalized_language == DEFAULT_LANGUAGE
+            and requested_language.lower() not in {
+                k.lower() for k in SUPPORTED_LANGUAGES
+            }
+            and requested_language.lower() != DEFAULT_LANGUAGE
+        ):
+            raise HTTPException(status_code=400, detail="Unsupported language")
+        stored_language = normalized_language
 
     payload = {
         "account_id": effective_account_id,
