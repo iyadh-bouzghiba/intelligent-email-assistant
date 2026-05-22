@@ -145,7 +145,7 @@ describe('EmailQuickView — AI summary category rendering', () => {
         overview: 'Project update',
         action_items: [],
         category: 'PROJECT_WORK',
-      } as EmailViewModel['ai_summary_json'],
+      } as unknown as EmailViewModel['ai_summary_json'],
     };
 
     render(
