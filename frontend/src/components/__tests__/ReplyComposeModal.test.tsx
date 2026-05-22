@@ -216,7 +216,7 @@ describe('ReplyComposeModal — AI summary category rendering in reference block
         overview: 'Project update',
         action_items: [],
         category: 'PROJECT_WORK',
-      } as EmailViewModel['ai_summary_json'],
+      } as unknown as EmailViewModel['ai_summary_json'],
     };
 
     render(<ReplyComposeModal {...defaultProps} email={email} />);
