@@ -205,17 +205,15 @@ export const App = () => {
 
   const brandName = t('nav.brand_name');
   const subtitle = t('nav.subtitle');
+  const uiLanguage = i18n.resolvedLanguage ?? i18n.language ?? 'en';
 
-  const getCategoryDisplayLabel = (category: string) => {
-    const categoryTranslator = i18n.getFixedT(aiLanguage);
-    return categoryTranslator(resolveCategoryLabelKey(category));
-  };
-  const isCategoryPillBarRTL = aiLanguage === 'ar';
+  const getCategoryDisplayLabel = (category: string) => t(resolveCategoryLabelKey(category));
+  const isCategoryPillBarRTL = uiLanguage === 'ar';
   const getUrgencyDisplayLabel = (urgency: string) => t(resolveUrgencyLabelKey(urgency));
   const getPageStatusLabel = (current: number, total: number) =>
     t('common.page_status', { current, total });
 
-  const dateLocale = i18n.resolvedLanguage ?? i18n.language ?? 'en';
+  const dateLocale = uiLanguage;
 
   const formatDisplayDate = (value?: string | null, fallback = t('inbox.unknown_time')) => {
     if (!value) return fallback;
