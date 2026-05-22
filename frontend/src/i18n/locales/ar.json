@@ -378,5 +378,18 @@
         "recency_days": "منذ {{count}} أيام",
         "reply_pending": "{{count}} أيام — رد معلق",
         "thread_depth": "{{count}} رسائل"
+    },
+    "ai_summary_category": {
+        "label": "الفئة",
+        "ACTION_REQUIRED": "يتطلب إجراء",
+        "FINANCIAL_LEGAL": "مالي وقانوني",
+        "SECURITY_ACCOUNT": "أمان وحساب",
+        "PROJECT_WORK": "مشروع وعمل",
+        "CONVERSATION": "محادثة",
+        "SCHEDULING": "جدولة",
+        "CONTENT_INFO": "محتوى ومعلومات",
+        "AUTOMATED_SYSTEM": "آلي ونظام",
+        "PERSONAL_SOCIAL": "شخصي واجتماعي",
+        "UNCATEGORIZED": "غير مصنف"
     }
 }

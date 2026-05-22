@@ -378,5 +378,18 @@
         "recency_days": "{{count}}일 전",
         "reply_pending": "{{count}}일 — 답장 대기",
         "thread_depth": "{{count}}개"
+    },
+    "ai_summary_category": {
+        "label": "카테고리",
+        "ACTION_REQUIRED": "조치 필요",
+        "FINANCIAL_LEGAL": "금융 및 법률",
+        "SECURITY_ACCOUNT": "보안 및 계정",
+        "PROJECT_WORK": "프로젝트 및 업무",
+        "CONVERSATION": "대화",
+        "SCHEDULING": "일정",
+        "CONTENT_INFO": "콘텐츠 및 정보",
+        "AUTOMATED_SYSTEM": "자동화 시스템",
+        "PERSONAL_SOCIAL": "개인 및 소셜",
+        "UNCATEGORIZED": "미분류"
     }
 }

@@ -378,5 +378,18 @@
         "recency_days": "{{count}} hari lalu",
         "reply_pending": "{{count}}h — menunggu balasan",
         "thread_depth": "{{count}} pesan"
+    },
+    "ai_summary_category": {
+        "label": "Kategori",
+        "ACTION_REQUIRED": "Perlu tindakan",
+        "FINANCIAL_LEGAL": "Keuangan dan hukum",
+        "SECURITY_ACCOUNT": "Keamanan dan akun",
+        "PROJECT_WORK": "Proyek dan pekerjaan",
+        "CONVERSATION": "Percakapan",
+        "SCHEDULING": "Penjadwalan",
+        "CONTENT_INFO": "Konten dan informasi",
+        "AUTOMATED_SYSTEM": "Sistem otomatis",
+        "PERSONAL_SOCIAL": "Pribadi dan sosial",
+        "UNCATEGORIZED": "Tidak dikategorikan"
     }
 }

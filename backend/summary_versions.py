@@ -7,5 +7,5 @@ document summaries distinguished by prompt_version.  Importing from here
 without pulling in heavy worker dependencies.
 """
 
-EMAIL_SUMMARY_PROMPT_VERSION = "summ_v2_thread_aware"
-DOCUMENT_SUMMARY_PROMPT_VERSION = "doc_v1_attachment_text"
+EMAIL_SUMMARY_PROMPT_VERSION = "summ_v3_universal_category"
+DOCUMENT_SUMMARY_PROMPT_VERSION = "doc_v2_no_category"

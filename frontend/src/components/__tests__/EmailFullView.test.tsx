@@ -38,6 +38,11 @@ vi.mock('react-i18next', () => ({
         'modal.action_items': 'Action items',
         'modal.urgency_label': 'Urgency:',
         'modal.refresh_ai_summary': 'Refresh AI summary',
+        'ai_summary_category.label': 'Category:',
+        'ai_summary_category.ACTION_REQUIRED': 'Action Required',
+        'ai_summary_category.PROJECT_WORK': 'Project Work',
+        'ai_summary_category.FINANCIAL_LEGAL': 'Financial / Legal',
+        'ai_summary_category.SCHEDULING': 'Scheduling',
         'modal.summary_request_queued': 'Summary request queued',
         'modal.linked_files': 'Linked files',
         'modal.open_in_docs': 'Open in Docs',
@@ -75,6 +80,10 @@ vi.mock('../AttachmentStrip', () => ({
 
 vi.mock('../ImageLightbox', () => ({
   ImageLightbox: () => null,
+}));
+
+vi.mock('../AiSummaryConfidence', () => ({
+  default: () => null,
 }));
 
 // ---------------------------------------------------------------------------
@@ -225,5 +234,65 @@ describe('EmailFullView — translation render contract', () => {
 
     // The structured HTML content must not appear — no silent structured-success path
     expect(screen.queryByText('Translated HTML content')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Category rendering contract
+// ---------------------------------------------------------------------------
+
+describe('EmailFullView — AI summary category rendering', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Promise<Response>(() => {})));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('renders category label and translated category when email.ai_summary_json.category is present', () => {
+    const emailWithCategory: EmailViewModel = {
+      ...mockEmail,
+      ai_summary_text: 'This email requires immediate action.',
+      ai_summary_json: {
+        overview: 'Requires action',
+        action_items: [],
+        urgency: 'high',
+        category: 'ACTION_REQUIRED',
+      },
+    };
+
+    render(
+      <EmailFullView
+        email={emailWithCategory}
+        actionItemsRef={actionItemsRef}
+        onBackToSummary={noop}
+      />
+    );
+
+    expect(screen.getByText('Category:')).toBeInTheDocument();
+    expect(screen.getByText('Action Required')).toBeInTheDocument();
+  });
+
+  it('does not render category label when category is absent', () => {
+    const emailWithoutCategory: EmailViewModel = {
+      ...mockEmail,
+      ai_summary_text: 'Summary without category.',
+      ai_summary_json: {
+        overview: 'No category',
+        action_items: [],
+        urgency: 'low',
+      },
+    };
+
+    render(
+      <EmailFullView
+        email={emailWithoutCategory}
+        actionItemsRef={actionItemsRef}
+        onBackToSummary={noop}
+      />
+    );
+
+    expect(screen.queryByText('Category:')).not.toBeInTheDocument();
   });
 });

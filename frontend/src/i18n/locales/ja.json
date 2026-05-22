@@ -378,5 +378,18 @@
         "recency_days": "{{count}}日前",
         "reply_pending": "{{count}}日 — 返信待ち",
         "thread_depth": "{{count}}件"
+    },
+    "ai_summary_category": {
+        "label": "カテゴリ",
+        "ACTION_REQUIRED": "要対応",
+        "FINANCIAL_LEGAL": "財務・法律",
+        "SECURITY_ACCOUNT": "セキュリティ・アカウント",
+        "PROJECT_WORK": "プロジェクト・業務",
+        "CONVERSATION": "会話",
+        "SCHEDULING": "スケジュール",
+        "CONTENT_INFO": "コンテンツ・情報",
+        "AUTOMATED_SYSTEM": "自動化システム",
+        "PERSONAL_SOCIAL": "個人・ソーシャル",
+        "UNCATEGORIZED": "未分類"
     }
 }

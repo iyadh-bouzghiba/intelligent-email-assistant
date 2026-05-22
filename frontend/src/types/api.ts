@@ -1,5 +1,17 @@
 export type AILanguage = "en" | "de" | "fr" | "es" | "pt-BR" | "ar" | "zh" | "ja" | "ko";
 export type TranslationLanguage = "en" | "fr" | "ar";
+
+export type AIUniversalCategory =
+  | 'ACTION_REQUIRED'
+  | 'FINANCIAL_LEGAL'
+  | 'SECURITY_ACCOUNT'
+  | 'PROJECT_WORK'
+  | 'CONVERSATION'
+  | 'SCHEDULING'
+  | 'CONTENT_INFO'
+  | 'AUTOMATED_SYSTEM'
+  | 'PERSONAL_SOCIAL'
+  | 'UNCATEGORIZED';
 export type DraftTone = "professional" | "casual" | "concise" | "empathetic";
 export type TemplateLanguage = AILanguage | "neutral";
 
@@ -114,6 +126,7 @@ export interface EmailViewModel {
         overview: string;
         action_items: string[];
         urgency: 'low' | 'medium' | 'high';
+        category?: AIUniversalCategory;
     };
     ai_summary_text?: string;
     ai_summary_model?: string;

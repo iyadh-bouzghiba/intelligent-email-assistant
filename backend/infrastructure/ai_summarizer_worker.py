@@ -27,8 +27,10 @@ from pydantic import BaseModel, ValidationError
 
 from backend.infrastructure.supabase_store import SupabaseStore
 from backend.engine.nlp_engine import MistralEngine
-from backend.languages import normalize_language, get_summary_instruction
+from backend.languages import normalize_language
 from backend.summary_versions import EMAIL_SUMMARY_PROMPT_VERSION, DOCUMENT_SUMMARY_PROMPT_VERSION
+from backend.email_classifier import classify_email_category
+from backend.prompt_builder import build_summary_prompt
 from backend.services.email_preprocessor import EmailPreprocessor
 from backend.services.token_counter import TokenCounter, TokenLimits
 from backend.document_processor import (
@@ -90,23 +92,24 @@ class AISummaryOutput(BaseModel):
     """Pydantic model that validates and enforces the AI output contract."""
     overview: str
     action_items: List[str]
-    urgency: str       # validated below
-    category: str      # validated below
+    urgency: str
 
     def model_post_init(self, __context: Any) -> None:  # type: ignore[override]
         _valid_urgency = {"low", "medium", "high"}
-        _valid_category = {
-            "action_required", "informational", "meeting",
-            "finance", "travel", "alert",
-        }
         if self.urgency not in _valid_urgency:
             raise ValueError(
                 f"urgency {self.urgency!r} not in {_valid_urgency}"
             )
-        if self.category not in _valid_category:
-            raise ValueError(
-                f"category {self.category!r} not in {_valid_category}"
-            )
+
+
+def _bypass_urgency(category: str) -> str:
+    """Map classifier category to bypass-path urgency."""
+    if category == "SECURITY_ACCOUNT":
+        return "high"
+    if category in ("FINANCIAL_LEGAL", "ACTION_REQUIRED"):
+        return "medium"
+    return "low"
+
 
 # Rate limit retry configuration
 RATE_LIMIT_RETRY_DELAYS = [10, 30, 60]  # Seconds: 10s → 30s → 60s
@@ -248,16 +251,12 @@ class AISummarizerWorker:
             )
         return "en"
 
-    def _get_language_directive(self, ai_language: str) -> str:
-        """Return the prompt language directive for a normalized supported language."""
-        return get_summary_instruction(ai_language)
-
     def _build_prompt(
         self,
         email_data: Dict[str, Any],
         prepared_body: str,
         thread_context: List[Dict[str, Any]],
-        ai_language: str,
+        prompt_prefix: str,
     ) -> str:
         """
         Build injection-safe prompt using XML-style delimiters.
@@ -266,7 +265,6 @@ class AISummarizerWorker:
         sender = email_data.get("sender", "Unknown")
         subject = email_data.get("subject", "No subject")
         date = email_data.get("date", "Unknown")
-        language_directive = self._get_language_directive(ai_language)
 
         thread_section = ""
         if thread_context:
@@ -282,15 +280,7 @@ class AISummarizerWorker:
             )
 
         return (
-            "Analyze the email below and output ONLY a valid JSON object with "
-            "these exact fields:\n"
-            '- overview: string, concise summary (max 200 chars)\n'
-            '- action_items: string[], required actions (max 5, max 80 chars each; '
-            'empty array if none)\n'
-            '- urgency: one of "low" | "medium" | "high"\n'
-            '- category: one of "action_required" | "informational" | "meeting" | '
-            '"finance" | "travel" | "alert"\n\n'
-            f"{language_directive}\n\n"
+            f"{prompt_prefix}\n\n"
             "<email_metadata>\n"
             f"From: {sender}\n"
             f"Subject: {subject}\n"
@@ -386,6 +376,26 @@ class AISummarizerWorker:
         """Compute SHA256 hash of masked+truncated input for caching."""
         return hashlib.sha256(masked_input.encode('utf-8')).hexdigest()
 
+    def _build_hash_payload(
+        self,
+        subject: str,
+        sender: str,
+        ai_language: str,
+        classified_category: str,
+        prepared_body: str,
+        thread_context: List[Dict[str, Any]],
+    ) -> str:
+        """Build deterministic hash payload for email summary cache keying."""
+        thread_content = "|".join(
+            (msg.get("body") or "")[:THREAD_CONTEXT_BODY_CHARS]
+            for msg in thread_context
+        )
+        return (
+            f"subject={subject}|sender={sender}"
+            f"|lang={ai_language}|cat={classified_category}\n"
+            f"{prepared_body}|thread={thread_content}"
+        )
+
     def _check_cache(self, account_id: str, gmail_message_id: str, input_hash: str, summary_language: str = "en") -> bool:
         """
         Check if a summary variant already exists with the same input_hash and language.
@@ -418,7 +428,7 @@ class AISummarizerWorker:
         email_data: Dict[str, Any],
         prepared_body: str,
         thread_context: Optional[List[Dict[str, Any]]] = None,
-        ai_language: str = "en",
+        prompt_prefix: str = "",
     ) -> Optional[Dict[str, Any]]:
         """
         Call Mistral for JSON-only summarization with zero-budget protections.
@@ -426,7 +436,7 @@ class AISummarizerWorker:
         Features:
         - Injection-safe XML-delimited prompt (BL-05)
         - Thread-aware context window (BL-05)
-        - 6-category output schema (BL-05)
+        - 3-field output schema (overview, action_items, urgency)
         - Semaphore-controlled concurrency (max 3 concurrent requests)
         - 429 rate limit retry with exponential backoff (10s → 30s → 60s)
         - Fixed model parameters for cost consistency
@@ -438,7 +448,7 @@ class AISummarizerWorker:
             email_data,
             prepared_body,
             thread_context or [],
-            ai_language,
+            prompt_prefix,
         )
 
         # Governor: yield to interactive translation requests before calling provider.
@@ -466,8 +476,7 @@ class AISummarizerWorker:
                     )
 
                     logger.info(
-                        f"[AI-WORKER] Mistral call succeeded "
-                        f"(model={MISTRAL_MODEL}, thread_msgs={len(thread_context or [])})"
+                        f"[AI-WORKER] Mistral OK (model={MISTRAL_MODEL})"
                     )
                     return summary_json
 
@@ -637,6 +646,18 @@ class AISummarizerWorker:
                         f"message(s) for thread {thread_id[:8]}..."
                     )
 
+            # Deterministic classification — uses raw data before preprocessing
+            _subject = email_row.get("subject", "")
+            _sender = email_row.get("sender", "")
+            _body_snippet = (email_row.get("body") or "")[:500]
+            _thread_count = len(thread_context) + 1
+            classified_category = classify_email_category(
+                _subject, _sender, _body_snippet, _thread_count,
+            )
+            prompt_prefix = build_summary_prompt(
+                classified_category, ai_language,
+            )
+
             # 3. Preprocess + prepare (HTML strip, signatures, token limits, PII masking)
             body = email_row.get("body", "")
             subject = email_row.get("subject", "")
@@ -656,19 +677,28 @@ class AISummarizerWorker:
                 summary_json = {
                     "overview": body[:200] if body else "Empty email",
                     "action_items": [],
-                    "urgency": "low",
-                    "category": "informational",
+                    "urgency": _bypass_urgency(classified_category),
+                    "category": classified_category,
                 }
-                input_hash = self._compute_input_hash(prepared_body)
+                input_hash = self._compute_input_hash(
+                    self._build_hash_payload(
+                        subject, email_row.get("sender", ""),
+                        ai_language, classified_category,
+                        prepared_body, thread_context,
+                    )
+                )
                 self._write_summary(account_id, gmail_message_id, input_hash, summary_json, MISTRAL_MODEL, ai_language)
                 self._mark_job_succeeded(job_id)
                 return
 
-            # 4. Construct input for hashing (include thread context snapshot in hash)
+            # 4. Construct input for hashing (prompt-relevant content only)
             sender = email_row.get("sender", "")
-            thread_hash_tag = f"|thread_msgs={len(thread_context)}" if thread_context else ""
-            hashed_input = f"Subject: {subject}\nFrom: {sender}\n\n{prepared_body}{thread_hash_tag}"
-            input_hash = self._compute_input_hash(hashed_input)
+            input_hash = self._compute_input_hash(
+                self._build_hash_payload(
+                    subject, sender, ai_language,
+                    classified_category, prepared_body, thread_context,
+                )
+            )
 
             # 5. Check cache — language-scoped: French/Arabic generation is never skipped by an English hit
             if self._check_cache(account_id, gmail_message_id, input_hash, ai_language):
@@ -680,7 +710,7 @@ class AISummarizerWorker:
                 email_row,
                 prepared_body,
                 thread_context,
-                ai_language,
+                prompt_prefix,
             )
             if not raw_json:
                 self._mark_job_failed(job_id, attempts, "MISTRAL_FAILED")
@@ -701,7 +731,7 @@ class AISummarizerWorker:
                 "overview": validated.overview[:200],
                 "action_items": [str(a)[:80] for a in validated.action_items[:5]],
                 "urgency": validated.urgency,
-                "category": validated.category,
+                "category": classified_category,
             }
 
             # 9. Write summary — keyed by (account, message, prompt_version, language)
@@ -797,21 +827,15 @@ class AISummarizerWorker:
         filename: str,
         mime_type: str,
         document_type: str,
-        ai_language: str = "en",
     ) -> Optional[Dict[str, Any]]:
         """Call Mistral to analyze extracted document text."""
-        language_directive = self._get_language_directive(ai_language)
-
         prompt = (
             "Analyze the document below and output ONLY a valid JSON object with "
             "these exact fields:\n"
             '- overview: string, concise summary (max 200 chars)\n'
             '- action_items: string[], required actions (max 5, max 80 chars each; '
             'empty array if none)\n'
-            '- urgency: one of "low" | "medium" | "high"\n'
-            '- category: one of "action_required" | "informational" | "meeting" | '
-            '"finance" | "travel" | "alert"\n\n'
-            f"{language_directive}\n\n"
+            '- urgency: one of "low" | "medium" | "high"\n\n'
             "<document_metadata>\n"
             f"Filename: {filename}\n"
             f"MIME Type: {mime_type}\n"
@@ -970,7 +994,7 @@ class AISummarizerWorker:
                     "overview": "No extractable document text found.",
                     "action_items": [],
                     "urgency": "low",
-                    "category": "informational",
+                    "category": "UNCATEGORIZED",
                     "document_filename": multi_filename,
                     "document_filenames": filenames,
                     "attachment_count": attachment_count,
@@ -1013,7 +1037,6 @@ class AISummarizerWorker:
                 filename=multi_filename,
                 mime_type=attachment_infos[0]["mime_type"],
                 document_type=document_type,
-                ai_language="en",
             )
             if not raw_json:
                 self._mark_job_failed(job_id, attempts, "MISTRAL_FAILED")
@@ -1031,7 +1054,7 @@ class AISummarizerWorker:
                 "overview": validated.overview[:200],
                 "action_items": [str(a)[:80] for a in validated.action_items[:5]],
                 "urgency": validated.urgency,
-                "category": validated.category,
+                "category": "UNCATEGORIZED",
                 "document_filename": multi_filename,
                 "document_filenames": filenames,
                 "attachment_count": attachment_count,

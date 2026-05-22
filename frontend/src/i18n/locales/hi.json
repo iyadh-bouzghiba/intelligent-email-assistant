@@ -378,5 +378,18 @@
         "recency_days": "{{count}} दिन पहले",
         "reply_pending": "{{count}} दिन — उत्तर लंबित",
         "thread_depth": "{{count}} संदेश"
+    },
+    "ai_summary_category": {
+        "label": "श्रेणी",
+        "ACTION_REQUIRED": "कार्रवाई आवश्यक",
+        "FINANCIAL_LEGAL": "वित्त और कानूनी",
+        "SECURITY_ACCOUNT": "सुरक्षा और खाता",
+        "PROJECT_WORK": "प्रोजेक्ट और कार्य",
+        "CONVERSATION": "बातचीत",
+        "SCHEDULING": "शेड्यूलिंग",
+        "CONTENT_INFO": "सामग्री और जानकारी",
+        "AUTOMATED_SYSTEM": "स्वचालित सिस्टम",
+        "PERSONAL_SOCIAL": "व्यक्तिगत और सामाजिक",
+        "UNCATEGORIZED": "अवर्गीकृत"
     }
 }

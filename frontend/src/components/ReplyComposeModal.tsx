@@ -6,6 +6,7 @@ import { EmailViewModel, DraftTone, SupportedTone, EmailTemplate, ReplyAttachmen
 import { FocusTrap } from './FocusTrap';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
 import { deriveThreadContext } from '@utils/deriveThreadContext';
+import { getAISummaryCategoryKey, AI_SUMMARY_CATEGORY_LABEL_KEY } from '@utils/aiSummaryCategory';
 import AiSummaryConfidence from './AiSummaryConfidence';
 import ThreadContextSignal from './ThreadContextSignal';
 
@@ -126,6 +127,16 @@ export function ReplyComposeModal({
   accountEmail,
 }: Props) {
   const { t } = useTranslation();
+
+  const getUrgencyLabel = (urgency: string) => {
+    const normalized = urgency.toLowerCase();
+    if (normalized === 'high') return t('inbox.urgency.high');
+    if (normalized === 'low') return t('inbox.urgency.low');
+    return t('inbox.urgency.medium');
+  };
+
+  const category = email.ai_summary_json?.category;
+  const categoryKey = category ? getAISummaryCategoryKey(category) : null;
 
   const [showQuoted, setShowQuoted] = useState(false);
   const [localTone, setLocalTone] = useState<DraftTone>('professional');
@@ -520,6 +531,25 @@ export function ReplyComposeModal({
                           {email.ai_summary_text}
                         </p>
                       </div>
+
+                      {(email.ai_summary_json?.urgency || categoryKey) && (
+                        <div className="space-y-0.5 px-1">
+                          {email.ai_summary_json?.urgency && (
+                            <p className="text-[10px] text-slate-500">
+                              {t('modal.urgency_label')}{' '}
+                              <span className="font-semibold text-slate-400 capitalize">
+                                {getUrgencyLabel(email.ai_summary_json.urgency)}
+                              </span>
+                            </p>
+                          )}
+                          {categoryKey && (
+                            <p className="text-[10px] text-slate-500">
+                              {t(AI_SUMMARY_CATEGORY_LABEL_KEY)}{' '}
+                              <span className="font-semibold text-slate-400">{t(categoryKey)}</span>
+                            </p>
+                          )}
+                        </div>
+                      )}
 
                       {email.ai_summary_json?.action_items && email.ai_summary_json.action_items.length > 0 && (
                         <div className="px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05] space-y-1.5">

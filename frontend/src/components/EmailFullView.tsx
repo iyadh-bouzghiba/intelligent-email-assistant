@@ -2,6 +2,7 @@ import { RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ExternalLink, Globe, RefreshCw, Sparkles } from 'lucide-react';
 import { EmailViewModel } from '@types';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
+import { getAISummaryCategoryKey, AI_SUMMARY_CATEGORY_LABEL_KEY } from '@utils/aiSummaryCategory';
 import { AttachmentStrip, AttachmentStripItem } from './AttachmentStrip';
 import { ImageLightbox } from './ImageLightbox';
 import { useTranslation } from 'react-i18next';
@@ -245,6 +246,9 @@ export function EmailFullView({
     if (normalized === 'low') return t('inbox.urgency.low');
     return t('inbox.urgency.medium');
   };
+
+  const category = email.ai_summary_json?.category;
+  const categoryKey = category ? getAISummaryCategoryKey(category) : null;
 
   useEffect(() => {
     setLightboxAttachment(null);
@@ -503,6 +507,23 @@ export function EmailFullView({
             <p className="text-sm leading-relaxed text-slate-200">{email.ai_summary_text}</p>
           </div>
 
+          {(email.ai_summary_json?.urgency || categoryKey) && (
+            <div className="space-y-1">
+              {email.ai_summary_json?.urgency && (
+                <p className="text-xs text-slate-500">
+                  {t('modal.urgency_label')}{' '}
+                  <span className="font-bold text-slate-400 capitalize">{getUrgencyLabel(email.ai_summary_json.urgency)}</span>
+                </p>
+              )}
+              {categoryKey && (
+                <p className="text-xs text-slate-500">
+                  {t(AI_SUMMARY_CATEGORY_LABEL_KEY)}{' '}
+                  <span className="font-semibold text-slate-400">{t(categoryKey)}</span>
+                </p>
+              )}
+            </div>
+          )}
+
           {email.ai_summary_json?.action_items && email.ai_summary_json.action_items.length > 0 && (
             <div ref={actionItemsRef} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
               <p className="text-xs font-semibold text-primary-400 uppercase tracking-wider mb-3">{t('modal.action_items')}</p>
@@ -512,13 +533,6 @@ export function EmailFullView({
                 ))}
               </ol>
             </div>
-          )}
-
-          {email.ai_summary_json?.urgency && (
-            <p className="text-xs text-slate-500">
-              {t('modal.urgency_label')}{' '}
-              <span className="font-bold text-slate-400 capitalize">{getUrgencyLabel(email.ai_summary_json.urgency)}</span>
-            </p>
           )}
         </div>
       )}

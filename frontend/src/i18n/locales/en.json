@@ -378,5 +378,18 @@
         "recency_days": "{{count}} days ago",
         "reply_pending": "{{count}}d — reply pending",
         "thread_depth": "{{count}} messages"
+    },
+    "ai_summary_category": {
+        "label": "Category",
+        "ACTION_REQUIRED": "Action Required",
+        "FINANCIAL_LEGAL": "Financial and Legal",
+        "SECURITY_ACCOUNT": "Security and Account",
+        "PROJECT_WORK": "Project and Work",
+        "CONVERSATION": "Conversation",
+        "SCHEDULING": "Scheduling",
+        "CONTENT_INFO": "Content and Information",
+        "AUTOMATED_SYSTEM": "Automated System",
+        "PERSONAL_SOCIAL": "Personal and Social",
+        "UNCATEGORIZED": "Uncategorized"
     }
 }
