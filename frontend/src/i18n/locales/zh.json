@@ -378,5 +378,18 @@
         "recency_days": "{{count}} 天前",
         "reply_pending": "{{count}} 天 — 待回复",
         "thread_depth": "{{count}} 条消息"
+    },
+    "ai_summary_category": {
+        "label": "分类",
+        "ACTION_REQUIRED": "需要行动",
+        "FINANCIAL_LEGAL": "财务与法律",
+        "SECURITY_ACCOUNT": "安全与账户",
+        "PROJECT_WORK": "项目与工作",
+        "CONVERSATION": "对话",
+        "SCHEDULING": "日程安排",
+        "CONTENT_INFO": "内容与信息",
+        "AUTOMATED_SYSTEM": "自动化系统",
+        "PERSONAL_SOCIAL": "个人与社交",
+        "UNCATEGORIZED": "未分类"
     }
 }

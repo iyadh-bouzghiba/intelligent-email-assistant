@@ -3196,6 +3196,11 @@ class PreferencesUpdateRequest(BaseModel):
     ai_language: str
 
 
+class PreferencesProfileUpdateRequest(BaseModel):
+    account_id: str
+    ai_priority_profile: Optional[Dict[str, Any]] = None
+
+
 class TemplateCreateRequest(BaseModel):
     account_id: str
     name: str
@@ -4783,6 +4788,94 @@ async def update_preferences(request: PreferencesUpdateRequest):
         raise HTTPException(
             status_code=500,
             detail="Failed to persist preferences",
+        )
+
+
+@api_router.get("/preferences/profile")
+async def get_preferences_profile(account_id: str = Query(...)):
+    """
+    Read per-account AI priority profile.
+
+    Behavior:
+    - missing row -> {ai_priority_profile: null}
+    - field null -> null
+    - lookup failure -> HTTP 500
+    """
+    try:
+        store = _get_preferences_store()
+        response = (
+            store.client.table("user_preferences")
+            .select("ai_priority_profile")
+            .eq("account_id", account_id)
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
+        profile = rows[0].get("ai_priority_profile") if rows else None
+    except Exception as e:
+        logger.error(
+            f"[PREFERENCES/PROFILE] Read failed for {account_id} "
+            f"(type={type(e).__name__}): {e}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to read priority profile",
+        )
+
+    return {
+        "account_id": account_id,
+        "ai_priority_profile": profile,
+    }
+
+
+@api_router.put("/preferences/profile")
+async def update_preferences_profile(request: PreferencesProfileUpdateRequest):
+    """
+    Write per-account AI priority profile.
+
+    Uses read-then-update/insert to ensure ai_language and
+    has_completed_onboarding are never silently clobbered.
+    """
+    try:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        store = _get_preferences_store()
+        existing = (
+            store.client.table("user_preferences")
+            .select("account_id")
+            .eq("account_id", request.account_id)
+            .limit(1)
+            .execute()
+        )
+        row_exists = bool(existing.data)
+
+        if row_exists:
+            store.client.table("user_preferences").update(
+                {
+                    "ai_priority_profile": request.ai_priority_profile,
+                    "updated_at": now_iso,
+                }
+            ).eq("account_id", request.account_id).execute()
+        else:
+            store.client.table("user_preferences").insert(
+                {
+                    "account_id": request.account_id,
+                    "ai_priority_profile": request.ai_priority_profile,
+                    "updated_at": now_iso,
+                }
+            ).execute()
+
+        return {
+            "account_id": request.account_id,
+            "ai_priority_profile": request.ai_priority_profile,
+        }
+    except Exception as e:
+        logger.error(
+            f"[PREFERENCES/PROFILE] Write failed for {request.account_id} "
+            f"(type={type(e).__name__}): {e}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to persist priority profile",
         )
 
 

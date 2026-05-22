@@ -254,6 +254,7 @@ CREATE TABLE IF NOT EXISTS public.user_preferences (
   account_id TEXT PRIMARY KEY,
   has_completed_onboarding BOOLEAN NOT NULL DEFAULT FALSE,
   ai_language TEXT NOT NULL DEFAULT 'en',
+  ai_priority_profile JSONB,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT user_preferences_ai_language_chk CHECK (ai_language IN ('en', 'de', 'fr', 'es', 'pt-BR', 'ar', 'zh', 'ja', 'ko'))
 );
@@ -262,6 +263,7 @@ CREATE TABLE IF NOT EXISTS public.user_preferences (
 ALTER TABLE public.user_preferences
   ADD COLUMN IF NOT EXISTS has_completed_onboarding BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS ai_language TEXT NOT NULL DEFAULT 'en',
+  ADD COLUMN IF NOT EXISTS ai_priority_profile JSONB,
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
 -- Idempotent named CHECK constraint on ai_language.

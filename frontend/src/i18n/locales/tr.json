@@ -378,5 +378,18 @@
         "recency_days": "{{count}} gün önce",
         "reply_pending": "{{count}}g — yanıt bekliyor",
         "thread_depth": "{{count}} mesaj"
+    },
+    "ai_summary_category": {
+        "label": "Kategori",
+        "ACTION_REQUIRED": "İşlem gerekli",
+        "FINANCIAL_LEGAL": "Finansal ve hukuki",
+        "SECURITY_ACCOUNT": "Güvenlik ve hesap",
+        "PROJECT_WORK": "Proje ve iş",
+        "CONVERSATION": "Konuşma",
+        "SCHEDULING": "Zamanlama",
+        "CONTENT_INFO": "İçerik ve bilgi",
+        "AUTOMATED_SYSTEM": "Otomatik ve sistem",
+        "PERSONAL_SOCIAL": "Kişisel ve sosyal",
+        "UNCATEGORIZED": "Kategorisiz"
     }
 }
