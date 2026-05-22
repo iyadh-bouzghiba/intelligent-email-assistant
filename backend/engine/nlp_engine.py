@@ -1,9 +1,13 @@
 import os
 import json
 import asyncio
+import logging
 import warnings
 from typing import Dict, Any, Optional, List
 from mistralai import Mistral
+
+logger = logging.getLogger(__name__)
+
 
 class MistralEngine:
     """
@@ -42,7 +46,8 @@ class MistralEngine:
         max_tokens: int = 1024,
         temperature: float = 0.7,
         timeout: int = 30,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        request_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Generate JSON output using Mistral's native JSON mode.
@@ -80,7 +85,23 @@ class MistralEngine:
                     timeout=timeout
                 )
 
-                content = response.choices[0].message.content
+                choice = response.choices[0]
+                finish_reason = getattr(choice, "finish_reason", None)
+                finish_reason_value = getattr(
+                    finish_reason, "value", finish_reason
+                )
+
+                if finish_reason_value in {"length", "model_length"}:
+                    context = request_context or {}
+                    logger.warning(
+                        "[AI-WORKER] Mistral finish_reason=%s for "
+                        "account=%s job=%s - token budget may be too small",
+                        finish_reason_value,
+                        context.get("account_id"),
+                        context.get("job_id"),
+                    )
+
+                content = choice.message.content
                 return json.loads(content)
 
             except asyncio.TimeoutError:
@@ -113,7 +134,8 @@ class MistralEngine:
         model: str = "mistral-large-latest",
         max_tokens: int = 1024,
         temperature: float = 0.7,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        request_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Synchronous wrapper for generate_json_async. DEPRECATED: Use generate_json_async() instead."""
         warnings.warn(
@@ -122,7 +144,12 @@ class MistralEngine:
             stacklevel=2
         )
         return asyncio.run(self.generate_json_async(
-            prompt, model, max_tokens, temperature, system_prompt=system_prompt
+            prompt,
+            model,
+            max_tokens,
+            temperature,
+            system_prompt=system_prompt,
+            request_context=request_context,
         ))
     
     async def generate_text_async(
