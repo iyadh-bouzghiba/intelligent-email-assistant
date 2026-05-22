@@ -57,7 +57,7 @@ MAX_ATTACHMENTS_PER_JOB = 5
 # Model: open-mistral-nemo (cost-optimized for free tier)
 MISTRAL_MODEL = os.getenv("AI_MODEL", "open-mistral-nemo")
 MISTRAL_TEMPERATURE = 0.2  # Fixed for consistency
-MISTRAL_MAX_OUTPUT_TOKENS = 300  # Fixed for structured summary
+MISTRAL_MAX_OUTPUT_TOKENS = 600  # Fixed for structured summary
 
 # Concurrency control (prevent free-tier rate limit crashes)
 MAX_CONCURRENT_REQUESTS = 3  # Safe limit for free tier
@@ -429,6 +429,8 @@ class AISummarizerWorker:
         prepared_body: str,
         thread_context: Optional[List[Dict[str, Any]]] = None,
         prompt_prefix: str = "",
+        account_id: Optional[str] = None,
+        job_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Call Mistral for JSON-only summarization with zero-budget protections.
@@ -473,6 +475,10 @@ class AISummarizerWorker:
                         max_tokens=MISTRAL_MAX_OUTPUT_TOKENS,
                         temperature=MISTRAL_TEMPERATURE,
                         system_prompt=SUMMARIZATION_SYSTEM_PROMPT,
+                        request_context={
+                            "account_id": account_id,
+                            "job_id": job_id,
+                        },
                     )
 
                     logger.info(
@@ -673,9 +679,16 @@ class AISummarizerWorker:
 
             # Skip summarization if content is too short — write minimal valid summary
             if self.token_counter.should_bypass_summarization(prepared_body):
-                logger.info(f"[AI-WORKER] Email too short to summarize, using raw body as overview")
+                logger.info(
+                    "[AI-WORKER] Email too short to summarize, "
+                    "using prepared body as overview"
+                )
                 summary_json = {
-                    "overview": body[:200] if body else "Empty email",
+                    "overview": (
+                        prepared_body[:400]
+                        if prepared_body
+                        else (body[:400] if body else "Empty email")
+                    ),
                     "action_items": [],
                     "urgency": _bypass_urgency(classified_category),
                     "category": classified_category,
@@ -711,6 +724,8 @@ class AISummarizerWorker:
                 prepared_body,
                 thread_context,
                 prompt_prefix,
+                account_id=account_id,
+                job_id=job_id,
             )
             if not raw_json:
                 self._mark_job_failed(job_id, attempts, "MISTRAL_FAILED")
@@ -728,7 +743,7 @@ class AISummarizerWorker:
 
             # 8. Bounded normalization after validation
             summary_json = {
-                "overview": validated.overview[:200],
+                "overview": validated.overview[:400],
                 "action_items": [str(a)[:80] for a in validated.action_items[:5]],
                 "urgency": validated.urgency,
                 "category": classified_category,
