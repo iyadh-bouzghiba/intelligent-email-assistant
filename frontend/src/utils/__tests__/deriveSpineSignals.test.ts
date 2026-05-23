@@ -120,3 +120,35 @@ describe('deriveSpineSignals — hasAnySignal', () => {
     expect(result.hasAnySignal).toBe(false);
   });
 });
+
+// S1: ai_summary_json.category takes precedence over legacy email.category
+describe('deriveSpineSignals — ai_summary_json.category takes precedence (S1)', () => {
+  it('returns "high" when ai_summary_json.category is FINANCIAL_LEGAL regardless of legacy category', () => {
+    const result = deriveSpineSignals(
+      makeInput({
+        ai_summary_is_fallback: true,
+        ai_summary_json: { overview: '', action_items: [], urgency: 'low', category: 'FINANCIAL_LEGAL' },
+        category: 'Work',
+      }),
+      ACCOUNT,
+    );
+    expect(result.urgencyLevel).toBe('high');
+  });
+});
+
+// S2: ai_summary_json.category overrides legacy Financial when it is a non-financial category
+describe('deriveSpineSignals — ai_summary_json.category suppresses legacy Financial (S2)', () => {
+  it('returns "medium" (not "high", not "none") when ai_summary_json.category is CONTENT_INFO but legacy category is Financial', () => {
+    const result = deriveSpineSignals(
+      makeInput({
+        ai_summary_is_fallback: true,
+        ai_summary_json: { overview: '', action_items: [], urgency: 'low', category: 'CONTENT_INFO' },
+        category: 'Financial',
+      }),
+      ACCOUNT,
+    );
+    expect(result.urgencyLevel).toBe('medium');
+    expect(result.urgencyLevel).not.toBe('high');
+    expect(result.urgencyLevel).not.toBe('none');
+  });
+});
