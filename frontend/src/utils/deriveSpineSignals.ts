@@ -7,6 +7,7 @@ type SpineInput = Pick<EmailViewModel,
   | 'last_activity_iso'
   | 'last_sender'
   | 'category'
+  | 'ai_summary_json'
   | 'ai_summary_text'
   | 'ai_summary_is_fallback'
   | 'ai_summary_language'
@@ -41,9 +42,14 @@ export function deriveSpineSignals(
   // low AI-summary confidence means the user should verify before acting.
   // "high" is Financial + low confidence; "medium" is other low-confidence categories.
   // This is not a business-priority classifier.
+  const isFinancial =
+    email.ai_summary_json?.category === 'FINANCIAL_LEGAL' ||
+    (!email.ai_summary_json?.category &&
+     email.category === 'Financial');
+
   const urgencyLevel: SpineSignalResult['urgencyLevel'] =
     conf.level === 'low'
-      ? email.category === 'Financial' ? 'high' : 'medium'
+      ? isFinancial ? 'high' : 'medium'
       : 'none';
 
   const hasAttachments =
@@ -85,7 +91,8 @@ export function deriveSpineSignals(
     urgencyLevel !== 'none' ||
     hasAttachments === true ||
     daysSinceLastActivity !== null ||
-    threadDepth !== null;
+    threadDepth !== null ||
+    isPendingReply === true;
 
   return {
     urgencyLevel,

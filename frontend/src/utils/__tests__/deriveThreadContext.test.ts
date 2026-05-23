@@ -147,6 +147,35 @@ describe('deriveThreadContext — null when V2 inputs absent', () => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// T1/T2: ai_summary_json.category takes precedence over legacy category
+// ─────────────────────────────────────────────────────────────
+describe('deriveThreadContext — ai_summary_json.category takes precedence (T1)', () => {
+  it('returns "high" when ai_summary_json.category is FINANCIAL_LEGAL regardless of legacy category', () => {
+    const result = deriveThreadContext({
+      ...lowConfidence,
+      thread_count: 1,
+      has_attachments: undefined,
+      category: 'Work',
+      ai_summary_json: { overview: '', action_items: [], urgency: 'low', category: 'FINANCIAL_LEGAL' },
+    });
+    expect(result.urgencyLevel).toBe('high');
+  });
+});
+
+describe('deriveThreadContext — ai_summary_json.category suppresses legacy Financial (T2)', () => {
+  it('returns "medium" when ai_summary_json.category is CONTENT_INFO but legacy category is Financial', () => {
+    const result = deriveThreadContext({
+      ...lowConfidence,
+      thread_count: 1,
+      has_attachments: undefined,
+      category: 'Financial',
+      ai_summary_json: { overview: '', action_items: [], urgency: 'low', category: 'CONTENT_INFO' },
+    });
+    expect(result.urgencyLevel).toBe('medium');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
 // V2 activated fields
 // ─────────────────────────────────────────────────────────────
 describe('deriveThreadContext — V2 activated fields', () => {

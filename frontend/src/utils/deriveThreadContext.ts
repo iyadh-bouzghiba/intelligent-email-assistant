@@ -17,6 +17,7 @@ type Input = Pick<
   | 'thread_count'
   | 'has_attachments'
   | 'category'
+  | 'ai_summary_json'
   | 'ai_summary_text'
   | 'ai_summary_is_fallback'
   | 'ai_summary_language'
@@ -55,9 +56,14 @@ export function deriveThreadContext(email: Input, accountEmail?: string): Thread
   // low AI-summary confidence means the user should verify before acting.
   // "high" is Financial + low confidence; "medium" is other low-confidence categories.
   // This is not a business-priority classifier.
+  const isFinancial =
+    email.ai_summary_json?.category === 'FINANCIAL_LEGAL' ||
+    (!email.ai_summary_json?.category &&
+     email.category === 'Financial');
+
   let urgencyLevel: ThreadContextUrgencyLevel = 'none';
   if (confidence.level === 'low') {
-    urgencyLevel = email.category === 'Financial' ? 'high' : 'medium';
+    urgencyLevel = isFinancial ? 'high' : 'medium';
   }
 
   // daysSinceLastMessage: whole-day delta from last_activity_iso to now, clamped to >= 0
