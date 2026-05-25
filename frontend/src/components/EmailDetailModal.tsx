@@ -66,9 +66,27 @@ export function EmailDetailModal({
   const { t, i18n } = useTranslation();
 
   const languageLabel = (code: string | null) => {
-    if (code === 'fr') return t('languages.french');
-    if (code === 'ar') return t('languages.arabic');
-    return t('languages.english');
+    switch (code) {
+      case 'fr':
+        return t('languages.french');
+      case 'ar':
+        return t('languages.arabic');
+      case 'de':
+        return t('languages.german');
+      case 'es':
+        return t('languages.spanish');
+      case 'pt-BR':
+        return t('languages.portuguese_brazil');
+      case 'zh':
+        return t('languages.chinese');
+      case 'ja':
+        return t('languages.japanese');
+      case 'ko':
+        return t('languages.korean');
+      case 'en':
+      default:
+        return t('languages.english');
+    }
   };
 
   const getPriorityDisplayLabel = (priority: string) => {
