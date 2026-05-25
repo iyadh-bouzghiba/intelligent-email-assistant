@@ -243,6 +243,7 @@ class SupabaseStore:
         import logging
         from backend.languages import normalize_language
         from backend.summary_versions import EMAIL_SUMMARY_PROMPT_VERSION
+        from backend.utils.summary_utils import resolve_summary_for_language
         logger = logging.getLogger("supabase_store")
         preferred_language = normalize_language(preferred_language)
 
@@ -287,30 +288,36 @@ class SupabaseStore:
 
                     summaries_result = summaries_query.execute()
 
-                    # Build map: preferred_language > English fallback > newest row.
+                    # Build map using the shared resolver:
+                    # preferred language, English, then newest row.
                     sorted_summaries = sorted(
                         (summaries_result.data or []),
                         key=lambda s: s.get("updated_at") or "",
                         reverse=True,
                     )
-                    candidates: dict = {}
+                    grouped: dict = {}
                     for summary in sorted_summaries:
                         msg_id = summary.get("gmail_message_id")
                         if not msg_id:
                             continue
-                        lang = summary.get("summary_language", "en")
-                        c = candidates.setdefault(msg_id, {})
-                        if lang == preferred_language and "preferred" not in c:
-                            c["preferred"] = summary
-                        if lang == "en" and "en" not in c:
-                            c["en"] = summary
-                        if "any" not in c:
-                            c["any"] = summary
-                    for msg_id, c in candidates.items():
-                        chosen = c.get("preferred") or c.get("en") or c["any"]
+                        grouped.setdefault(msg_id, []).append(summary)
+                    for msg_id, msg_rows in grouped.items():
+                        chosen = (
+                            resolve_summary_for_language(
+                                msg_rows,
+                                preferred_language,
+                            )
+                            or msg_rows[0]
+                        )
+                        preferred_available = False
+                        for row in msg_rows:
+                            row_language = row.get("summary_language", "en")
+                            if row_language == preferred_language:
+                                preferred_available = True
+                                break
                         summaries_map[msg_id] = {
                             "row": chosen,
-                            "preferred_available": "preferred" in c,
+                            "preferred_available": preferred_available,
                         }
 
                     logger.info(f"[EMAILS] Fetched {len(summaries_map)} summaries for {len(email_ids)} emails")

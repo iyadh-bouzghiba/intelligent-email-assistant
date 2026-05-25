@@ -55,6 +55,7 @@ from backend.languages import (
 from backend.tones import SUPPORTED_TONES, normalize_tone, list_supported_tones
 from backend.summary_versions import EMAIL_SUMMARY_PROMPT_VERSION
 from backend.engine.nlp_engine import MistralEngine
+from backend.utils.summary_utils import resolve_summary_for_language
 
 # CRITICAL: Configure logging with immediate flush for production visibility
 logging.basicConfig(
@@ -1733,14 +1734,14 @@ async def get_email_summary(
         if rows:
             # Build per-language index (newest per language wins if duplicates exist)
             rows_sorted = sorted(rows, key=lambda r: r.get("updated_at") or "", reverse=True)
-            by_lang: dict = {}
-            for row in rows_sorted:
-                lang = row.get("summary_language", "en")
-                if lang not in by_lang:
-                    by_lang[lang] = row
-
-            preferred_available = preferred_language in by_lang
-            summary = by_lang.get(preferred_language) or by_lang.get("en") or rows_sorted[0]
+            summary = (
+                resolve_summary_for_language(rows_sorted, preferred_language)
+                or rows_sorted[0]
+            )
+            preferred_available = any(
+                r.get("summary_language", "en") == preferred_language
+                for r in rows_sorted
+            )
             actual_lang = summary.get("summary_language", "en")
 
             return {
@@ -2631,22 +2632,25 @@ async def search_emails(
                 key=lambda s: s.get("updated_at") or "",
                 reverse=True,
             )
-            candidates_by_lang: dict = {}
+            grouped: dict = {}
             for s in sorted_summ:
                 mid = s.get("gmail_message_id")
                 if not mid:
                     continue
-                lang = s.get("summary_language", "en")
-                c = candidates_by_lang.setdefault(mid, {})
-                if lang == preferred_language and "preferred" not in c:
-                    c["preferred"] = s
-                if lang == "en" and "en" not in c:
-                    c["en"] = s
-                if "any" not in c:
-                    c["any"] = s
-            for mid, c in candidates_by_lang.items():
-                chosen = c.get("preferred") or c.get("en") or c["any"]
-                summaries_map[mid] = {"row": chosen, "preferred_available": "preferred" in c}
+                grouped.setdefault(mid, []).append(s)
+            for mid, mid_rows in grouped.items():
+                chosen = (
+                    resolve_summary_for_language(mid_rows, preferred_language)
+                    or mid_rows[0]
+                )
+                preferred_available = any(
+                    r.get("summary_language", "en") == preferred_language
+                    for r in mid_rows
+                )
+                summaries_map[mid] = {
+                    "row": chosen,
+                    "preferred_available": preferred_available,
+                }
         except Exception as summ_err:
             logger.warning(f"[SEARCH] Summary fetch failed (non-fatal): {type(summ_err).__name__}: {summ_err}")
 
