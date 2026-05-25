@@ -200,6 +200,11 @@
         "french": "Francês",
         "arabic": "Árabe",
         "portuguese_brazil": "Português (Brasil)",
+        "german": "Alemão",
+        "spanish": "Espanhol",
+        "chinese": "Chinês",
+        "japanese": "Japonês",
+        "korean": "Coreano",
         "turkish": "Turco"
     },
     "startup": {

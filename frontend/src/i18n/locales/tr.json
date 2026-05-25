@@ -200,6 +200,11 @@
         "french": "Fransızca",
         "arabic": "Arapça",
         "portuguese_brazil": "Portekizce (Brezilya)",
+        "german": "Almanca",
+        "spanish": "İspanyolca",
+        "chinese": "Çince",
+        "japanese": "Japonca",
+        "korean": "Korece",
         "turkish": "Türkçe"
     },
     "startup": {
