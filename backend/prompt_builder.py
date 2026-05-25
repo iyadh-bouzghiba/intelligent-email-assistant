@@ -16,6 +16,19 @@ LATIN_LANGUAGES: tuple[str, ...] = ("en", "de", "fr", "es", "pt-BR")
 SEMITIC_LANGUAGES: tuple[str, ...] = ("ar",)
 EAST_ASIAN_LANGUAGES: tuple[str, ...] = ("zh", "ja", "ko")
 
+# Exact language names used in the output-language enforcement instruction
+_LANGUAGE_NAMES: dict[str, str] = {
+    "en": "English",
+    "fr": "French",
+    "ar": "Arabic",
+    "de": "German",
+    "es": "Spanish",
+    "pt-BR": "Brazilian Portuguese",
+    "zh": "Simplified Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+}
+
 _VALID_CATEGORIES: tuple[str, ...] = (
     "SECURITY_ACCOUNT",
     "FINANCIAL_LEGAL",
@@ -132,8 +145,19 @@ def build_summary_prompt(
     language = _normalise_language(dim2_language_code)
     family = resolve_language_family(language)
 
+    language_name = _LANGUAGE_NAMES.get(language, _LANGUAGE_NAMES["en"])
     category_hint = _CATEGORY_HINTS[category]
     family_instruction = _FAMILY_INSTRUCTIONS[family]
+
+    if language == "en":
+        lang_enforcement = (
+            "Write overview and action_items strictly in English."
+        )
+    else:
+        lang_enforcement = (
+            f"Write overview and action_items strictly in {language_name}. "
+            "Do not use English unless the target language is English."
+        )
 
     prompt = (
         "You are an email summarisation assistant.\n\n"
@@ -142,6 +166,7 @@ def build_summary_prompt(
         f"Pre-classified category: {category}.\n\n"
         f"Category guidance: {category_hint}\n\n"
         f"Language and structure: {family_instruction}\n\n"
+        f"Output language: {lang_enforcement}\n\n"
         "Return ONLY valid JSON. No prose outside the JSON object.\n"
         "The JSON must contain exactly these three fields:\n"
         '  "overview"     - string\n'

@@ -1,14 +1,17 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EmailViewModel } from '@types';
 import { deriveAiSummaryConfidence } from '@utils/deriveAiSummaryConfidence';
+import { ensureLocaleLoaded } from '@/i18n';
+import type { AppShellLanguage } from '@/i18n';
 
 interface Props {
   email: EmailViewModel;
   className?: string;
 }
 
-const FIXED_T_LANGS = ['en', 'fr', 'ar', 'de', 'es', 'pt-BR', 'zh', 'ja', 'ko'] as const;
+const AI_LANGUAGES = ['en', 'fr', 'ar', 'de', 'es', 'pt-BR', 'zh', 'ja', 'ko'] as const;
+type AiLanguage = typeof AI_LANGUAGES[number];
 
 const reasonKeyMap = {
   fallback_summary: 'modal.confidence_reason_fallback_summary',
@@ -29,19 +32,56 @@ const reasonTextClass: Record<string, string> = {
   low: 'text-rose-400/80',
 };
 
+function resolveAiLanguage(email: EmailViewModel): AiLanguage | null {
+  const pref = email.ai_preferred_language ?? '';
+  if ((AI_LANGUAGES as readonly string[]).includes(pref)) return pref as AiLanguage;
+  const sum = email.ai_summary_language ?? '';
+  if ((AI_LANGUAGES as readonly string[]).includes(sum)) return sum as AiLanguage;
+  return null;
+}
+
 export default function AiSummaryConfidence({ email, className }: Props) {
   const { t, i18n } = useTranslation();
   const confidence = deriveAiSummaryConfidence(email);
+  const targetLang = resolveAiLanguage(email);
 
-  const prefLang = email.ai_preferred_language ?? '';
-  const sumLang = email.ai_summary_language ?? '';
+  const [localeReady, setLocaleReady] = useState(false);
+  const [resolvedLang, setResolvedLang] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
-  let tFn = t;
-  if ((FIXED_T_LANGS as readonly string[]).includes(prefLang)) {
-    tFn = i18n.getFixedT(prefLang);
-  } else if ((FIXED_T_LANGS as readonly string[]).includes(sumLang)) {
-    tFn = i18n.getFixedT(sumLang);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!targetLang || targetLang === 'en') {
+      setResolvedLang(targetLang);
+      setLocaleReady(true);
+      return;
+    }
+    setLocaleReady(false);
+    setResolvedLang(null);
+    let cancelled = false;
+    ensureLocaleLoaded(targetLang as AppShellLanguage).then((resolved) => {
+      if (!cancelled && mountedRef.current) {
+        setResolvedLang(resolved);
+        setLocaleReady(true);
+      }
+    }).catch(() => {
+      if (!cancelled && mountedRef.current) {
+        setResolvedLang('en');
+        setLocaleReady(true);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [targetLang]);
+
+  if (!localeReady) {
+    return <div className={className} aria-busy="true" />;
   }
+
+  const tFn = resolvedLang ? i18n.getFixedT(resolvedLang) : t;
 
   const levelLabel: Record<string, string> = {
     high: tFn('modal.confidence_high'),

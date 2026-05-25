@@ -1,5 +1,6 @@
 import os
 import logging
+from typing import Optional
 from supabase import create_client
 from datetime import datetime, timezone
 
@@ -510,7 +511,13 @@ class SupabaseStore:
         except Exception as e:
             logger.warning(f"Supabase credential delete error: {e}")
 
-    def enqueue_ai_job(self, account_id: str, gmail_message_id: str, job_type: str = "email_summarize_v1"):
+    def enqueue_ai_job(
+        self,
+        account_id: str,
+        gmail_message_id: str,
+        job_type: str = "email_summarize_v1",
+        ai_language: Optional[str] = None,
+    ):
         """
         Enqueue AI summarization job (idempotent via unique index).
 
@@ -518,6 +525,8 @@ class SupabaseStore:
             account_id: Gmail account identifier
             gmail_message_id: Gmail's stable message ID
             job_type: Job type identifier (default: "email_summarize_v1")
+            ai_language: Desired output language; persisted on the job row so the
+                         worker does not need to re-read mutable user_preferences.
 
         Returns:
             job_id (str) if successful, None if failed
@@ -531,8 +540,10 @@ class SupabaseStore:
                 "attempts": 0,
                 "run_after": datetime.now(timezone.utc).isoformat(),
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat()
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
+            if ai_language is not None:
+                payload["ai_language"] = ai_language
 
             result = self.client.table("ai_jobs").upsert(
                 payload,
@@ -541,7 +552,10 @@ class SupabaseStore:
 
             if result.data and len(result.data) > 0:
                 job_id = result.data[0].get("id")
-                logger.info(f"[AI-ENQUEUE] Job {job_id} queued for {account_id}/{gmail_message_id[:8]}...")
+                logger.info(
+                    f"[AI-ENQUEUE] Job {job_id} queued for {account_id}/{gmail_message_id[:8]}..."
+                    + (f" lang={ai_language}" if ai_language else "")
+                )
                 return job_id
             return None
         except Exception as e:

@@ -5214,7 +5214,9 @@ async def _translate_render_email_body(
 @api_router.post("/emails/{gmail_message_id}/summarize")
 async def summarize_email_by_id(
     gmail_message_id: str,
-    account_id: str = Query("default")
+    account_id: str = Query("default"),
+    preferred_language: Optional[str] = Query(None),
+    ai_language: Optional[str] = Query(None),
 ):
     """
     Enqueue AI summarization job for specific email.
@@ -5224,6 +5226,8 @@ async def summarize_email_by_id(
     Args:
         gmail_message_id: Gmail's stable message ID
         account_id: Account identifier (from query param)
+        preferred_language: Desired output language (takes priority over ai_language)
+        ai_language: Alias for preferred_language
 
     Returns:
         {"status": "queued", "job_id": "..."} on success
@@ -5240,6 +5244,10 @@ async def summarize_email_by_id(
     if not store:
         return {"status": "error", "message": "Store unavailable"}
 
+    # Normalize the requested language; fall back to "en" if absent/invalid
+    raw_lang = preferred_language or ai_language
+    effective_language = normalize_language(raw_lang) if raw_lang else None
+
     try:
         # Verify email exists for this account
         response = await asyncio.to_thread(
@@ -5253,12 +5261,13 @@ async def summarize_email_by_id(
         if not response.data or len(response.data) == 0:
             return {"status": "email_not_found"}
 
-        # Enqueue AI summarization job
+        # Enqueue AI summarization job with language hint
         job_id = await asyncio.to_thread(
             store.enqueue_ai_job,
             account_id=effective_account_id,
             gmail_message_id=gmail_message_id,
-            job_type="email_summarize_v1"
+            job_type="email_summarize_v1",
+            ai_language=effective_language,
         )
 
         if job_id:

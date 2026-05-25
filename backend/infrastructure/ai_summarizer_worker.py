@@ -1,4 +1,4 @@
-"""
+﻿"""
 AI Email Summarization Worker
 
 Worker-only Mistral pipeline for email summarization using queue-based architecture.
@@ -123,6 +123,95 @@ def _truncate_to_word(text: str, max_chars: int) -> str:
 
 # Rate limit retry configuration
 RATE_LIMIT_RETRY_DELAYS = [10, 30, 60]  # Seconds: 10s → 30s → 60s
+
+# Script-range boundaries for non-Latin script detection
+_ARABIC_RE = re.compile(r'[؀-ۿݐ-ݿ]')
+_CJK_RE = re.compile(r"[぀-ヿ一-鿿豈-﫿]")  # Hiragana/Katakana + CJK
+_HANGUL_RE = re.compile(r"[가-힣ᄀ-ᇿ]")
+# Word tokenizer for Latin-script mismatch detection (ASCII alpha, 2+ chars)
+_WORD_RE = re.compile(r'[a-zA-Z]{2,}')
+
+# Languages that need script-based evidence (no Latin fallback)
+_NON_LATIN_LANGS = frozenset({"ar", "zh", "ja", "ko"})
+# Latin non-English languages — English-dominance detection
+_LATIN_NON_EN_LANGS = frozenset({"fr", "de", "es", "pt-BR"})
+
+# Strong English function words with negligible overlap in fr/de/es/pt-BR
+_EN_MARKERS = frozenset({
+    "the", "this", "that", "these", "those",
+    "from", "about", "have", "been",
+    "they", "their", "them", "your",
+    "would", "could", "should",
+    "which", "what", "where", "when",
+    "also", "just", "please",
+    "is", "are",
+    "of", "and", "for", "but", "not",
+    "will", "its", "our",
+})
+
+# Common ASCII-safe marker words per target language
+_LANG_MARKERS: dict = {
+    "fr": frozenset({
+        "je", "tu", "il", "elle", "nous", "vous", "ils", "elles",
+        "le", "la", "les", "un", "une", "des", "du", "de", "et",
+        "ou", "pour", "avec", "dans", "sur", "par", "que", "qui",
+        "ce", "est", "sont", "pas", "au", "aux", "ne", "se", "si",
+        "car", "mais", "donc", "quand", "comme",
+    }),
+    "de": frozenset({
+        "der", "die", "das", "ein", "und", "oder", "ist", "sind",
+        "nicht", "ich", "du", "er", "sie", "wir", "ihr", "mit",
+        "von", "zu", "auf", "aus", "bei", "nach", "auch",
+        "noch", "sehr", "wie", "wenn", "aber", "muss", "hat",
+        "haben", "wird", "dem", "den", "des", "einem", "einer",
+    }),
+    "es": frozenset({
+        "el", "la", "los", "las", "un", "una", "de", "del", "al",
+        "en", "que", "con", "por", "para", "como", "es", "son",
+        "fue", "tiene", "este", "esta", "su", "sus", "lo", "le",
+        "les", "me", "se", "si", "no", "mas", "muy", "pero", "sin",
+        "entre",
+    }),
+    "pt-BR": frozenset({
+        "um", "uma", "de", "do", "da", "dos", "das", "em", "no",
+        "na", "nos", "nas", "por", "para", "com", "que", "ou",
+        "mas", "se", "ao", "aos", "como", "seu", "sua", "seus",
+        "suas", "ele", "ela", "eles", "elas", "foi", "sao",
+    }),
+}
+
+
+def _detect_language_mismatch(text: str, target_lang: str) -> bool:
+    """Return True if *text* is obviously not in *target_lang*.
+
+    Uses conservative heuristics — only fires on clear mismatches:
+    - Arabic target: text must contain Arabic script characters.
+    - Chinese/Japanese target: text must contain CJK characters.
+    - Korean target: text must contain Hangul characters.
+    - Latin non-English (fr/de/es/pt-BR): flags only when English function-word
+      markers strongly dominate (>=3) and target-language markers are absent.
+      Valid ASCII-only target-language text is never flagged.
+    - English / unknown: never mismatch.
+    """
+    if not text or target_lang in ("en", ""):
+        return False
+    sample = text[:300]  # Check only first 300 chars for speed
+
+    if target_lang == "ar":
+        return not bool(_ARABIC_RE.search(sample))
+    if target_lang in ("zh", "ja"):
+        return not bool(_CJK_RE.search(sample))
+    if target_lang == "ko":
+        return not bool(_HANGUL_RE.search(sample))
+    if target_lang in _LATIN_NON_EN_LANGS:
+        words = _WORD_RE.findall(sample.lower())
+        if len(words) < 6:
+            return False
+        en_count = sum(1 for w in words if w in _EN_MARKERS)
+        tgt_markers = _LANG_MARKERS.get(target_lang, frozenset())
+        tgt_count = sum(1 for w in words if w in tgt_markers)
+        return en_count >= 3 and tgt_count == 0
+    return False
 
 
 class AISummarizerWorker:
@@ -651,7 +740,13 @@ class AISummarizerWorker:
                 self._mark_job_failed(job_id, attempts, "EMAIL_NOT_FOUND")
                 return
 
-            ai_language = self._get_ai_language(account_id)
+            # Prefer language pinned at enqueue time; fall back to account preference for legacy jobs
+            job_lang = job.get("ai_language")
+            if job_lang:
+                ai_language = self._normalize_ai_language(job_lang)
+                logger.info(f"[AI-WORKER] Using job-pinned language '{ai_language}' for job {job_id}")
+            else:
+                ai_language = self._get_ai_language(account_id)
 
             # 2. Fetch thread context (bounded; failure is non-fatal)
             thread_id = email_row.get("thread_id")
@@ -766,10 +861,22 @@ class AISummarizerWorker:
                 "category": classified_category,
             }
 
-            # 9. Write summary — keyed by (account, message, prompt_version, language)
+            # 9. Language mismatch guard — reject obvious English output for non-English targets
+            _overview = summary_json.get("overview") or ""
+            _actions = " ".join(a for a in (summary_json.get("action_items") or []))
+            _mismatch_text = f"{_overview} {_actions}".strip()
+            if ai_language != "en" and _detect_language_mismatch(_mismatch_text, ai_language):
+                logger.warning(
+                    f"[AI-WORKER] LANGUAGE_MISMATCH: job {job_id} target={ai_language} "
+                    f"but output appears English — refusing to write summary"
+                )
+                self._mark_job_failed(job_id, attempts, "LANGUAGE_MISMATCH")
+                return
+
+            # 10. Write summary — keyed by (account, message, prompt_version, language)
             self._write_summary(account_id, gmail_message_id, input_hash, summary_json, MISTRAL_MODEL, ai_language)
 
-            # 10. Mark succeeded
+            # 11. Mark succeeded
             self._mark_job_succeeded(job_id)
 
             # Socket.IO event emission DISABLED — worker runs in separate process.

@@ -109,7 +109,7 @@ const resolveInitialLocale = async (requestedLanguage: AppShellLanguage): Promis
     }
 };
 
-const ensureLocaleLoaded = async (language: AppShellLanguage): Promise<AppShellLanguage> => {
+export const ensureLocaleLoaded = async (language: AppShellLanguage): Promise<AppShellLanguage> => {
     if (loadedLanguages.has(language) || i18n.hasResourceBundle(language, 'translation')) {
         loadedLanguages.add(language);
         return language;
