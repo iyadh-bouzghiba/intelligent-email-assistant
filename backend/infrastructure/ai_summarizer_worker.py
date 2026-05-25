@@ -111,6 +111,16 @@ def _bypass_urgency(category: str) -> str:
     return "low"
 
 
+def _truncate_to_word(text: str, max_chars: int) -> str:
+    """Truncate text without cutting the final word when possible."""
+    if len(text) <= max_chars:
+        return text
+
+    truncated = text[:max_chars]
+    last_space = truncated.rfind(" ")
+    return truncated[:last_space] if last_space > 0 else truncated
+
+
 # Rate limit retry configuration
 RATE_LIMIT_RETRY_DELAYS = [10, 30, 60]  # Seconds: 10s → 30s → 60s
 
@@ -462,8 +472,12 @@ class AISummarizerWorker:
             if not _governor.wait_for_background_slot():
                 logger.warning("[AI-WORKER] Governor deferred — skipping Mistral call this cycle")
                 return None
-        except Exception:
-            pass  # governor unavailable: proceed without coordination
+        except Exception as _gov_err:
+            logger.warning(
+                "[AI-WORKER] Governor unavailable: %s — "
+                "proceeding without rate coordination",
+                _gov_err,
+            )
 
         # Semaphore-controlled execution with 429 retry
         with self._api_semaphore:
@@ -744,7 +758,10 @@ class AISummarizerWorker:
             # 8. Bounded normalization after validation
             summary_json = {
                 "overview": validated.overview[:400],
-                "action_items": [str(a)[:80] for a in validated.action_items[:5]],
+                "action_items": [
+                    _truncate_to_word(str(a), 80)
+                    for a in validated.action_items[:5]
+                ],
                 "urgency": validated.urgency,
                 "category": classified_category,
             }
@@ -1067,7 +1084,10 @@ class AISummarizerWorker:
 
             summary_json = {
                 "overview": validated.overview[:200],
-                "action_items": [str(a)[:80] for a in validated.action_items[:5]],
+                "action_items": [
+                    _truncate_to_word(str(a), 80)
+                    for a in validated.action_items[:5]
+                ],
                 "urgency": validated.urgency,
                 "category": "UNCATEGORIZED",
                 "document_filename": multi_filename,

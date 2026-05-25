@@ -8,7 +8,7 @@ interface Props {
   className?: string;
 }
 
-const FIXED_T_LANGS = ['en', 'fr', 'ar'] as const;
+const FIXED_T_LANGS = ['en', 'fr', 'ar', 'de', 'es', 'pt-BR', 'zh', 'ja', 'ko'] as const;
 
 const reasonKeyMap = {
   fallback_summary: 'modal.confidence_reason_fallback_summary',
