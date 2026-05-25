@@ -923,34 +923,60 @@ export const App = () => {
     }
   };
 
-  // Coalesced one-shot summary refresh — safe against re-entry and active sync.
-  // Multiple queue events within the window collapse into a single delayed fetchEmails.
+  // Bounded polling summary refresh — replaces one-shot 12s timer.
+  // Polls until all in-flight summarizingIds have resolved or the timeout budget is exhausted.
+  // Multiple queue events within a polling window are coalesced (at most one timer active).
   const scheduleSummaryRefresh = (accountId: string) => {
-    // Cancel any existing pending timer — only one at a time
+    // Cancel any existing pending timer — only one polling chain at a time
     if (summaryRefreshTimerRef.current !== null) {
       clearTimeout(summaryRefreshTimerRef.current);
-    }
-    const SUMMARY_REFRESH_DELAY_MS = 12000; // Backend worker needs ~8-12s to complete summarization jobs
-    summaryRefreshTimerRef.current = setTimeout(async () => {
       summaryRefreshTimerRef.current = null;
-      // If a full sync is already running, defer 5s to avoid concurrent fetch interference
-      if (syncingRef.current) {
-        devLog('[SUMMARY-REFRESH] Sync active — deferring 5s');
-        summaryRefreshTimerRef.current = setTimeout(async () => {
-          summaryRefreshTimerRef.current = null;
-          // Re-check: if still syncing after deferral, runSync's fetchEmails will carry the result
-          if (syncingRef.current) {
-            devLog('[SUMMARY-REFRESH] Still syncing after deferral — skipping to avoid race');
-            return;
-          }
-          devLog('[SUMMARY-REFRESH] Deferred fetch running');
-          await fetchEmails(accountId, { reason: 'summary-refresh:deferred' });
-        }, 5000);
+    }
+
+    // Poll intervals in ms: first poll at 6s, then every 6s, up to 8 polls (48s total budget)
+    const POLL_INTERVALS_MS = [6000, 6000, 6000, 8000, 8000, 10000, 10000, 10000];
+    let pollIndex = 0;
+
+    const poll = async () => {
+      summaryRefreshTimerRef.current = null;
+
+      // Terminal: no more pending IDs — nothing left to refresh
+      if (queuedSummarizeIdsRef.current.size === 0) {
+        devLog('[SUMMARY-REFRESH] All summarizingIds resolved — stopping');
         return;
       }
-      devLog('[SUMMARY-REFRESH] Fetching updated summaries for account:', accountId);
-      await fetchEmails(accountId, { reason: 'summary-refresh' });
-    }, SUMMARY_REFRESH_DELAY_MS);
+
+      // Terminal: budget exhausted — clear tracking state and stop
+      if (pollIndex >= POLL_INTERVALS_MS.length) {
+        devLog('[SUMMARY-REFRESH] Polling budget exhausted — clearing summarizingIds');
+        queuedSummarizeIdsRef.current.clear();
+        setSummarizingIds(new Set());
+        return;
+      }
+
+      // If full sync is already running, defer briefly to avoid concurrent fetch interference
+      if (syncingRef.current) {
+        devLog('[SUMMARY-REFRESH] Sync active — deferring 5s');
+        summaryRefreshTimerRef.current = setTimeout(poll, 5000);
+        return;
+      }
+
+      devLog(`[SUMMARY-REFRESH] Poll ${pollIndex + 1}/${POLL_INTERVALS_MS.length} for account:`, accountId);
+      await fetchEmails(accountId, { reason: `summary-refresh:poll-${pollIndex + 1}` });
+
+      // After fetch, queuedSummarizeIdsRef is updated by fetchEmails (cleared for resolved emails)
+      pollIndex++;
+
+      if (queuedSummarizeIdsRef.current.size === 0) {
+        devLog('[SUMMARY-REFRESH] All summaries visible — done');
+        return;
+      }
+
+      // Schedule next poll
+      summaryRefreshTimerRef.current = setTimeout(poll, POLL_INTERVALS_MS[pollIndex] ?? 10000);
+    };
+
+    summaryRefreshTimerRef.current = setTimeout(poll, POLL_INTERVALS_MS[0]);
   };
 
   const autoSummarizeEmails = async (emails: EmailViewModel[], accountId: string) => {
@@ -974,7 +1000,7 @@ export const App = () => {
       try {
         await Promise.all(
           batch.map(email =>
-            apiService.summarizeEmail(email.gmail_message_id!, accountId)
+            apiService.summarizeEmail(email.gmail_message_id!, accountId, aiLanguageRef.current)
           )
         );
         devLog(`[AUTO-SUMMARIZE] Batch ${Math.floor(i / BATCH_SIZE) + 1} queued (${batch.length} emails)`);
@@ -2089,7 +2115,7 @@ export const App = () => {
     if (!activeEmail || !selectedEmailDetail?.gmail_message_id) return;
     const id = selectedEmailDetail.gmail_message_id;
     setSummarizingIds(prev => new Set(prev).add(id));
-    await apiService.summarizeEmail(id, activeEmail);
+    await apiService.summarizeEmail(id, activeEmail, aiLanguageRef.current);
     devLog('[MODAL] Summarization queued for', id);
     scheduleSummaryRefresh(activeEmail);
   };
@@ -3222,7 +3248,7 @@ export const App = () => {
                                   e.stopPropagation();
                                   if (!activeEmail) return;
                                   setSummarizingIds(prev => new Set(prev).add(item.gmail_message_id!));
-                                  await apiService.summarizeEmail(item.gmail_message_id!, activeEmail);
+                                  await apiService.summarizeEmail(item.gmail_message_id!, activeEmail, aiLanguageRef.current);
                                   // Use the same coalesced bounded refresh — no duplicate timers
                                   scheduleSummaryRefresh(activeEmail);
                                 }}
