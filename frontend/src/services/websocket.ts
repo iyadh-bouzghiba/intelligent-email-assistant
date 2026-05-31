@@ -80,6 +80,7 @@ class WebSocketService {
         const socketOptions = {
             path: "/socket.io",
             secure: true,
+            withCredentials: true,
             reconnection: true,
             reconnectionAttempts: 5,
             reconnectionDelay: 1000,
