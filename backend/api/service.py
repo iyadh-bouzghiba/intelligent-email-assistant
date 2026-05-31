@@ -73,7 +73,12 @@ sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)
 from backend.config import Config
 from backend.core import EmailAssistant
 
-from backend.auth_guard import COOKIE_NAME, build_session_cookie_kwargs, create_access_token, require_jwt_auth
+from backend.auth_guard import (  # noqa: E402
+    build_session_cookie_kwargs,
+    create_access_token,
+    require_jwt_auth,
+    resolve_socket_auth_subject,
+)
 
 
 def _get_worker_heartbeat() -> dict:
@@ -203,8 +208,17 @@ assistant: Optional[EmailAssistant] = None # Defer to prevent import errors
 # SOCKET.IO HANDSHAKE
 # ------------------------------------------------------------------
 @sio.on("connect")
-async def connect(sid, environ):
-    print(f"[SOCKET] Sentinel Connection Authenticated: {sid}")
+async def connect(sid, environ, auth=None):
+    try:
+        subject = resolve_socket_auth_subject(environ, auth)
+    except Exception:
+        print(f"[SOCKET] Connection rejected: unauthorized sid={sid}")
+        raise socketio.exceptions.ConnectionRefusedError("unauthorized")
+
+    print(
+        f"[SOCKET] Sentinel Connection Authenticated: {sid} "
+        f"subject={subject}"
+    )
     await sio.emit(
         "connection_status",
         {"status": "stable", "transmission": "encrypted"},

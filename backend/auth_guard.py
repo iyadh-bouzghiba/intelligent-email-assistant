@@ -1,5 +1,6 @@
 import os
 import time
+from http.cookies import CookieError, SimpleCookie
 from typing import Optional
 
 import jwt
@@ -32,6 +33,107 @@ def create_access_token(subject: str) -> str:
 
 def decode_access_token(token: str) -> dict:
     return jwt.decode(token, _get_secret(), algorithms=["HS256"])
+
+
+def extract_access_token_from_cookie_header(
+    cookie_header: str,
+) -> Optional[str]:
+    """Return the active session JWT from a raw Cookie header."""
+    if not cookie_header:
+        return None
+
+    try:
+        cookies = SimpleCookie()
+        cookies.load(cookie_header)
+    except CookieError:
+        return None
+
+    session_cookie = cookies.get(COOKIE_NAME)
+    if session_cookie is None:
+        return None
+
+    token = (session_cookie.value or "").strip()
+    return token or None
+
+
+def _decode_header_value(value) -> str:
+    if isinstance(value, bytes):
+        return value.decode("latin-1")
+    return str(value)
+
+
+def _extract_cookie_header_from_environ(environ: dict) -> str:
+    if not isinstance(environ, dict):
+        return ""
+
+    cookie_header = environ.get("HTTP_COOKIE")
+    if cookie_header:
+        return _decode_header_value(cookie_header)
+
+    scope = environ.get("asgi.scope") or environ.get("scope") or {}
+    headers = scope.get("headers") if isinstance(scope, dict) else None
+    if headers is None:
+        headers = environ.get("headers")
+
+    if not headers:
+        return ""
+
+    for name, value in headers:
+        header_name = _decode_header_value(name).lower()
+        if header_name == "cookie":
+            return _decode_header_value(value)
+
+    return ""
+
+
+def validate_access_token_value(token: Optional[str]) -> str:
+    """Validate an access token and return its authenticated subject."""
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
+    try:
+        payload = decode_access_token(token)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired",
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session token",
+        )
+
+    subject = payload.get("sub")
+    if not isinstance(subject, str) or not subject.strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session token",
+        )
+
+    return subject.strip()
+
+
+def resolve_socket_auth_subject(
+    environ: dict,
+    auth: Optional[dict] = None,
+) -> str:
+    """Resolve and validate the subject for a Socket.IO connect."""
+    token = None
+
+    if isinstance(auth, dict):
+        auth_token = auth.get("token") or auth.get("access_token")
+        if isinstance(auth_token, str) and auth_token.strip():
+            token = auth_token.strip()
+
+    if token is None:
+        cookie_header = _extract_cookie_header_from_environ(environ)
+        token = extract_access_token_from_cookie_header(cookie_header)
+
+    return validate_access_token_value(token)
 
 
 def build_session_cookie_kwargs(request: Request) -> dict:
