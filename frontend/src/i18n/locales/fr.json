@@ -220,7 +220,7 @@
         "enable_action": "Activer",
         "enabling": "Activation...",
         "consent_description": "L'assistant IA vous aidera à rédiger des réponses et à analyser vos e-mails grâce à l'intelligence Executive Brain.",
-        "privacy_notice": "Vos e-mails sont traités de manière sécurisée et ne sont jamais conservés au-delà de cette session.",
+        "privacy_notice": "Vos e-mails sont traités pour générer des résumés et des informations par IA. Le contenu des e-mails et les résumés générés sont stockés pour alimenter votre expérience de boîte de réception. Consultez notre politique de confidentialité pour plus de détails sur le traitement des données.",
         "email_label": "E-mail",
         "from_sender": "De {{sender}}",
         "tone_label": "Ton",
@@ -312,7 +312,7 @@
         "attachment_size_error": "Les pièces jointes dépassent la limite de 25 Mo.",
         "attachment_blocked_type_error": "Une ou plusieurs pièces jointes utilisent un type de fichier bloqué.",
         "attachment_scope_required": "Reconnectez ce compte pour envoyer des pièces jointes.",
-        "attachment_privacy_notice": "Les fichiers sont envoyés uniquement via Gmail et ne sont jamais stockés par Executive Brain.",
+        "attachment_privacy_notice": "Les pièces jointes sont traitées par le backend d’Executive Brain pour une livraison sécurisée. Les pièces jointes de type document peuvent être analysées par l’IA afin de générer des résumés. Consultez notre politique de confidentialité pour plus de détails.",
         "context": {
             "strip_aria_label": "Signaux contextuels du fil",
             "urgency_high": "Vérifier — Financier",

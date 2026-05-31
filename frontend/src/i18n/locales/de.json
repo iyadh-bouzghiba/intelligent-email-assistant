@@ -220,7 +220,7 @@
         "enable_action": "Aktivieren",
         "enabling": "Wird aktiviert...",
         "consent_description": "Der KI-Assistent hilft Ihnen, Antworten zu entwerfen und E-Mails mithilfe von Executive Brain Intelligence zu analysieren.",
-        "privacy_notice": "Ihre E-Mails werden sicher verarbeitet und nicht über diese Sitzung hinaus gespeichert.",
+        "privacy_notice": "Ihre E-Mails werden verarbeitet, um KI-Zusammenfassungen und Einblicke zu erstellen. E-Mail-Inhalte und generierte Zusammenfassungen werden gespeichert, um Ihr Posteingangserlebnis bereitzustellen. Weitere Informationen zur Datenverarbeitung finden Sie in unserer Datenschutzrichtlinie.",
         "email_label": "E-Mail",
         "from_sender": "Von {{sender}}",
         "tone_label": "Ton",
@@ -312,7 +312,7 @@
         "attachment_size_error": "Anhänge überschreiten das 25-MB-Limit.",
         "attachment_blocked_type_error": "Ein oder mehrere Anhänge verwenden einen gesperrten Dateityp.",
         "attachment_scope_required": "Verbinden Sie dieses Konto erneut, um Anhänge zu senden.",
-        "attachment_privacy_notice": "Dateien werden ausschließlich über Gmail gesendet und niemals von Executive Brain gespeichert.",
+        "attachment_privacy_notice": "Anhänge werden über das Backend von Executive Brain für eine sichere Zustellung verarbeitet. Dokumentanhänge können von KI analysiert werden, um Zusammenfassungen zu erstellen. Weitere Informationen finden Sie in unserer Datenschutzrichtlinie.",
         "context": {
             "strip_aria_label": "Thread-Kontextsignale",
             "urgency_high": "Überprüfen — Finanziell",

@@ -220,7 +220,7 @@
         "enable_action": "启用",
         "enabling": "启用中...",
         "consent_description": "AI 助手将使用 Executive Brain 智能帮助您起草回复和分析邮件。",
-        "privacy_notice": "您的邮件经过安全处理，不会在本次会话之外存储。",
+        "privacy_notice": "您的电子邮件会被处理，以生成 AI 摘要和洞察。电子邮件内容和生成的摘要会被存储，用于支持您的收件箱体验。有关数据处理的详细信息，请参阅我们的隐私政策。",
         "email_label": "邮件",
         "from_sender": "来自 {{sender}}",
         "tone_label": "语调",
@@ -312,7 +312,7 @@
         "attachment_size_error": "附件超过 25 MB 限制。",
         "attachment_blocked_type_error": "一个或多个附件使用了被屏蔽的文件类型。",
         "attachment_scope_required": "重新连接此账户以发送附件。",
-        "attachment_privacy_notice": "文件仅通过 Gmail 发送，不会由 Executive Brain 存储。",
+        "attachment_privacy_notice": "附件会通过 Executive Brain 的后端进行处理，以便安全送达。文档附件可能会由 AI 分析以生成摘要。有关详细信息，请参阅我们的隐私政策。",
         "context": {
             "strip_aria_label": "线程上下文信号",
             "urgency_high": "核实 — 财务",

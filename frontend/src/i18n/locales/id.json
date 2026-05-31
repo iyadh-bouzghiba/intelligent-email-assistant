@@ -220,7 +220,7 @@
         "enable_action": "Aktifkan",
         "enabling": "Mengaktifkan...",
         "consent_description": "Asisten AI akan membantu Anda membuat draf balasan dan menganalisis email menggunakan kecerdasan Executive Brain.",
-        "privacy_notice": "Email Anda diproses dengan aman dan tidak pernah disimpan di luar sesi ini.",
+        "privacy_notice": "Email Anda diproses untuk menghasilkan ringkasan dan wawasan AI. Konten email dan ringkasan yang dihasilkan disimpan untuk mendukung pengalaman kotak masuk Anda. Lihat kebijakan privasi kami untuk detail tentang penanganan data.",
         "email_label": "Email",
         "from_sender": "Dari {{sender}}",
         "tone_label": "Nada",
@@ -312,7 +312,7 @@
         "attachment_size_error": "Lampiran melebihi batas 25 MB.",
         "attachment_blocked_type_error": "Satu atau lebih lampiran menggunakan jenis file yang diblokir.",
         "attachment_scope_required": "Hubungkan ulang akun ini untuk mengirim lampiran.",
-        "attachment_privacy_notice": "File dikirim hanya melalui Gmail dan tidak pernah disimpan oleh Executive Brain.",
+        "attachment_privacy_notice": "Lampiran diproses melalui backend Executive Brain untuk pengiriman yang aman. Lampiran dokumen dapat dianalisis oleh AI untuk menghasilkan ringkasan. Lihat kebijakan privasi kami untuk detailnya.",
         "context": {
             "strip_aria_label": "Sinyal konteks utas",
             "urgency_high": "Verifikasi — Keuangan",

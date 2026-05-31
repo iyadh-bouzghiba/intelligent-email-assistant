@@ -220,7 +220,7 @@
         "enable_action": "有効化",
         "enabling": "有効化中...",
         "consent_description": "AIアシスタントは、Executive Brain インテリジェンスを使用して返信の下書きやメールの分析を支援します。",
-        "privacy_notice": "お客様のメールは安全に処理され、このセッションを超えて保存されることはありません。",
+        "privacy_notice": "お客様のメールは、AI による要約とインサイトを生成するために処理されます。メールの内容と生成された要約は、受信トレイ体験を提供するために保存されます。データの取り扱いの詳細については、プライバシーポリシーをご確認ください。",
         "email_label": "メール",
         "from_sender": "{{sender}} より",
         "tone_label": "トーン",
@@ -312,7 +312,7 @@
         "attachment_size_error": "添付ファイルが25MBの上限を超えています。",
         "attachment_blocked_type_error": "1つ以上の添付ファイルでブロックされたファイル形式が使用されています。",
         "attachment_scope_required": "添付ファイルを送信するには、このアカウントを再接続してください。",
-        "attachment_privacy_notice": "ファイルは Gmail 経由でのみ送信され、Executive Brain に保存されることはありません。",
+        "attachment_privacy_notice": "添付ファイルは、安全な配信のために Executive Brain のバックエンドを通じて処理されます。ドキュメントの添付ファイルは、要約を生成するために AI によって分析される場合があります。詳細については、プライバシーポリシーをご確認ください。",
         "context": {
             "strip_aria_label": "スレッドコンテキスト",
             "urgency_high": "確認 — 財務",

@@ -220,7 +220,7 @@
         "enable_action": "Enable",
         "enabling": "Enabling...",
         "consent_description": "The AI Assistant will help you draft replies and analyze emails using Executive Brain intelligence.",
-        "privacy_notice": "Your emails are processed securely and never stored beyond this session.",
+        "privacy_notice": "Your emails are processed to generate AI summaries and insights. Email content and generated summaries are stored to power your inbox experience. See our privacy policy for details on data handling.",
         "email_label": "Email",
         "from_sender": "From {{sender}}",
         "tone_label": "Tone",
@@ -312,7 +312,7 @@
         "attachment_size_error": "Attachments exceed the 25 MB limit.",
         "attachment_blocked_type_error": "One or more attachments use a blocked file type.",
         "attachment_scope_required": "Reconnect this account to send attachments.",
-        "attachment_privacy_notice": "Files are sent through Gmail only and are never stored by Executive Brain.",
+        "attachment_privacy_notice": "Attachments are processed through Executive Brain's backend for secure delivery. Document attachments may be analyzed by AI to generate summaries. See our privacy policy for details.",
         "context": {
             "strip_aria_label": "Thread context signals",
             "urgency_high": "Verify — Financial",

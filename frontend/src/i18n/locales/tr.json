@@ -220,7 +220,7 @@
         "enable_action": "Etkinleştir",
         "enabling": "Etkinleştiriliyor...",
         "consent_description": "YZ Asistanı, Executive Brain zekâsını kullanarak yanıt taslağı hazırlamanıza ve e-postaları analiz etmenize yardımcı olacak.",
-        "privacy_notice": "E-postalarınız güvenli şekilde işlenir ve bu oturumun ötesinde asla saklanmaz.",
+        "privacy_notice": "E-postalarınız, yapay zekâ özetleri ve içgörüleri oluşturmak için işlenir. E-posta içeriği ve oluşturulan özetler, gelen kutusu deneyiminizi sağlamak için saklanır. Veri işleme ayrıntıları için gizlilik politikamıza bakın.",
         "email_label": "E-posta",
         "from_sender": "Gönderen: {{sender}}",
         "tone_label": "Ton",
@@ -312,7 +312,7 @@
         "attachment_size_error": "Ekler 25 MB sınırını aşıyor.",
         "attachment_blocked_type_error": "Bir veya daha fazla ekte engellenen bir dosya türü kullanılıyor.",
         "attachment_scope_required": "Ek göndermek için bu hesabı yeniden bağlayın.",
-        "attachment_privacy_notice": "Dosyalar yalnızca Gmail üzerinden gönderilir ve Executive Brain tarafından asla saklanmaz.",
+        "attachment_privacy_notice": "Ekler, güvenli teslimat için Executive Brain'in arka ucu üzerinden işlenir. Belge ekleri, özetler oluşturmak için yapay zekâ tarafından analiz edilebilir. Ayrıntılar için gizlilik politikamıza bakın.",
         "context": {
             "strip_aria_label": "Konu bağlamı sinyalleri",
             "urgency_high": "Doğrula — Finansal",
