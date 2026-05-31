@@ -220,7 +220,7 @@
         "enable_action": "활성화",
         "enabling": "활성화 중...",
         "consent_description": "AI 어시스턴트는 Executive Brain 인텔리전스를 사용하여 답장 초안 작성 및 이메일 분석을 도와드립니다.",
-        "privacy_notice": "이메일은 안전하게 처리되며 이 세션을 넘어 저장되지 않습니다.",
+        "privacy_notice": "이메일은 AI 요약 및 인사이트를 생성하기 위해 처리됩니다. 이메일 콘텐츠와 생성된 요약은 받은편지함 경험을 제공하기 위해 저장됩니다. 데이터 처리에 대한 자세한 내용은 개인정보 처리방침을 확인하세요.",
         "email_label": "이메일",
         "from_sender": "{{sender}} 님으로부터",
         "tone_label": "톤",
@@ -312,7 +312,7 @@
         "attachment_size_error": "첨부파일이 25MB 제한을 초과했습니다.",
         "attachment_blocked_type_error": "하나 이상의 첨부파일에 차단된 파일 형식이 사용되었습니다.",
         "attachment_scope_required": "첨부파일을 보내려면 이 계정을 다시 연결하세요.",
-        "attachment_privacy_notice": "파일은 Gmail을 통해서만 전송되며 Executive Brain에는 절대 저장되지 않습니다.",
+        "attachment_privacy_notice": "첨부 파일은 안전한 전달을 위해 Executive Brain 백엔드를 통해 처리됩니다. 문서 첨부 파일은 요약을 생성하기 위해 AI로 분석될 수 있습니다. 자세한 내용은 개인정보 처리방침을 확인하세요.",
         "context": {
             "strip_aria_label": "스레드 컨텍스트 신호",
             "urgency_high": "확인 — 재무",

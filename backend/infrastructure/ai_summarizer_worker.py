@@ -111,14 +111,26 @@ def _bypass_urgency(category: str) -> str:
     return "low"
 
 
-def _truncate_to_word(text: str, max_chars: int) -> str:
-    """Truncate text without cutting the final word when possible."""
+def _truncate_action_item(text: str, max_chars: int = 120) -> str:
     if len(text) <= max_chars:
         return text
 
-    truncated = text[:max_chars]
-    last_space = truncated.rfind(" ")
-    return truncated[:last_space] if last_space > 0 else truncated
+    window = text[:max_chars]
+    sentence_endings = [
+        ". ",
+        "? ",
+        "! ",
+        ".\u201d",
+        "?\u201d",
+        "!\u201d",
+    ]
+    for end_char in sentence_endings:
+        pos = window.rfind(end_char)
+        if pos > max_chars - 25:
+            return window[:pos + 1].rstrip()
+
+    last_space = window.rfind(" ")
+    return window[:last_space].rstrip() if last_space > 0 else window
 
 
 # Rate limit retry configuration
@@ -854,7 +866,7 @@ class AISummarizerWorker:
             summary_json = {
                 "overview": validated.overview[:400],
                 "action_items": [
-                    _truncate_to_word(str(a), 80)
+                    _truncate_action_item(str(a))
                     for a in validated.action_items[:5]
                 ],
                 "urgency": validated.urgency,
@@ -1192,7 +1204,7 @@ class AISummarizerWorker:
             summary_json = {
                 "overview": validated.overview[:200],
                 "action_items": [
-                    _truncate_to_word(str(a), 80)
+                    _truncate_action_item(str(a))
                     for a in validated.action_items[:5]
                 ],
                 "urgency": validated.urgency,
