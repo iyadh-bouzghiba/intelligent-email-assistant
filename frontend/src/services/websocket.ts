@@ -71,6 +71,12 @@ class WebSocketService {
             return;
         }
 
+        if (this.socket) {
+            this.socket.removeAllListeners();
+            this.socket.disconnect();
+            this.socket = null;
+        }
+
         const SOCKET_URL = this.getSocketUrl();
 
         const isLocalSocket =

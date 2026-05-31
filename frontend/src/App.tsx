@@ -491,6 +491,7 @@ export const App = () => {
   // Global session-expired handler: reset all UI state when backend returns 401
   useEffect(() => {
     const handleAuthRequired = () => {
+      websocketService.disconnect();
       activeEmailRef.current = null;
       syncingRef.current = false;
       localStorage.removeItem('last_selected_account');
@@ -1243,6 +1244,20 @@ export const App = () => {
     }
   }, [activeEmail]);
 
+  // Activate Socket.IO only when an authenticated account context is selected.
+  useEffect(() => {
+    if (!activeEmail) {
+      websocketService.disconnect();
+      return;
+    }
+
+    websocketService.connect();
+
+    return () => {
+      websocketService.disconnect();
+    };
+  }, [activeEmail]);
+
   // Keep aiLanguageRef in sync for closure-safe access inside fetchEmails
   useEffect(() => {
     aiLanguageRef.current = aiLanguage;
@@ -1528,6 +1543,7 @@ export const App = () => {
 
       // If disconnected account was active, clear active email and all scoped UI state
       if (activeEmail === account_id) {
+        websocketService.disconnect();
         setActiveEmail(null);
         localStorage.removeItem('last_selected_account');
         setBriefings([]); // Clear emails since no account is active
