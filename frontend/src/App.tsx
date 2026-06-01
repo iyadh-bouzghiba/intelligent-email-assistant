@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import './i18n';
 import { apiService, AILanguage } from '@services';
 import { websocketService, type EmailsUpdatedData, type SummaryReadyData } from '@services/websocket';
@@ -1531,24 +1531,36 @@ export const App = () => {
   const handleDisconnect = async (account_id: string) => {
     setConfirmDisconnect(null);
     devLog(`[DISCONNECT] Disconnecting account: ${account_id}`);
+    const wasActiveAccount = activeEmail === account_id;
+
     try {
+      if (wasActiveAccount) {
+        websocketService.disconnect();
+        activeEmailRef.current = null;
+        syncingRef.current = false;
+      }
+
       await apiService.disconnectAccount(account_id);
       devLog(`[DISCONNECT] Successfully disconnected: ${account_id}`);
 
-      // CRITICAL: Reload accounts list from backend to reflect disconnect
-      const accountsData = await apiService.listAccounts();
-      const loadedAccounts: AccountInfo[] = accountsData.accounts || [];
-      setAccounts(loadedAccounts);
-      devLog(`[DISCONNECT] Reloaded ${loadedAccounts.length} accounts`);
-
-      // If disconnected account was active, clear active email and all scoped UI state
-      if (activeEmail === account_id) {
-        websocketService.disconnect();
+      if (wasActiveAccount) {
         setActiveEmail(null);
         localStorage.removeItem('last_selected_account');
-        setBriefings([]); // Clear emails since no account is active
+        setBriefings([]);
+        setSentEmails([]);
         resetAccountScopedState();
+        setLoading(false);
+        setLoadingSent(false);
+        setSyncing(false);
+        setError(null);
         devLog(`[DISCONNECT] Cleared active account (was ${account_id})`);
+      } else {
+        // Non-active account removed — refresh account list only.
+        // Cookie was NOT cleared by backend. Session remains valid.
+        const updated = await apiService.listAccounts();
+        const loadedAccounts: AccountInfo[] = updated.accounts || [];
+        setAccounts(loadedAccounts);
+        devLog(`[DISCONNECT] Reloaded ${loadedAccounts.length} accounts`);
       }
     } catch (err) {
       console.error('[DISCONNECT] Failed to disconnect account:', account_id, err);
@@ -2138,12 +2150,22 @@ export const App = () => {
 
   const handleDisconnectAll = async () => {
     try {
+      websocketService.disconnect();
+      activeEmailRef.current = null;
+      syncingRef.current = false;
+      localStorage.removeItem('last_selected_account');
+
       await apiService.disconnectAllAccounts();
+
       setAccounts([]);
       setActiveEmail(null);
-      localStorage.removeItem('last_selected_account');
+      setBriefings([]);
+      setSentEmails([]);
       resetAccountScopedState();
-      await fetchEmails(null, { reason: 'disconnect-all' }); // null = no active account; stale guard skips
+      setLoading(false);
+      setLoadingSent(false);
+      setSyncing(false);
+      setError(null);
     } catch (err) {
       console.error('[DISCONNECT-ALL] Failed:', err);
     }
@@ -3710,3 +3732,4 @@ export const App = () => {
 };
 
 export default App;
+

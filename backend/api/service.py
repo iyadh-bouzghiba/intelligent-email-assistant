@@ -1,4 +1,4 @@
-"""
+﻿"""
 Intelligent Email Assistant - API Service
 
 FastAPI application providing:
@@ -74,6 +74,7 @@ from backend.config import Config
 from backend.core import EmailAssistant
 
 from backend.auth_guard import (  # noqa: E402
+    build_session_cookie_clear_kwargs,
     build_session_cookie_kwargs,
     create_access_token,
     require_jwt_auth,
@@ -3182,17 +3183,27 @@ async def list_accounts():
         return {"accounts": []}
 
 @api_router.post("/accounts/{account_id}/disconnect")
-async def disconnect_account(account_id: str):
+async def disconnect_account(
+    account_id: str,
+    request: Request,
+    response: Response,
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     """
     Disconnects a Google account by deleting its credentials.
     """
     effective_account_id = resolve_account_id(None, account_id)
     credential_store = CredentialStore(persistence)
     await asyncio.to_thread(credential_store.delete_credentials, effective_account_id)
+    if effective_account_id == jwt_subject:
+        response.set_cookie(**build_session_cookie_clear_kwargs(request))
     return {"status": "disconnected", "account_id": effective_account_id}
 
 @api_router.post("/accounts/disconnect-all")
-async def disconnect_all_accounts():
+async def disconnect_all_accounts(
+    request: Request,
+    response: Response,
+):
     """
     MIGRATION HELPER: Disconnects ALL accounts (including legacy "default" accounts).
     Use this to clean up before reconnecting with real email IDs.
@@ -3205,6 +3216,7 @@ async def disconnect_all_accounts():
         gmail_resp = store.client.table("credentials").delete().eq("provider", "gmail").execute()
         deleted_count = len(gmail_resp.data) if gmail_resp.data else 0
         print(f"[OK] [CLEANUP] Deleted {deleted_count} gmail credentials")
+        response.set_cookie(**build_session_cookie_clear_kwargs(request))
         return {"status": "success", "deleted_count": deleted_count}
     except Exception as e:
         print(f"[ERROR] [CLEANUP] Failed to delete credentials: {e}")
@@ -5783,4 +5795,6 @@ sio_app = socketio.ASGIApp(
     other_asgi_app=app,
     socketio_path="/socket.io",
 )
+
+
 

@@ -1,4 +1,4 @@
-import os
+﻿import os
 import time
 from http.cookies import CookieError, SimpleCookie
 from typing import Optional
@@ -164,6 +164,24 @@ def build_session_cookie_kwargs(request: Request) -> dict:
         "path": "/",
     }
 
+
+
+
+def build_session_cookie_clear_kwargs(request: Request) -> dict:
+    """Return set_cookie kwargs that expire iea_session immediately.
+
+    Reuses build_session_cookie_kwargs to guarantee attribute
+    identity (httponly, secure, samesite, path). Overrides only
+    the value and expiry fields.
+    """
+    cookie_kwargs = build_session_cookie_kwargs(request).copy()
+    cookie_kwargs.pop("max_age", None)
+    return {
+        **cookie_kwargs,
+        "value": "",
+        "max_age": 0,
+        "expires": 0,
+    }
 
 def require_jwt_auth(request: Request) -> str:
     token = request.cookies.get(COOKIE_NAME)
