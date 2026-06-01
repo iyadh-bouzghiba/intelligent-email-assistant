@@ -156,6 +156,7 @@ if FRONTEND_ASSETS.exists():
 sio = socketio.AsyncServer(
     async_mode="asgi",
     cors_allowed_origins=[
+        "https://intelligent-email-assistant-3e1a.onrender.com",
         "https://intelligent-email-frontend.onrender.com",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
