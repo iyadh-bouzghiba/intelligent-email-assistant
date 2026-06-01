@@ -95,7 +95,7 @@ class WebSocketService {
                 ? { transports: ["websocket"] }
                 : IS_DEV
                     ? { transports: ["polling"], upgrade: false, rememberUpgrade: false }
-                    : { transports: ["websocket", "polling"] }),
+                    : { transports: ["polling"], upgrade: false, rememberUpgrade: false }),
         };
 
         this.socket = io(SOCKET_URL, socketOptions);
