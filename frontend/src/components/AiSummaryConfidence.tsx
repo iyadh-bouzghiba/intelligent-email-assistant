@@ -10,7 +10,7 @@ interface Props {
   className?: string;
 }
 
-const AI_LANGUAGES = ['en', 'fr', 'ar', 'de', 'es', 'pt-BR', 'zh', 'ja', 'ko'] as const;
+const AI_LANGUAGES = ['en', 'de', 'fr', 'es', 'pt-BR', 'tr', 'ar', 'zh', 'ja', 'ko'] as const;
 type AiLanguage = typeof AI_LANGUAGES[number];
 
 const reasonKeyMap = {

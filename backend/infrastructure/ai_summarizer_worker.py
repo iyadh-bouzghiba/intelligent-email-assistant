@@ -146,7 +146,7 @@ _WORD_RE = re.compile(r'[a-zA-Z]{2,}')
 # Languages that need script-based evidence (no Latin fallback)
 _NON_LATIN_LANGS = frozenset({"ar", "zh", "ja", "ko"})
 # Latin non-English languages — English-dominance detection
-_LATIN_NON_EN_LANGS = frozenset({"fr", "de", "es", "pt-BR"})
+_LATIN_NON_EN_LANGS = frozenset({"fr", "de", "es", "pt-BR", "tr"})
 
 # Strong English function words with negligible overlap in fr/de/es/pt-BR
 _EN_MARKERS = frozenset({
@@ -190,6 +190,13 @@ _LANG_MARKERS: dict = {
         "mas", "se", "ao", "aos", "como", "seu", "sua", "seus",
         "suas", "ele", "ela", "eles", "elas", "foi", "sao",
     }),
+    "tr": frozenset({
+        "bu", "bir", "ve", "ile", "icin", "için",
+        "hakkinda", "hakkında", "gerekli", "takip",
+        "adimlari", "adımları", "toplanti", "toplantı",
+        "hazirligi", "hazırlığı", "bilgi", "veriyor",
+        "olan", "olarak",
+    }),
 }
 
 
@@ -200,7 +207,7 @@ def _detect_language_mismatch(text: str, target_lang: str) -> bool:
     - Arabic target: text must contain Arabic script characters.
     - Chinese/Japanese target: text must contain CJK characters.
     - Korean target: text must contain Hangul characters.
-    - Latin non-English (fr/de/es/pt-BR): flags only when English function-word
+    - Latin non-English (fr/de/es/pt-BR/tr): flags only when English function-word
       markers strongly dominate (>=3) and target-language markers are absent.
       Valid ASCII-only target-language text is never flagged.
     - English / unknown: never mismatch.

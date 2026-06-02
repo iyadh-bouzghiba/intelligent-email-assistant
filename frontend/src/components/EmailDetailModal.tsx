@@ -77,6 +77,8 @@ export function EmailDetailModal({
         return t('languages.spanish');
       case 'pt-BR':
         return t('languages.portuguese_brazil');
+      case 'tr':
+        return t('languages.turkish');
       case 'zh':
         return t('languages.chinese');
       case 'ja':
