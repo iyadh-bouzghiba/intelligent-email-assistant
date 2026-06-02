@@ -256,7 +256,7 @@ CREATE TABLE IF NOT EXISTS public.user_preferences (
   ai_language TEXT NOT NULL DEFAULT 'en',
   ai_priority_profile JSONB,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT user_preferences_ai_language_chk CHECK (ai_language IN ('en', 'de', 'fr', 'es', 'pt-BR', 'ar', 'zh', 'ja', 'ko'))
+  CONSTRAINT user_preferences_ai_language_chk CHECK (ai_language IN ('en', 'de', 'fr', 'es', 'pt-BR', 'tr', 'ar', 'zh', 'ja', 'ko'))
 );
 
 -- Upgrade-safe column additions for existing deployments
@@ -273,7 +273,7 @@ DO $$
 BEGIN
   ALTER TABLE public.user_preferences
     ADD CONSTRAINT user_preferences_ai_language_chk
-    CHECK (ai_language IN ('en', 'de', 'fr', 'es', 'pt-BR', 'ar', 'zh', 'ja', 'ko'));
+    CHECK (ai_language IN ('en', 'de', 'fr', 'es', 'pt-BR', 'tr', 'ar', 'zh', 'ja', 'ko'));
 EXCEPTION
   WHEN duplicate_object THEN
     NULL; -- constraint already exists; nothing to do

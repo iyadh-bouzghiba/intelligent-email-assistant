@@ -83,6 +83,7 @@ const FALLBACK_LANGUAGE_OPTIONS: SupportedLanguage[] = [
   { code: 'fr', label: 'French', native: 'Français' },
   { code: 'es', label: 'Spanish', native: 'Español' },
   { code: 'pt-BR', label: 'Portuguese (Brazil)', native: 'Português (Brasil)' },
+  { code: 'tr', label: 'Turkish', native: 'Türkçe' },
   { code: 'ar', label: 'Arabic', native: 'العربية' },
   { code: 'zh', label: 'Chinese (Simplified)', native: '简体中文' },
   { code: 'ja', label: 'Japanese', native: '日本語' },

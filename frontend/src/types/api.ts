@@ -1,4 +1,4 @@
-export type AILanguage = "en" | "de" | "fr" | "es" | "pt-BR" | "ar" | "zh" | "ja" | "ko";
+export type AILanguage = "en" | "de" | "fr" | "es" | "pt-BR" | "tr" | "ar" | "zh" | "ja" | "ko";
 export type TranslationLanguage = "en" | "fr" | "ar";
 
 export type AIUniversalCategory =

@@ -12,7 +12,7 @@ __all__ = [
     "build_summary_prompt",
 ]
 
-LATIN_LANGUAGES: tuple[str, ...] = ("en", "de", "fr", "es", "pt-BR")
+LATIN_LANGUAGES: tuple[str, ...] = ("en", "de", "fr", "es", "pt-BR", "tr")
 SEMITIC_LANGUAGES: tuple[str, ...] = ("ar",)
 EAST_ASIAN_LANGUAGES: tuple[str, ...] = ("zh", "ja", "ko")
 
@@ -24,6 +24,7 @@ _LANGUAGE_NAMES: dict[str, str] = {
     "de": "German",
     "es": "Spanish",
     "pt-BR": "Brazilian Portuguese",
+    "tr": "Turkish",
     "zh": "Simplified Chinese",
     "ja": "Japanese",
     "ko": "Korean",

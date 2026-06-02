@@ -10,6 +10,21 @@ Adding a new language requires only:
   2. A corresponding update to the DB CHECK constraint in setup_schema.sql
 """
 
+SUMMARY_CATEGORIES = (
+    "action_required",
+    "informational",
+    "meeting",
+    "finance",
+    "travel",
+    "alert",
+)
+
+_CATEGORY_CLAUSE = (
+    '"category" field must be exactly one of: '
+    + ", ".join(f'"{c}"' for c in SUMMARY_CATEGORIES)
+    + "."
+)
+
 SUPPORTED_LANGUAGES: dict = {
     "en": {
         "label": "English",
@@ -84,6 +99,23 @@ SUPPORTED_LANGUAGES: dict = {
         "draft_instruction": (
             "Escreva o rascunho da resposta somente em português do Brasil. "
             "Retorne apenas o corpo da resposta, sem preâmbulo, explicação ou linha de assunto."
+        ),
+    },
+    "tr": {
+        "label": "Turkish",
+        "native": "Türkçe",
+        "summary_instruction": (
+            "Kullanıcıya görünen tüm doğal dil alanlarını "
+            "Türkçe, resmi ve yönetici düzeyindeki iş "
+            "iletişimine uygun bir üslupla yazın. "
+            "JSON şemasını değiştirmeden koruyun. "
+            '"urgency" alanı tam olarak "low", "medium" '
+            'veya "high" değerlerinden biri olmalıdır. '
+            + _CATEGORY_CLAUSE
+        ),
+        "draft_instruction": (
+            "Yanıt taslağını yalnızca Türkçe, resmi ve profesyonel iş üslubuyla yazın. "
+            "Yalnızca yanıt gövdesi metnini döndürün; giriş, açıklama veya konu satırı eklemeyin."
         ),
     },
     "ar": {

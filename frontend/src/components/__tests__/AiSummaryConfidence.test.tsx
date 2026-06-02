@@ -15,6 +15,7 @@ const EXPECTED_LABELS: Record<string, string> = {
   de: 'KI-Konfidenz',
   es: 'Confianza de IA',
   'pt-BR': 'Confiança da IA',
+  tr: 'YZ güveni',
   zh: 'AI 置信度',
   ja: 'AI信頼度',
   ko: 'AI 신뢰도',
@@ -106,7 +107,7 @@ describe('AiSummaryConfidence', () => {
   });
 
   // Per-language label tests
-  const AI_LANGUAGES = ['en', 'fr', 'ar', 'de', 'es', 'pt-BR', 'zh', 'ja', 'ko'] as const;
+  const AI_LANGUAGES = ['en', 'de', 'fr', 'es', 'pt-BR', 'tr', 'ar', 'zh', 'ja', 'ko'] as const;
 
   for (const lang of AI_LANGUAGES) {
     it(`renders expected label for ai_preferred_language="${lang}"`, async () => {

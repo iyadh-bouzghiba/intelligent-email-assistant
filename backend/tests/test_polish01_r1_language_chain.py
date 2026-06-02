@@ -4,9 +4,9 @@ POLISH01-R1 — Language contract chain tests.
 Coverage groups:
   P1  enqueue_ai_job persists ai_language
   P2  worker process_job prefers job.ai_language over account preference
-  P3  prompt_builder includes exact-language instruction for all 9 AI languages
+  P3  prompt_builder includes exact-language instruction for all 10 AI languages
   P4  worker language guard refuses obvious English output for non-English target
-  P5  normalize_language handles all 9 AI languages
+  P5  normalize_language handles all 10 AI languages
 
 No live Supabase, Mistral, or network access.
 """
@@ -99,8 +99,8 @@ class TestEnqueueAiJobLanguage(unittest.TestCase):
         payload = fake_client.table.return_value.upsert.call_args[0][0]
         self.assertNotIn("ai_language", payload)
 
-    def test_all_9_ai_languages_accepted(self):
-        for lang in ("en", "fr", "ar", "de", "es", "pt-BR", "zh", "ja", "ko"):
+    def test_all_10_ai_languages_accepted(self):
+        for lang in ("en", "fr", "ar", "de", "es", "pt-BR", "tr", "zh", "ja", "ko"):
             instance, fake_client = _make_enqueue_instance()
             instance.enqueue_ai_job("acc1", "msg1", ai_language=lang)
             payload = fake_client.table.return_value.upsert.call_args[0][0]
@@ -175,7 +175,7 @@ class TestProcessJobLanguageResolution(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# P3 — prompt_builder includes exact-language instruction for all 9 AI languages
+# P3 — prompt_builder includes exact-language instruction for all 10 AI languages
 # ---------------------------------------------------------------------------
 
 class TestPromptBuilderLanguageEnforcement(unittest.TestCase):
@@ -188,6 +188,7 @@ class TestPromptBuilderLanguageEnforcement(unittest.TestCase):
         "de": "strictly in German",
         "es": "strictly in Spanish",
         "pt-BR": "strictly in Brazilian Portuguese",
+        "tr": "strictly in Turkish",
         "zh": "strictly in Simplified Chinese",
         "ja": "strictly in Japanese",
         "ko": "strictly in Korean",
@@ -198,12 +199,12 @@ class TestPromptBuilderLanguageEnforcement(unittest.TestCase):
         self.assertIn("strictly in English", prompt)
 
     def test_non_english_prompt_contains_do_not_use_english_clause(self):
-        for lang in ("fr", "ar", "de", "es", "pt-BR", "zh", "ja", "ko"):
+        for lang in ("fr", "ar", "de", "es", "pt-BR", "tr", "zh", "ja", "ko"):
             prompt = build_summary_prompt("UNCATEGORIZED", lang)
             self.assertIn("Do not use English unless the target language is English", prompt,
                           f"Missing no-English clause for lang={lang}")
 
-    def test_all_9_languages_have_expected_instruction_fragment(self):
+    def test_all_10_languages_have_expected_instruction_fragment(self):
         for lang, fragment in self.EXPECTED_INSTRUCTION_FRAGMENTS.items():
             prompt = build_summary_prompt("UNCATEGORIZED", lang)
             self.assertIn(fragment, prompt, f"Missing '{fragment}' for lang={lang}")
@@ -300,6 +301,15 @@ class TestLanguageMismatchGuard(unittest.TestCase):
         self.assertTrue(_detect_language_mismatch(
             "This email contains important information about the meeting", "pt-BR"))
 
+    # Turkish (Latin non-English)
+    def test_turkish_target_with_turkish_text_passes(self):
+        self.assertFalse(_detect_language_mismatch(
+            "Bu e-posta toplantı hazırlığı ve gerekli takip adımları hakkında bilgi veriyor", "tr"))
+
+    def test_turkish_target_with_english_text_fails(self):
+        self.assertTrue(_detect_language_mismatch(
+            "This email contains important information about the meeting", "tr"))
+
     # English target — never mismatches
     def test_english_target_never_mismatches(self):
         self.assertFalse(_detect_language_mismatch("Hello world this is a summary", "en"))
@@ -316,14 +326,14 @@ class TestLanguageMismatchGuard(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# P5 — normalize_language handles all 9 AI languages
+# P5 — normalize_language handles all 10 AI languages
 # ---------------------------------------------------------------------------
 
 class TestNormalizeLanguage(unittest.TestCase):
-    """P5x — normalize_language returns canonical codes for all 9 AI languages."""
+    """P5x — normalize_language returns canonical codes for all 10 AI languages."""
 
-    def test_all_9_ai_languages_normalize_to_themselves(self):
-        for lang in ("en", "fr", "ar", "de", "es", "pt-BR", "zh", "ja", "ko"):
+    def test_all_10_ai_languages_normalize_to_themselves(self):
+        for lang in ("en", "fr", "ar", "de", "es", "pt-BR", "tr", "zh", "ja", "ko"):
             self.assertEqual(normalize_language(lang), lang, f"normalize_language({lang!r}) failed")
 
     def test_unknown_language_defaults_to_en(self):
