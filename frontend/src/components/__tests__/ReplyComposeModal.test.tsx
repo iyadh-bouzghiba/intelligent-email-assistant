@@ -67,9 +67,12 @@ vi.mock('react-i18next', () => ({
         'inbox.urgency.medium': 'Medium',
         'inbox.urgency.low': 'Low',
         'ai_summary_category.label': 'Category:',
-        'ai_summary_category.ACTION_REQUIRED': 'Action Required',
-        'ai_summary_category.PROJECT_WORK': 'Project Work',
-        'ai_summary_category.SCHEDULING': 'Scheduling',
+        'category.action_required': 'Action Required',
+        'category.informational': 'Informational',
+        'category.meeting': 'Meeting',
+        'category.finance': 'Finance',
+        'category.travel': 'Travel',
+        'category.alert': 'Alert',
       };
       return map[key] ?? key;
     },
@@ -222,6 +225,6 @@ describe('ReplyComposeModal — AI summary category rendering in reference block
     render(<ReplyComposeModal {...defaultProps} email={email} />);
 
     expect(screen.getByText('Category:')).toBeInTheDocument();
-    expect(screen.getByText('Project Work')).toBeInTheDocument();
+    expect(screen.getByText('Informational')).toBeInTheDocument();
   });
 });

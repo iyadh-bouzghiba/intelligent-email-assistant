@@ -396,5 +396,13 @@
         "AUTOMATED_SYSTEM": "स्वचालित सिस्टम",
         "PERSONAL_SOCIAL": "व्यक्तिगत और सामाजिक",
         "UNCATEGORIZED": "अवर्गीकृत"
+    },
+    "category": {
+        "action_required": "कार्रवाई आवश्यक",
+        "informational": "सूचनात्मक",
+        "meeting": "बैठक",
+        "finance": "वित्त",
+        "travel": "यात्रा",
+        "alert": "अलर्ट"
     }
 }

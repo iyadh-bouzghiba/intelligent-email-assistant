@@ -396,5 +396,13 @@
         "AUTOMATED_SYSTEM": "自动化系统",
         "PERSONAL_SOCIAL": "个人与社交",
         "UNCATEGORIZED": "未分类"
+    },
+    "category": {
+        "action_required": "需要处理",
+        "informational": "信息通知",
+        "meeting": "会议",
+        "finance": "财务",
+        "travel": "差旅",
+        "alert": "提醒"
     }
 }

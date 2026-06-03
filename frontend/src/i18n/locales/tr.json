@@ -396,5 +396,13 @@
         "AUTOMATED_SYSTEM": "Otomatik ve sistem",
         "PERSONAL_SOCIAL": "Kişisel ve sosyal",
         "UNCATEGORIZED": "Kategorisiz"
+    },
+    "category": {
+        "action_required": "İşlem gerekli",
+        "informational": "Bilgilendirme",
+        "meeting": "Toplantı",
+        "finance": "Finans",
+        "travel": "Seyahat",
+        "alert": "Uyarı"
     }
 }

@@ -1,20 +1,29 @@
-import type { AIUniversalCategory } from "../types/api";
-
 export const AI_SUMMARY_CATEGORY_LABEL_KEY = "ai_summary_category.label";
 
-const AI_SUMMARY_CATEGORY_KEYS: Record<AIUniversalCategory, string> = {
-  ACTION_REQUIRED: "ai_summary_category.ACTION_REQUIRED",
-  FINANCIAL_LEGAL: "ai_summary_category.FINANCIAL_LEGAL",
-  SECURITY_ACCOUNT: "ai_summary_category.SECURITY_ACCOUNT",
-  PROJECT_WORK: "ai_summary_category.PROJECT_WORK",
-  CONVERSATION: "ai_summary_category.CONVERSATION",
-  SCHEDULING: "ai_summary_category.SCHEDULING",
-  CONTENT_INFO: "ai_summary_category.CONTENT_INFO",
-  AUTOMATED_SYSTEM: "ai_summary_category.AUTOMATED_SYSTEM",
-  PERSONAL_SOCIAL: "ai_summary_category.PERSONAL_SOCIAL",
-  UNCATEGORIZED: "ai_summary_category.UNCATEGORIZED",
+const LEGACY_AI_SUMMARY_CATEGORY_TO_DIM1_CATEGORY: Record<string, string> = {
+  ACTION_REQUIRED: "action_required",
+  FINANCIAL_LEGAL: "finance",
+  SCHEDULING: "meeting",
+  PROJECT_WORK: "informational",
+  CONTENT_INFO: "informational",
+  AUTOMATED_SYSTEM: "alert",
+  SECURITY_ACCOUNT: "alert",
+  CONVERSATION: "informational",
+  PERSONAL_SOCIAL: "informational",
+  UNCATEGORIZED: "informational",
 };
 
-export function getAISummaryCategoryKey(category: AIUniversalCategory): string {
-  return AI_SUMMARY_CATEGORY_KEYS[category];
+export function getAISummaryCategoryI18nValue(category: string): string {
+  const trimmed = category.trim();
+  if (trimmed === "") return trimmed;
+
+  if (Object.prototype.hasOwnProperty.call(LEGACY_AI_SUMMARY_CATEGORY_TO_DIM1_CATEGORY, trimmed)) {
+    return LEGACY_AI_SUMMARY_CATEGORY_TO_DIM1_CATEGORY[trimmed];
+  }
+
+  return trimmed
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    .replace(/[\s-]+/g, "_")
+    .toLowerCase();
 }

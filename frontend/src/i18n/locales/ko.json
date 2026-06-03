@@ -396,5 +396,13 @@
         "AUTOMATED_SYSTEM": "자동화 시스템",
         "PERSONAL_SOCIAL": "개인 및 소셜",
         "UNCATEGORIZED": "미분류"
+    },
+    "category": {
+        "action_required": "조치 필요",
+        "informational": "정보",
+        "meeting": "회의",
+        "finance": "재무",
+        "travel": "출장",
+        "alert": "알림"
     }
 }

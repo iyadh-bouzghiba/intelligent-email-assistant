@@ -6,7 +6,7 @@ import { EmailViewModel, DraftTone, SupportedTone, EmailTemplate, ReplyAttachmen
 import { FocusTrap } from './FocusTrap';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
 import { deriveThreadContext } from '@utils/deriveThreadContext';
-import { getAISummaryCategoryKey, AI_SUMMARY_CATEGORY_LABEL_KEY } from '@utils/aiSummaryCategory';
+import { getAISummaryCategoryI18nValue, AI_SUMMARY_CATEGORY_LABEL_KEY } from '@utils/aiSummaryCategory';
 import AiSummaryConfidence from './AiSummaryConfidence';
 import ThreadContextSignal from './ThreadContextSignal';
 
@@ -136,7 +136,7 @@ export function ReplyComposeModal({
   };
 
   const category = email.ai_summary_json?.category;
-  const categoryKey = category ? getAISummaryCategoryKey(category) : null;
+  const categoryI18nValue = category ? getAISummaryCategoryI18nValue(category) : null;
 
   const [showQuoted, setShowQuoted] = useState(false);
   const [localTone, setLocalTone] = useState<DraftTone>('professional');
@@ -532,7 +532,7 @@ export function ReplyComposeModal({
                         </p>
                       </div>
 
-                      {(email.ai_summary_json?.urgency || categoryKey) && (
+                      {(email.ai_summary_json?.urgency || categoryI18nValue) && (
                         <div className="space-y-0.5 px-1">
                           {email.ai_summary_json?.urgency && (
                             <p className="text-[10px] text-slate-500">
@@ -542,10 +542,10 @@ export function ReplyComposeModal({
                               </span>
                             </p>
                           )}
-                          {categoryKey && (
+                          {categoryI18nValue && (
                             <p className="text-[10px] text-slate-500">
                               {t(AI_SUMMARY_CATEGORY_LABEL_KEY)}{' '}
-                              <span className="font-semibold text-slate-400">{t(categoryKey)}</span>
+                              <span className="font-semibold text-slate-400">{t(`category.${categoryI18nValue}`, { defaultValue: category })}</span>
                             </p>
                           )}
                         </div>

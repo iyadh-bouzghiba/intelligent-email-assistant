@@ -396,5 +396,13 @@
         "AUTOMATED_SYSTEM": "Sistem otomatis",
         "PERSONAL_SOCIAL": "Pribadi dan sosial",
         "UNCATEGORIZED": "Tidak dikategorikan"
+    },
+    "category": {
+        "action_required": "Perlu tindakan",
+        "informational": "Informasional",
+        "meeting": "Rapat",
+        "finance": "Keuangan",
+        "travel": "Perjalanan",
+        "alert": "Peringatan"
     }
 }

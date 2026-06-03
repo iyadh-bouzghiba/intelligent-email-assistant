@@ -2,7 +2,7 @@ import { RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ExternalLink, Globe, RefreshCw, Sparkles } from 'lucide-react';
 import { EmailViewModel } from '@types';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
-import { getAISummaryCategoryKey, AI_SUMMARY_CATEGORY_LABEL_KEY } from '@utils/aiSummaryCategory';
+import { getAISummaryCategoryI18nValue, AI_SUMMARY_CATEGORY_LABEL_KEY } from '@utils/aiSummaryCategory';
 import { AttachmentStrip, AttachmentStripItem } from './AttachmentStrip';
 import { ImageLightbox } from './ImageLightbox';
 import { useTranslation } from 'react-i18next';
@@ -248,7 +248,7 @@ export function EmailFullView({
   };
 
   const category = email.ai_summary_json?.category;
-  const categoryKey = category ? getAISummaryCategoryKey(category) : null;
+  const categoryI18nValue = category ? getAISummaryCategoryI18nValue(category) : null;
 
   useEffect(() => {
     setLightboxAttachment(null);
@@ -507,7 +507,7 @@ export function EmailFullView({
             <p className="text-sm leading-relaxed text-slate-200">{email.ai_summary_text}</p>
           </div>
 
-          {(email.ai_summary_json?.urgency || categoryKey) && (
+          {(email.ai_summary_json?.urgency || categoryI18nValue) && (
             <div className="space-y-1">
               {email.ai_summary_json?.urgency && (
                 <p className="text-xs text-slate-500">
@@ -515,10 +515,10 @@ export function EmailFullView({
                   <span className="font-bold text-slate-400 capitalize">{getUrgencyLabel(email.ai_summary_json.urgency)}</span>
                 </p>
               )}
-              {categoryKey && (
+              {categoryI18nValue && (
                 <p className="text-xs text-slate-500">
                   {t(AI_SUMMARY_CATEGORY_LABEL_KEY)}{' '}
-                  <span className="font-semibold text-slate-400">{t(categoryKey)}</span>
+                  <span className="font-semibold text-slate-400">{t(`category.${categoryI18nValue}`, { defaultValue: category })}</span>
                 </p>
               )}
             </div>

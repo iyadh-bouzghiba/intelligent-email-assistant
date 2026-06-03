@@ -3,7 +3,7 @@ import { Sparkles, Bot } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { EmailViewModel } from '@types';
 import { normalizeBodyText } from '@utils/normalizeBodyText';
-import { getAISummaryCategoryKey, AI_SUMMARY_CATEGORY_LABEL_KEY } from '@utils/aiSummaryCategory';
+import { getAISummaryCategoryI18nValue, AI_SUMMARY_CATEGORY_LABEL_KEY } from '@utils/aiSummaryCategory';
 import AiSummaryConfidence from './AiSummaryConfidence';
 
 interface Props {
@@ -47,7 +47,7 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
   const showCardReadFullCta = !isSent && bodyText.length > 320;
 
   const category = email.ai_summary_json?.category;
-  const categoryKey = category ? getAISummaryCategoryKey(category) : null;
+  const categoryI18nValue = category ? getAISummaryCategoryI18nValue(category) : null;
 
   const urgencyRaw = email.ai_summary_json?.urgency;
   const normalizedUrgency = typeof urgencyRaw === 'string' ? urgencyRaw.trim().toLowerCase() : '';
@@ -141,10 +141,10 @@ export function EmailQuickView({ email, actionItemsRef, onReadFull, isSummarizin
               </p>
             )}
 
-            {categoryKey && (
+            {categoryI18nValue && (
               <p className={`${email.ai_summary_json?.urgency ? 'mt-1.5' : 'mt-3'} text-xs text-slate-500`}>
                 {t(AI_SUMMARY_CATEGORY_LABEL_KEY)}{' '}
-                <span className="font-semibold text-slate-400">{t(categoryKey)}</span>
+                <span className="font-semibold text-slate-400">{t(`category.${categoryI18nValue}`, { defaultValue: category })}</span>
               </p>
             )}
           </div>
