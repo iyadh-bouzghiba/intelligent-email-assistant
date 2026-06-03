@@ -561,3 +561,150 @@ class SupabaseStore:
         except Exception as e:
             logger.warning(f"AI job enqueue failed: {e}")
             return None
+
+    def record_observed_category(self, account_id: str, category: Optional[str]) -> None:
+        if not account_id or not str(account_id).strip():
+            raise ValueError("[INTELLIGENCE-PROFILE] account_id must not be blank")
+        if category is None:
+            return
+        normalized_category = str(category).strip()
+        if not normalized_category:
+            return
+        try:
+            self.client.rpc(
+                "increment_account_observed_category",
+                {"p_account_id": account_id, "p_category": normalized_category},
+            ).execute()
+            logger.info(f"[INTELLIGENCE-PROFILE] Observed category recorded for {account_id}")
+        except Exception as e:
+            logger.error(
+                f"[INTELLIGENCE-PROFILE] record_observed_category failed for {account_id} "
+                f"(type={type(e).__name__}): {e}"
+            )
+            raise
+
+    def get_account_intelligence_profile(self, account_id: str) -> dict:
+        try:
+            response = (
+                self.client.table("account_intelligence_profiles")
+                .select(
+                    "account_id,observed_categories,category_corrections,"
+                    "confidence_calibration,action_item_completion,"
+                    "notification_preferences,last_sync_at,created_at,updated_at"
+                )
+                .eq("account_id", account_id)
+                .limit(1)
+                .execute()
+            )
+        except Exception as e:
+            logger.error(
+                f"[INTELLIGENCE-PROFILE] Read failed for {account_id} "
+                f"(type={type(e).__name__}): {e}"
+            )
+            raise
+
+        rows = response.data or []
+        if not rows:
+            return _build_default_intelligence_profile(account_id)
+
+        if not isinstance(rows[0], dict):
+            return _build_default_intelligence_profile(account_id)
+        row: dict = rows[0]
+        return _safe_intelligence_row_fields(row, account_id)
+
+    def upsert_account_intelligence_profile(self, account_id: str, updates: dict) -> dict:
+        _MUTABLE = {
+            "observed_categories",
+            "category_corrections",
+            "confidence_calibration",
+            "action_item_completion",
+            "notification_preferences",
+            "last_sync_at",
+        }
+        _SIMPLE_NON_NULL_JSONB = {
+            "observed_categories",
+            "category_corrections",
+            "confidence_calibration",
+            "action_item_completion",
+        }
+
+        payload = {}
+        for k, v in updates.items():
+            if k not in _MUTABLE or k == "notification_preferences":
+                continue
+            if k in _SIMPLE_NON_NULL_JSONB and v is None:
+                continue
+            payload[k] = v
+
+        np_incoming = updates.get("notification_preferences")
+        if "notification_preferences" in updates and isinstance(np_incoming, dict):
+            current_profile = self.get_account_intelligence_profile(account_id)
+            current_np = current_profile.get("notification_preferences") or {}
+            payload["notification_preferences"] = _safe_notification_preferences(
+                {**current_np, **np_incoming}
+            )
+
+        payload["account_id"] = account_id
+        payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        try:
+            self.client.table("account_intelligence_profiles").upsert(
+                payload, on_conflict="account_id"
+            ).execute()
+        except Exception as e:
+            logger.error(
+                f"[INTELLIGENCE-PROFILE] Upsert failed for {account_id} "
+                f"(type={type(e).__name__}): {e}"
+            )
+            raise
+
+        return self.get_account_intelligence_profile(account_id)
+
+
+_DEFAULT_NOTIFICATION_PREFERENCES = {
+    "urgency_escalation_enabled": False,
+    "urgency_threshold": "high",
+    "action_item_deadline_notifications_enabled": False,
+    "action_item_deadline_hours": 24,
+    "thread_silence_notifications_enabled": False,
+    "thread_silence_hours": 72,
+}
+
+
+def _build_default_intelligence_profile(account_id: str) -> dict:
+    return {
+        "account_id": account_id,
+        "observed_categories": {},
+        "category_corrections": [],
+        "confidence_calibration": [],
+        "action_item_completion": [],
+        "notification_preferences": dict(_DEFAULT_NOTIFICATION_PREFERENCES),
+        "last_sync_at": None,
+        "created_at": None,
+        "updated_at": None,
+    }
+
+
+def _safe_notification_preferences(value) -> dict:
+    base = dict(_DEFAULT_NOTIFICATION_PREFERENCES)
+    if isinstance(value, dict):
+        base.update(value)
+    return base
+
+
+def _safe_intelligence_row_fields(row: dict, account_id: str) -> dict:
+    oc = row.get("observed_categories")
+    cc = row.get("category_corrections")
+    cal = row.get("confidence_calibration")
+    aic = row.get("action_item_completion")
+    return {
+        "account_id": row.get("account_id") or account_id,
+        "observed_categories": oc if isinstance(oc, dict) else {},
+        "category_corrections": cc if isinstance(cc, list) else [],
+        "confidence_calibration": cal if isinstance(cal, list) else [],
+        "action_item_completion": aic if isinstance(aic, list) else [],
+        "notification_preferences": _safe_notification_preferences(row.get("notification_preferences")),
+        "last_sync_at": row.get("last_sync_at"),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    }

@@ -661,6 +661,7 @@ class AISummarizerWorker:
                 "updated_at": now_iso
             }, on_conflict="account_id,gmail_message_id,prompt_version,summary_language").execute()
 
+            self.store.record_observed_category(account_id, summary_json.get("category"))
             logger.info(f"[AI-WORKER] Summary written ({summary_language}) for {account_id}/{gmail_message_id}")
 
         except Exception as e:

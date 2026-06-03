@@ -211,6 +211,26 @@ export interface AccountsResponse {
     accounts: AccountInfo[];
 }
 
+export interface AccountIntelligenceProfile {
+    account_id: string;
+    observed_categories: Record<string, number>;
+    category_corrections: Array<Record<string, unknown>>;
+    confidence_calibration: Array<Record<string, unknown>>;
+    action_item_completion: Array<Record<string, unknown>>;
+    notification_preferences: {
+        urgency_escalation_enabled: boolean;
+        urgency_threshold: string;
+        action_item_deadline_notifications_enabled: boolean;
+        action_item_deadline_hours: number;
+        thread_silence_notifications_enabled: boolean;
+        thread_silence_hours: number;
+        [key: string]: unknown;
+    };
+    last_sync_at?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+}
+
 export interface SendEmailRequest {
     body: string;
     subject?: string;

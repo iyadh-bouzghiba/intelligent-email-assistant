@@ -5,7 +5,7 @@ import { websocketService, type EmailsUpdatedData, type SummaryReadyData } from 
 import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send, Search, X, Paperclip } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { EmailViewModel, AccountInfo, SentEmail, SupportedLanguage, SupportedTone, EmailTemplate, DraftTone, InboxThreadRow, ReplyAttachmentDraft } from '@types';
+import { EmailViewModel, AccountInfo, SentEmail, SupportedLanguage, SupportedTone, EmailTemplate, DraftTone, InboxThreadRow, ReplyAttachmentDraft, AccountIntelligenceProfile } from '@types';
 import { SentList } from './components/SentList';
 import { EmailDetailModal } from './components/EmailDetailModal';
 import { ReplyComposeModal } from './components/ReplyComposeModal';
@@ -179,6 +179,7 @@ export const App = () => {
   const [replyAttachments, setReplyAttachments] = useState<ReplyAttachmentDraft[]>([]);
   const [replyAttachmentError, setReplyAttachmentError] = useState<string | null>(null);
   const [aiLanguageResolvedAccountId, setAiLanguageResolvedAccountId] = useState<string | null>(null);
+  const [_accountIntelligenceProfile, setAccountIntelligenceProfile] = useState<AccountIntelligenceProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<EmailViewModel[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -1243,6 +1244,29 @@ export const App = () => {
     if (activeEmail) {
       localStorage.setItem('last_selected_account', activeEmail);
     }
+  }, [activeEmail]);
+
+  // Fetch account intelligence profile whenever the active account changes.
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!activeEmail) {
+      setAccountIntelligenceProfile(null);
+      return;
+    }
+
+    apiService.getAccountIntelligenceProfile(activeEmail).then((profile) => {
+      if (cancelled || activeEmailRef.current !== activeEmail) return;
+      setAccountIntelligenceProfile(profile);
+    }).catch((error) => {
+      if (cancelled || activeEmailRef.current !== activeEmail) return;
+      console.warn('[intelligence] failed to load account intelligence profile:', error);
+      setAccountIntelligenceProfile(null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeEmail]);
 
   // Activate Socket.IO only when an authenticated account context is selected.

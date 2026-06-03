@@ -21,6 +21,7 @@ import {
     TemplateLanguage,
     TranslateRenderResponse,
     ReplyAttachmentDraft,
+    AccountIntelligenceProfile,
 } from "@types";
 
 export type { AILanguage, TranslationLanguage } from "@types";
@@ -427,6 +428,13 @@ export const apiService = {
         const response = await api.delete(
             `${API_ROOT}/templates/${encodeURIComponent(template_id)}`,
             { params: { account_id } }
+        );
+        return response.data;
+    },
+
+    getAccountIntelligenceProfile: async (account_id: string): Promise<AccountIntelligenceProfile> => {
+        const response = await api.get(
+            `${API_ROOT}/accounts/${encodeURIComponent(account_id)}/intelligence-profile`
         );
         return response.data;
     },
