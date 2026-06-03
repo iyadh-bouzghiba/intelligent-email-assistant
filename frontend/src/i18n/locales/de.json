@@ -396,5 +396,13 @@
         "AUTOMATED_SYSTEM": "Automatisiertes System",
         "PERSONAL_SOCIAL": "Persönlich und Soziales",
         "UNCATEGORIZED": "Nicht kategorisiert"
+    },
+    "category": {
+        "action_required": "Handlungsbedarf",
+        "informational": "Information",
+        "meeting": "Besprechung",
+        "finance": "Finanzen",
+        "travel": "Reisen",
+        "alert": "Warnung"
     }
 }

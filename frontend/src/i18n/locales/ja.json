@@ -396,5 +396,13 @@
         "AUTOMATED_SYSTEM": "自動化システム",
         "PERSONAL_SOCIAL": "個人・ソーシャル",
         "UNCATEGORIZED": "未分類"
+    },
+    "category": {
+        "action_required": "要対応",
+        "informational": "情報共有",
+        "meeting": "会議",
+        "finance": "財務",
+        "travel": "出張",
+        "alert": "アラート"
     }
 }

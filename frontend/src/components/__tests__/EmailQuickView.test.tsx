@@ -16,7 +16,7 @@ import type { EmailViewModel } from '@types';
 // ---------------------------------------------------------------------------
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => {
+    t: (key: string, opts?: Record<string, unknown>) => {
       const map: Record<string, string> = {
         'modal.ai_analysis': 'AI Analysis',
         'modal.urgency_label': 'Urgency:',
@@ -33,12 +33,14 @@ vi.mock('react-i18next', () => ({
         'inbox.urgency.medium': 'Medium',
         'inbox.urgency.low': 'Low',
         'ai_summary_category.label': 'Category:',
-        'ai_summary_category.ACTION_REQUIRED': 'Action Required',
-        'ai_summary_category.PROJECT_WORK': 'Project Work',
-        'ai_summary_category.SCHEDULING': 'Scheduling',
-        'ai_summary_category.CONVERSATION': 'Conversation',
+        'category.action_required': 'Action Required',
+        'category.informational': 'Informational',
+        'category.meeting': 'Meeting',
+        'category.finance': 'Finance',
+        'category.travel': 'Travel',
+        'category.alert': 'Alert',
       };
-      return map[key] ?? key;
+      return map[key] ?? (opts?.defaultValue as string) ?? key;
     },
     i18n: { language: 'en' },
   }),
@@ -157,7 +159,7 @@ describe('EmailQuickView — AI summary category rendering', () => {
     );
 
     expect(screen.getByText('Category:')).toBeInTheDocument();
-    expect(screen.getByText('Project Work')).toBeInTheDocument();
+    expect(screen.getByText('Informational')).toBeInTheDocument();
   });
 
   it('omits category entirely when ai_summary_json is absent', () => {

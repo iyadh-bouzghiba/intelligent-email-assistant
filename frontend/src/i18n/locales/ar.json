@@ -396,5 +396,13 @@
         "AUTOMATED_SYSTEM": "آلي ونظام",
         "PERSONAL_SOCIAL": "شخصي واجتماعي",
         "UNCATEGORIZED": "غير مصنف"
+    },
+    "category": {
+        "action_required": "يتطلب إجراء",
+        "informational": "معلوماتي",
+        "meeting": "اجتماع",
+        "finance": "مالي",
+        "travel": "سفر",
+        "alert": "تنبيه"
     }
 }
