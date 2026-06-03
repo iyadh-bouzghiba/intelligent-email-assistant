@@ -3222,6 +3222,47 @@ async def disconnect_all_accounts(
         print(f"[ERROR] [CLEANUP] Failed to delete credentials: {e}")
         return {"status": "error", "message": str(e)}
 
+class IntelligenceProfileUpdateRequest(BaseModel):
+    observed_categories: Optional[Dict[str, Any]] = None
+    category_corrections: Optional[List[Dict[str, Any]]] = None
+    confidence_calibration: Optional[List[Dict[str, Any]]] = None
+    action_item_completion: Optional[List[Dict[str, Any]]] = None
+    notification_preferences: Optional[Dict[str, Any]] = None
+    last_sync_at: Optional[str] = None
+
+
+@api_router.get("/accounts/{account_id}/intelligence-profile")
+async def get_account_intelligence_profile(account_id: str):
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Store unavailable")
+    effective_account_id = resolve_account_id(None, account_id)
+    try:
+        profile = await asyncio.to_thread(store.get_account_intelligence_profile, effective_account_id)
+        return profile
+    except Exception as e:
+        logger.error(f"[INTELLIGENCE-PROFILE] GET failed for {effective_account_id} (type={type(e).__name__}): {e}")
+        raise HTTPException(status_code=500, detail="Failed to read intelligence profile")
+
+
+@api_router.post("/accounts/{account_id}/intelligence-profile")
+async def update_account_intelligence_profile(account_id: str, request: IntelligenceProfileUpdateRequest):
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Store unavailable")
+    effective_account_id = resolve_account_id(None, account_id)
+    if hasattr(request, "model_dump"):
+        updates = request.model_dump(exclude_unset=True)
+    else:
+        updates = request.dict(exclude_unset=True)
+    try:
+        profile = await asyncio.to_thread(store.upsert_account_intelligence_profile, effective_account_id, updates)
+        return profile
+    except Exception as e:
+        logger.error(f"[INTELLIGENCE-PROFILE] POST failed for {effective_account_id} (type={type(e).__name__}): {e}")
+        raise HTTPException(status_code=500, detail="Failed to persist intelligence profile")
+
+
 class PreferencesUpdateRequest(BaseModel):
     account_id: str
     ai_language: str

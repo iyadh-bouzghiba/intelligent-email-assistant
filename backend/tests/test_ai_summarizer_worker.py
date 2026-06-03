@@ -493,6 +493,30 @@ class TestWriteSummary(unittest.TestCase):
         payload = store.client.table.return_value.upsert.call_args[0][0]
         self.assertEqual(payload["summary_text"], "Specific text")
 
+    def test_calls_record_observed_category_with_category(self):
+        worker, store = self._make()
+        summary = {**self.SUMMARY_JSON, "category": "ACTION_REQUIRED"}
+        worker._write_summary("acc1", "msg1", "hash123", summary, "model", "en")
+        store.record_observed_category.assert_called_once_with("acc1", "ACTION_REQUIRED")
+
+    def test_calls_record_observed_category_with_none_when_no_category(self):
+        worker, store = self._make()
+        summary = {"overview": "ok", "action_items": [], "urgency": "low"}
+        worker._write_summary("acc1", "msg1", "hash123", summary, "model", "en")
+        store.record_observed_category.assert_called_once_with("acc1", None)
+
+    def test_raises_when_record_observed_category_raises(self):
+        worker, store = self._make()
+        store.record_observed_category.side_effect = RuntimeError("rpc failed")
+        with self.assertRaises(RuntimeError):
+            worker._write_summary("acc1", "msg1", "hash123", self.SUMMARY_JSON, "model", "en")
+
+    def test_write_document_summary_does_not_call_record_observed_category(self):
+        worker, store = self._make()
+        doc_summary = {"overview": "Doc", "action_items": [], "urgency": "low", "category": "FINANCIAL_LEGAL"}
+        worker._write_document_summary("acc1", "msg1", "hash123", doc_summary, "model", "pdf", "report.pdf")
+        store.record_observed_category.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # W12 — _mark_job_succeeded behavior
