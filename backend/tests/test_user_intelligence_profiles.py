@@ -396,22 +396,20 @@ class TestIntelligenceProfileAPI(unittest.TestCase):
         self.assertEqual(data["account_id"], "user@example.com")
         self.assertIn("observed_categories", data)
 
-    def test_get_resolves_account_id_from_path(self):
-        profile = self._default_profile("other@example.com")
-        captured = {}
-
-        def fake_get(acc_id):
-            captured["account_id"] = acc_id
-            return profile
-
+    def test_get_rejects_non_subject_account_id_from_path(self):
         mock_store = MagicMock()
-        mock_store.get_account_intelligence_profile.side_effect = fake_get
         with patch.object(self.service, "safe_get_store", return_value=mock_store):
-            self.client.get(
+            response = self.client.get(
                 "/api/accounts/other%40example.com/intelligence-profile",
                 cookies=self._cookie("user@example.com"),
             )
-        self.assertEqual(captured.get("account_id"), "other@example.com")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.json().get("detail"),
+            "Access denied: account does not belong to the authenticated session.",
+        )
+        mock_store.get_account_intelligence_profile.assert_not_called()
 
     def test_get_503_when_store_unavailable(self):
         with patch.object(self.service, "safe_get_store", return_value=None):
