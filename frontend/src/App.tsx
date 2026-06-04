@@ -2173,29 +2173,6 @@ export const App = () => {
     scheduleSummaryRefresh(activeEmail);
   };
 
-  const handleDisconnectAll = async () => {
-    try {
-      websocketService.disconnect();
-      activeEmailRef.current = null;
-      syncingRef.current = false;
-      localStorage.removeItem('last_selected_account');
-
-      await apiService.disconnectAllAccounts();
-
-      setAccounts([]);
-      setActiveEmail(null);
-      setBriefings([]);
-      setSentEmails([]);
-      resetAccountScopedState();
-      setLoading(false);
-      setLoadingSent(false);
-      setSyncing(false);
-      setError(null);
-    } catch (err) {
-      console.error('[DISCONNECT-ALL] Failed:', err);
-    }
-  };
-
   // Filter out self-generated security alerts (from app's own Gmail API access)
   const isSelfGeneratedAlert = (emailViewModel: EmailViewModel): boolean => {
     // Check if this is a security alert category
@@ -2958,12 +2935,6 @@ export const App = () => {
                     {t('inbox.legacy_accounts_helper')}
                   </p>
                   <div className="flex gap-3">
-                    <button
-                      onClick={handleDisconnectAll}
-                      className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold transition-all shadow-lg"
-                    >
-                      {t('inbox.disconnect_all_start_fresh')}
-                    </button>
                     <a
                       href={apiService.getGoogleAuthUrl()}
                       className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-bold transition-all"

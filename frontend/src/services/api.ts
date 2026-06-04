@@ -194,11 +194,6 @@ export const apiService = {
         return response.data;
     },
 
-    disconnectAllAccounts: async (): Promise<{ status: string; deleted_count?: number }> => {
-        const response = await api.post(`${API_ROOT}/accounts/disconnect-all`);
-        return response.data;
-    },
-
     getPreferences: async (account_id: string): Promise<PreferencesResponse> => {
         const response = await api.get(`${API_ROOT}/preferences`, {
             params: { account_id },

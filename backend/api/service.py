@@ -503,6 +503,32 @@ def resolve_account_id(state: Optional[str], account_id: Optional[str]) -> str:
     effective = _ACCOUNT_ID_CLEAN_RE.sub("", effective)
     return effective or "default"
 
+def _require_account_ownership(
+    jwt_subject: str,
+    requested_account_id: Optional[str],
+) -> str:
+    """
+    Enforce that the requested account_id belongs to the authenticated JWT subject.
+
+    - If requested_account_id is None or empty:
+      return jwt_subject (safe default).
+    - If requested_account_id equals jwt_subject:
+      return jwt_subject (authorized).
+    - If requested_account_id differs from jwt_subject:
+      raise HTTP 403 immediately.
+
+    Never returns a value that does not equal the JWT subject.
+    """
+    if not requested_account_id:
+        return jwt_subject
+    if requested_account_id != jwt_subject:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: account does not belong to the authenticated session.",
+        )
+    return jwt_subject
+
+
 @app.get("/debug-config", dependencies=[Depends(require_jwt_auth)])
 async def debug_config():
     """
@@ -910,7 +936,10 @@ def _fetch_raw_gmail_message(account_id: str, gmail_message_id: str) -> Optional
         return None
 
 
-def _lookup_email_record_by_message_id(gmail_message_id: str) -> Optional[Dict[str, Any]]:
+def _lookup_email_record_by_message_id(
+    account_id: str,
+    gmail_message_id: str,
+) -> Optional[Dict[str, Any]]:
     store = safe_get_store()
     if not store:
         return None
@@ -918,6 +947,7 @@ def _lookup_email_record_by_message_id(gmail_message_id: str) -> Optional[Dict[s
     inbox_response = (
         store.client.table("emails")
         .select("account_id,body,subject,sender,date,gmail_message_id,thread_id")
+        .eq("account_id", account_id)
         .eq("gmail_message_id", gmail_message_id)
         .limit(1)
         .execute()
@@ -928,6 +958,7 @@ def _lookup_email_record_by_message_id(gmail_message_id: str) -> Optional[Dict[s
     sent_response = (
         store.client.table("sent_emails")
         .select("account_id,gmail_message_id,thread_id,subject,body_preview,sent_at,to_address,source")
+        .eq("account_id", account_id)
         .eq("gmail_message_id", gmail_message_id)
         .limit(1)
         .execute()
@@ -1170,7 +1201,10 @@ def _build_rendered_email_payload(
 
 
 @api_router.get("/emails")
-async def list_emails(account_id: Optional[str] = Query(None)):
+async def list_emails(
+    account_id: Optional[str] = Query(None),
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     """
     REST endpoint for stabilized frontend polling. Reads from Supabase Source of Truth.
 
@@ -1180,14 +1214,15 @@ async def list_emails(account_id: Optional[str] = Query(None)):
     Returns:
         List of email objects from Supabase
     """
+    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     store = safe_get_store()
     if not store:
         logger.warning("[API] /emails called but store unavailable")
         return []
 
     try:
-        logger.info(f"[API] /emails called with account_id={account_id}")
-        response = await asyncio.to_thread(store.get_emails, account_id=account_id)
+        logger.info(f"[API] /emails called with account_id={effective_account_id}")
+        response = await asyncio.to_thread(store.get_emails, account_id=effective_account_id)
         email_count = len(response.data) if response.data else 0
         logger.info(f"[API] /emails returning {email_count} emails")
         return response.data
@@ -1199,7 +1234,11 @@ async def list_emails(account_id: Optional[str] = Query(None)):
 
 
 @api_router.get("/emails-with-summaries")
-async def list_emails_with_summaries(account_id: Optional[str] = Query(None), preferred_language: str = Query("en")):
+async def list_emails_with_summaries(
+    account_id: Optional[str] = Query(None),
+    preferred_language: str = Query("en"),
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     """
     OPTIMIZED endpoint that fetches emails with AI summaries in batch.
 
@@ -1215,6 +1254,7 @@ async def list_emails_with_summaries(account_id: Optional[str] = Query(None), pr
         - ai_summary_text: Plain text overview or null
         - ai_summary_model: Model used or null
     """
+    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     store = safe_get_store()
     if not store:
         logger.warning("[API] /emails-with-summaries called but store unavailable")
@@ -1222,9 +1262,9 @@ async def list_emails_with_summaries(account_id: Optional[str] = Query(None), pr
 
     try:
         preferred_language = normalize_language(preferred_language)
-        logger.info(f"[API] /emails-with-summaries called with account_id={account_id}")
+        logger.info(f"[API] /emails-with-summaries called with account_id={effective_account_id}")
         emails = await asyncio.to_thread(
-            store.get_emails_with_summaries, account_id=account_id, preferred_language=preferred_language
+            store.get_emails_with_summaries, account_id=effective_account_id, preferred_language=preferred_language
         )
         email_count = len(emails) if emails else 0
         logger.info(f"[API] /emails-with-summaries returning {email_count} emails")
@@ -1237,18 +1277,20 @@ async def list_emails_with_summaries(account_id: Optional[str] = Query(None), pr
 
 
 @api_router.get("/emails/{gmail_message_id}/rendered")
-async def get_rendered_email(gmail_message_id: str):
-    record = await asyncio.to_thread(_lookup_email_record_by_message_id, gmail_message_id)
+async def get_rendered_email(
+    gmail_message_id: str,
+    jwt_subject: str = Depends(require_jwt_auth),
+):
+    effective_account_id = _require_account_ownership(jwt_subject, None)
+    record = await asyncio.to_thread(
+        _lookup_email_record_by_message_id, effective_account_id, gmail_message_id
+    )
     if not record:
         raise HTTPException(status_code=404, detail="Email not found")
 
-    account_id = record.get("account_id")
-    if not account_id:
-        raise HTTPException(status_code=404, detail="Account not found for email")
-
     rendered_payload = await asyncio.to_thread(
         _build_rendered_email_payload,
-        account_id,
+        effective_account_id,
         gmail_message_id,
         record.get("body") or "",
     )
@@ -1263,21 +1305,25 @@ async def get_rendered_email(gmail_message_id: str):
 
 
 @api_router.get("/attachments/{message_id}/{attachment_key}")
-async def get_attachment_stream(message_id: str, attachment_key: str, download: bool = Query(False)):
+async def get_attachment_stream(
+    message_id: str,
+    attachment_key: str,
+    download: bool = Query(False),
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     """
     Serve attachment bytes by stable attachment_key.
     The stable key is deterministic from message-local metadata (ordinal + filename + mime + size).
     It is never the opaque Gmail attachmentId — that is resolved internally after lookup.
     """
-    record = await asyncio.to_thread(_lookup_email_record_by_message_id, message_id)
+    effective_account_id = _require_account_ownership(jwt_subject, None)
+    record = await asyncio.to_thread(
+        _lookup_email_record_by_message_id, effective_account_id, message_id
+    )
     if not record:
         raise HTTPException(status_code=404, detail="Email not found")
 
-    account_id = record.get("account_id")
-    if not account_id:
-        raise HTTPException(status_code=404, detail="Account not found for email")
-
-    raw_message = await asyncio.to_thread(_fetch_raw_gmail_message, account_id, message_id)
+    raw_message = await asyncio.to_thread(_fetch_raw_gmail_message, effective_account_id, message_id)
     if not raw_message:
         raise HTTPException(status_code=404, detail="Raw Gmail message not found")
 
@@ -1317,7 +1363,7 @@ async def get_attachment_stream(message_id: str, attachment_key: str, download: 
     try:
         content = await asyncio.to_thread(
             provider.get_attachment_bytes,
-            account_id,
+            effective_account_id,
             message_id,
             raw_attachment_id,
         )
@@ -1344,7 +1390,8 @@ async def get_attachment_stream(message_id: str, attachment_key: str, download: 
 async def sync_now(
     account_id: str = Query("default"),
     max_emails: int = Query(10, description="Maximum emails to fetch (default: 10, validation: 10)"),
-    backfill_limit: int = Query(0, description="Maximum legacy emails to backfill (default: 0=skip, validation: 10)")
+    backfill_limit: int = Query(0, description="Maximum legacy emails to backfill (default: 0=skip, validation: 10)"),
+    jwt_subject: str = Depends(require_jwt_auth),
 ):
     """
     User-driven Gmail sync endpoint with timeout protection.
@@ -1362,10 +1409,11 @@ async def sync_now(
     - {"status": "timeout"} if sync takes longer than 28 seconds
     - {"status": "error"} on failure (no secrets leaked)
     """
+    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     try:
         # Wrap with 28s timeout (Render has 30s HTTP timeout — 2s buffer)
         return await asyncio.wait_for(
-            _sync_now_impl(account_id, max_emails, backfill_limit),
+            _sync_now_impl(effective_account_id, max_emails, backfill_limit),
             timeout=28.0
         )
     except asyncio.TimeoutError:
@@ -1714,6 +1762,7 @@ async def get_email_summary(
     gmail_message_id: str,
     account_id: str = Query("default"),
     preferred_language: str = Query("en"),
+    jwt_subject: str = Depends(require_jwt_auth),
 ):
     """
     Fetch AI summary for specific email.
@@ -1728,7 +1777,7 @@ async def get_email_summary(
         - ai_preferred_language: the requested language
         - ai_preferred_language_available: whether the preferred variant exists
     """
-    effective_account_id = resolve_account_id(None, account_id)
+    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     preferred_language = normalize_language(preferred_language)
     store = safe_get_store()
     if not store:
@@ -1916,7 +1965,11 @@ class AgentFeedbackRequest(BaseModel):
 
 
 @api_router.post("/threads/{thread_id}/draft")
-async def draft_thread_reply(thread_id: str, request: AgentDraftRequest):
+async def draft_thread_reply(
+    thread_id: str,
+    request: AgentDraftRequest,
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     """
     Generate a draft reply proposal using the AI agent.
     Returns draft text for display in ReplyComposeModal.
@@ -1931,7 +1984,7 @@ async def draft_thread_reply(thread_id: str, request: AgentDraftRequest):
     store = safe_get_store()
     if not store:
         raise HTTPException(status_code=503, detail="Storage unavailable")
-    effective_account_id = resolve_account_id(None, request.account_id)
+    effective_account_id = _require_account_ownership(jwt_subject, request.account_id)
 
     # Fetch email from DB — never trust client-provided body content
     try:
@@ -2008,10 +2061,15 @@ class SendEmailRequest(BaseModel):
     body: str
     subject: Optional[str] = None
     cc: Optional[str] = None
+    account_id: Optional[str] = None
 
 
 @api_router.post("/threads/{thread_id}/send")
-async def send_thread_reply(thread_id: str, request: Request):
+async def send_thread_reply(
+    thread_id: str,
+    request: Request,
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     """
     Send an email reply with RFC-compliant threading headers.
     Backend owns reply context derivation - client only provides draft text.
@@ -2085,92 +2143,75 @@ async def send_thread_reply(thread_id: str, request: Request):
                         _close_result = upload.close()
                         if inspect.isawaitable(_close_result):
                             await _close_result
+            account_id_from_body: Optional[str] = str(form.get("account_id")) if form.get("account_id") else None
             logger.info(f"[SEND] Multipart request — {len(validated_attachments)} attachment(s), {total_bytes} bytes")
         else:
             json_data = await request.json()
             body_text = json_data.get("body", "") or ""
             subject_val = json_data.get("subject") or None
             cc_val = json_data.get("cc") or None
+            account_id_from_body = json_data.get("account_id") or None
 
-        # Step 1: Derive account_id from database
+        effective_account_id = _require_account_ownership(jwt_subject, account_id_from_body)
+
+        # Step 1: Verify thread belongs to effective_account_id
         store = safe_get_store()
         if not store:
             return {"success": False, "error": "Database unavailable"}
 
-        # Query email_threads to get account_id for this thread
-        # CRITICAL: Detect ambiguity explicitly (0 rows, 1 row, >1 rows)
         try:
             thread_records = await asyncio.to_thread(
                 lambda: store.client.table("email_threads")
                 .select("account_id, subject")
+                .eq("account_id", effective_account_id)
                 .eq("thread_id", thread_id)
                 .execute()
             )
 
-            # Explicit 0-row detection - try emails table as fallback
             if not thread_records.data or len(thread_records.data) == 0:
-                logger.warning(f"[SEND] Thread {thread_id} not found in email_threads - trying emails table fallback")
+                logger.warning(f"[SEND] Thread {thread_id} not found in email_threads for account {effective_account_id} - trying emails table fallback")
                 email_records = await asyncio.to_thread(
                     lambda: store.client.table("emails")
                     .select("account_id")
+                    .eq("account_id", effective_account_id)
                     .eq("thread_id", thread_id)
                     .execute()
                 )
                 if not email_records.data or len(email_records.data) == 0:
-                    logger.warning(f"[SEND] Thread {thread_id} not found in emails table either")
+                    logger.warning(f"[SEND] Thread {thread_id} not found in emails table either for account {effective_account_id}")
                     return {
                         "success": False,
                         "error": f"Thread {thread_id} not tracked in database - sync emails first"
                     }
-                unique_accounts = list(set(r.get('account_id') for r in email_records.data if r.get('account_id')))
-                if len(unique_accounts) > 1:
-                    logger.error(f"[SEND] Thread {thread_id} ambiguous across {len(unique_accounts)} accounts: {unique_accounts}")
-                    return {
-                        "success": False,
-                        "error": f"Thread {thread_id} exists in multiple accounts {unique_accounts}. Cannot determine reply context."
-                    }
-                account_id = unique_accounts[0]
-                logger.info(f"[SEND] Derived account_id: {account_id} (fallback from emails table)")
+                logger.info(f"[SEND] Thread verified for account: {effective_account_id} (fallback from emails table)")
                 try:
                     await asyncio.to_thread(
                         lambda: store.client.table("email_threads")
-                        .upsert({"thread_id": thread_id, "account_id": account_id}, on_conflict="thread_id")
+                        .upsert({"thread_id": thread_id, "account_id": effective_account_id}, on_conflict="thread_id")
                         .execute()
                     )
-                    logger.info(f"[SEND] Upserted thread {thread_id} into email_threads for account {account_id}")
+                    logger.info(f"[SEND] Upserted thread {thread_id} into email_threads for account {effective_account_id}")
                 except Exception as upsert_err:
                     logger.warning(f"[SEND] email_threads upsert failed (non-fatal): {upsert_err}")
-
-            # Explicit >1-row detection (multi-account ambiguity)
-            elif len(thread_records.data) > 1:
-                ambiguous_accounts = [r.get('account_id') for r in thread_records.data]
-                logger.error(f"[SEND] Thread {thread_id} is ambiguous across {len(thread_records.data)} accounts: {ambiguous_accounts}")
-                return {
-                    "success": False,
-                    "error": f"Thread {thread_id} exists in multiple accounts {ambiguous_accounts}. Cannot determine reply context."
-                }
-
-            # Safe: exactly 1 row
             else:
-                account_id = thread_records.data[0].get('account_id', 'default')
-                logger.info(f"[SEND] Derived account_id: {account_id} (unique match)")
+                logger.info(f"[SEND] Thread verified for account: {effective_account_id} (unique match)")
 
         except Exception as e:
             logger.error(f"[SEND] Database query failed: {e}")
             return {"success": False, "error": "Failed to look up thread in database"}
 
-        # Step 2: Load credentials for derived account_id
+        # Step 2: Load credentials for effective_account_id
         credential_store = CredentialStore(persistence)
         token_data = await asyncio.to_thread(
             credential_store.load_credentials,
-            account_id
+            effective_account_id
         )
 
         if not token_data or 'token' not in token_data:
-            logger.warning(f"[SEND] No valid credentials for account {account_id}")
+            logger.warning(f"[SEND] No valid credentials for account {effective_account_id}")
             return {
                 "success": False,
-                "error": f"Authentication required for account {account_id}"
+                "error": f"Authentication required for account {effective_account_id}"
             }
 
         # Step 3: Create Gmail client and fetch latest INBOUND message in thread
@@ -2301,7 +2342,7 @@ async def send_thread_reply(thread_id: str, request: Request):
                 sent_store = safe_get_store()
                 if sent_store:
                     sent_payload = {
-                        "account_id": account_id,
+                        "account_id": effective_account_id,
                         "gmail_message_id": result.get('message_id') or '',
                         "thread_id": result.get('thread_id') or thread_id,
                         "to_address": recipient,
@@ -2323,6 +2364,8 @@ async def send_thread_reply(thread_id: str, request: Request):
 
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[SEND] Unexpected error: {type(e).__name__}: {e}")
         return {
@@ -2331,19 +2374,17 @@ async def send_thread_reply(thread_id: str, request: Request):
         }
 
 @api_router.post("/threads/{thread_id}/read-state")
-async def set_thread_read_state(thread_id: str, request: Request):
+async def set_thread_read_state(
+    thread_id: str,
+    request: Request,
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     """
     Mark a Gmail thread as read or unread.
 
-    account_id is derived server-side from the emails table by thread_id.
-    The client does NOT supply account_id.
+    account_id is taken from the request body and validated against the JWT subject.
 
-    Ambiguity guard: if the thread_id is associated with more than one distinct
-    account_id in the emails table, the route fails explicitly rather than
-    silently picking one — a write against the wrong account is worse than
-    a clear error.
-
-    Request body:  { "is_read": true | false }
+    Request body:  { "is_read": true | false, "account_id": "user@example.com" }
     Response:      { "success": true, "gmail_updated": true, "db_updated": true }
                 or { "success": true, "gmail_updated": true, "db_updated": false,
                      "db_error": "<reason>" }
@@ -2352,54 +2393,25 @@ async def set_thread_read_state(thread_id: str, request: Request):
     Side-effects:
       1. GmailClient.set_thread_read_state() → threads().modify() (single API call)
       2. UPDATE emails SET is_read=<value>
-             WHERE thread_id=:thread_id AND account_id=:resolved_account_id
+             WHERE thread_id=:thread_id AND account_id=:effective_account_id
          db_updated reflects whether this succeeded.
     """
     try:
         body = await request.json()
         is_read: bool = bool(body.get("is_read", True))
-        # Client may supply account_id to skip the DB lookup entirely (preferred path).
-        client_account_id: Optional[str] = body.get("account_id") or None
+        requested_account_id: Optional[str] = body.get("account_id") or None
+        effective_account_id: str = _require_account_ownership(jwt_subject, requested_account_id)
 
         store = safe_get_store()
         if not store:
             return {"success": False, "error": "Database unavailable"}
 
-        if client_account_id:
-            # Fast path: account_id supplied by client — no DB round-trip needed.
-            account_id: str = client_account_id
-            logger.info(f"[READ-STATE] account_id from client: {account_id}")
-        else:
-            # Slow path: derive account_id from the emails table.
-            email_records = await asyncio.to_thread(
-                lambda: store.client.table("emails")
-                    .select("account_id")
-                    .eq("thread_id", thread_id)
-                    .execute()
-            )
-            if not email_records.data:
-                return {"success": False, "error": f"Thread {thread_id} not found in emails table"}
-
-            distinct_accounts = list({row["account_id"] for row in email_records.data if row.get("account_id")})
-            if len(distinct_accounts) == 0:
-                return {"success": False, "error": f"Thread {thread_id} has no resolvable account_id"}
-            if len(distinct_accounts) > 1:
-                logger.error(f"[READ-STATE] Ambiguous account for thread {thread_id}: {distinct_accounts}")
-                return {
-                    "success": False,
-                    "error": (
-                        f"Thread {thread_id} is associated with {len(distinct_accounts)} distinct accounts. "
-                        "Supply account_id explicitly."
-                    ),
-                }
-            account_id = distinct_accounts[0]
-
         credential_store = CredentialStore(persistence)
-        token_data = await asyncio.to_thread(credential_store.load_credentials, account_id)
+        token_data = await asyncio.to_thread(credential_store.load_credentials, effective_account_id)
         if not token_data:
             return {
                 "success": False,
-                "error": f"No credentials for account {account_id} — re-authentication required",
+                "error": f"No credentials for account {effective_account_id} — re-authentication required",
             }
 
         # Build GmailClient and call Gmail API fully inside a thread — build() fetches the
@@ -2421,7 +2433,7 @@ async def set_thread_read_state(thread_id: str, request: Request):
                 lambda: store.client.table("emails")
                     .update({"is_read": is_read})
                     .eq("thread_id", thread_id)
-                    .eq("account_id", account_id)
+                    .eq("account_id", effective_account_id)
                     .execute()
             )
             db_updated = True
@@ -2430,7 +2442,7 @@ async def set_thread_read_state(thread_id: str, request: Request):
             logger.warning(f"[READ-STATE] Supabase update failed: {db_err}")
 
         logger.info(
-            f"[READ-STATE] thread={thread_id} account={account_id} "
+            f"[READ-STATE] thread={thread_id} account={effective_account_id} "
             f"is_read={is_read} gmail_updated=True db_updated={db_updated}"
         )
         result: dict = {"success": True, "gmail_updated": True, "db_updated": db_updated}
@@ -2438,6 +2450,8 @@ async def set_thread_read_state(thread_id: str, request: Request):
             result["db_error"] = db_error_msg
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[READ-STATE] Unexpected error: {type(e).__name__}: {e}")
         return {"success": False, "error": str(e)}
@@ -2471,12 +2485,18 @@ async def get_sent_emails(account_id: str, limit: int = 50, offset: int = 0):
 
 
 @api_router.get("/inbox")
-async def get_inbox_threads(account_id: str = Query(...), limit: int = Query(50), preferred_language: str = Query("en")):
+async def get_inbox_threads(
+    account_id: str = Query(...),
+    limit: int = Query(50),
+    preferred_language: str = Query("en"),
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     """
     Thread-aware inbox: one representative row per thread, sorted by latest activity DESC.
     Considers both inbox message dates and sent message timestamps so that a thread where
     the user replied last still surfaces at the correct position.
     """
+    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     store = safe_get_store()
     if not store:
         logger.warning("[INBOX] Store unavailable")
@@ -2485,14 +2505,14 @@ async def get_inbox_threads(account_id: str = Query(...), limit: int = Query(50)
         preferred_language = normalize_language(preferred_language)
         # Fetch raw inbox messages with a larger cap to avoid cutting mid-thread duplicates
         raw_emails = await asyncio.to_thread(
-            store.get_emails_with_summaries, limit=200, account_id=account_id,
+            store.get_emails_with_summaries, limit=200, account_id=effective_account_id,
             preferred_language=preferred_language
         )
         # Fetch sent timestamps per thread to capture user-reply activity ordering
         sent_result = await asyncio.to_thread(
             lambda: store.client.table("sent_emails")
                 .select("thread_id, sent_at")
-                .eq("account_id", account_id)
+                .eq("account_id", effective_account_id)
                 .order("sent_at", desc=True)
                 .limit(200)
                 .execute()
@@ -2541,7 +2561,7 @@ async def get_inbox_threads(account_id: str = Query(...), limit: int = Query(50)
         # Sort by latest activity DESC
         rows.sort(key=lambda r: r.get("last_activity_iso", ""), reverse=True)
 
-        logger.info(f"[INBOX] Returning {min(len(rows), limit)} threads for account={account_id}")
+        logger.info(f"[INBOX] Returning {min(len(rows), limit)} threads for account={effective_account_id}")
         return rows[:limit]
     except Exception as e:
         logger.error(f"[INBOX] Failed: {type(e).__name__}: {e}")
@@ -2589,6 +2609,7 @@ async def search_emails(
     preferred_language: str = Query("en"),
     limit: int = Query(50),
     has_attachments: Optional[bool] = Query(None),
+    jwt_subject: str = Depends(require_jwt_auth),
 ):
     """
     Full-text search over the inbox.  Returns InboxThreadRow-compatible dicts.
@@ -2598,6 +2619,7 @@ async def search_emails(
     sent-activity merge, thread-collapse, and unread-propagation logic as
     /api/inbox.  Results are sorted by relevance DESC, latest activity DESC.
     """
+    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     q = (q or "").strip()
     if len(q) < 2:
         return []
@@ -2614,12 +2636,12 @@ async def search_emails(
         rpc_result = await asyncio.to_thread(
             lambda: store.client.rpc(
                 "search_emails_ranked_v3",
-                {"p_account_id": account_id, "p_query": q, "p_limit": 200, "p_has_attachments": has_attachments},
+                {"p_account_id": effective_account_id, "p_query": q, "p_limit": 200, "p_has_attachments": has_attachments},
             ).execute()
         )
         candidates = rpc_result.data or []
         if not candidates:
-            logger.info(f"[SEARCH] No candidates for q={q!r} account={account_id}")
+            logger.info(f"[SEARCH] No candidates for q={q!r} account={effective_account_id}")
             return []
 
         # 2. Build gmail_message_id -> candidate map; preserve rank
@@ -2638,7 +2660,7 @@ async def search_emails(
             summ_result = await asyncio.to_thread(
                 lambda: store.client.table("email_ai_summaries")
                     .select("*")
-                    .eq("account_id", account_id)
+                    .eq("account_id", effective_account_id)
                     .in_("gmail_message_id", message_ids)
                     .eq("prompt_version", EMAIL_SUMMARY_PROMPT_VERSION)
                     .execute()
@@ -2700,7 +2722,7 @@ async def search_emails(
         sent_result = await asyncio.to_thread(
             lambda: store.client.table("sent_emails")
                 .select("thread_id, sent_at")
-                .eq("account_id", account_id)
+                .eq("account_id", effective_account_id)
                 .order("sent_at", desc=True)
                 .limit(200)
                 .execute()
@@ -2782,7 +2804,7 @@ async def search_emails(
             row.pop("_rank", None)
             row.pop("rank", None)
 
-        logger.info(f"[SEARCH] Returning {min(len(rows), limit)} threads for q={q!r} account={account_id}")
+        logger.info(f"[SEARCH] Returning {min(len(rows), limit)} threads for q={q!r} account={effective_account_id}")
         return rows[:limit]
 
     except Exception as e:
@@ -3192,35 +3214,12 @@ async def disconnect_account(
     """
     Disconnects a Google account by deleting its credentials.
     """
-    effective_account_id = resolve_account_id(None, account_id)
+    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     credential_store = CredentialStore(persistence)
     await asyncio.to_thread(credential_store.delete_credentials, effective_account_id)
     if effective_account_id == jwt_subject:
         response.set_cookie(**build_session_cookie_clear_kwargs(request))
     return {"status": "disconnected", "account_id": effective_account_id}
-
-@api_router.post("/accounts/disconnect-all")
-async def disconnect_all_accounts(
-    request: Request,
-    response: Response,
-):
-    """
-    MIGRATION HELPER: Disconnects ALL accounts (including legacy "default" accounts).
-    Use this to clean up before reconnecting with real email IDs.
-    """
-    store = safe_get_store()
-    if not store:
-        return {"status": "error", "message": "Store not available"}
-
-    try:
-        gmail_resp = store.client.table("credentials").delete().eq("provider", "gmail").execute()
-        deleted_count = len(gmail_resp.data) if gmail_resp.data else 0
-        print(f"[OK] [CLEANUP] Deleted {deleted_count} gmail credentials")
-        response.set_cookie(**build_session_cookie_clear_kwargs(request))
-        return {"status": "success", "deleted_count": deleted_count}
-    except Exception as e:
-        print(f"[ERROR] [CLEANUP] Failed to delete credentials: {e}")
-        return {"status": "error", "message": str(e)}
 
 class IntelligenceProfileUpdateRequest(BaseModel):
     observed_categories: Optional[Dict[str, Any]] = None
@@ -3232,11 +3231,14 @@ class IntelligenceProfileUpdateRequest(BaseModel):
 
 
 @api_router.get("/accounts/{account_id}/intelligence-profile")
-async def get_account_intelligence_profile(account_id: str):
+async def get_account_intelligence_profile(
+    account_id: str,
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     store = safe_get_store()
     if not store:
         raise HTTPException(status_code=503, detail="Store unavailable")
-    effective_account_id = resolve_account_id(None, account_id)
+    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     try:
         profile = await asyncio.to_thread(store.get_account_intelligence_profile, effective_account_id)
         return profile
@@ -3246,11 +3248,15 @@ async def get_account_intelligence_profile(account_id: str):
 
 
 @api_router.post("/accounts/{account_id}/intelligence-profile")
-async def update_account_intelligence_profile(account_id: str, request: IntelligenceProfileUpdateRequest):
+async def update_account_intelligence_profile(
+    account_id: str,
+    request: IntelligenceProfileUpdateRequest,
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     store = safe_get_store()
     if not store:
         raise HTTPException(status_code=503, detail="Store unavailable")
-    effective_account_id = resolve_account_id(None, account_id)
+    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     if hasattr(request, "model_dump"):
         updates = request.model_dump(exclude_unset=True)
     else:
@@ -4784,7 +4790,10 @@ async def delete_template(template_id: str, account_id: str = Query(...)):
 
 
 @api_router.get("/preferences")
-async def get_preferences(account_id: str = Query(...)):
+async def get_preferences(
+    account_id: str = Query(...),
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     """
     Read per-account AI language preference.
 
@@ -4793,6 +4802,7 @@ async def get_preferences(account_id: str = Query(...)):
     - null/invalid value -> English
     - lookup failure -> English
     """
+    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     ai_language = "en"
 
     try:
@@ -4800,7 +4810,7 @@ async def get_preferences(account_id: str = Query(...)):
         response = (
             store.client.table("user_preferences")
             .select("ai_language")
-            .eq("account_id", account_id)
+            .eq("account_id", effective_account_id)
             .limit(1)
             .execute()
         )
@@ -4809,23 +4819,27 @@ async def get_preferences(account_id: str = Query(...)):
             ai_language = normalize_language(rows[0].get("ai_language"))
     except Exception as e:
         logger.warning(
-            f"[PREFERENCES] Read failed for {account_id} "
+            f"[PREFERENCES] Read failed for {effective_account_id} "
             f"(type={type(e).__name__}) - defaulting to English"
         )
 
     return {
-        "account_id": account_id,
+        "account_id": effective_account_id,
         "ai_language": ai_language,
     }
 
 
 @api_router.post("/preferences")
-async def update_preferences(request: PreferencesUpdateRequest):
+async def update_preferences(
+    request: PreferencesUpdateRequest,
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     """
     Upsert per-account AI language preference.
 
     Accepted values are defined by backend.languages.SUPPORTED_LANGUAGES.
     """
+    effective_account_id = _require_account_ownership(jwt_subject, request.account_id)
     requested = (request.ai_language or "").strip()
     normalized = normalize_language(requested)
 
@@ -4843,7 +4857,7 @@ async def update_preferences(request: PreferencesUpdateRequest):
         store = _get_preferences_store()
         store.client.table("user_preferences").upsert(
             {
-                "account_id": request.account_id,
+                "account_id": effective_account_id,
                 "ai_language": normalized,
                 "updated_at": now_iso,
             },
@@ -4851,12 +4865,12 @@ async def update_preferences(request: PreferencesUpdateRequest):
         ).execute()
 
         return {
-            "account_id": request.account_id,
+            "account_id": effective_account_id,
             "ai_language": normalized,
         }
     except Exception as e:
         logger.error(
-            f"[PREFERENCES] Write failed for {request.account_id} "
+            f"[PREFERENCES] Write failed for {effective_account_id} "
             f"(type={type(e).__name__}): {e}"
         )
         raise HTTPException(
@@ -4866,7 +4880,10 @@ async def update_preferences(request: PreferencesUpdateRequest):
 
 
 @api_router.get("/preferences/profile")
-async def get_preferences_profile(account_id: str = Query(...)):
+async def get_preferences_profile(
+    account_id: str = Query(...),
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     """
     Read per-account AI priority profile.
 
@@ -4875,12 +4892,13 @@ async def get_preferences_profile(account_id: str = Query(...)):
     - field null -> null
     - lookup failure -> HTTP 500
     """
+    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     try:
         store = _get_preferences_store()
         response = (
             store.client.table("user_preferences")
             .select("ai_priority_profile")
-            .eq("account_id", account_id)
+            .eq("account_id", effective_account_id)
             .limit(1)
             .execute()
         )
@@ -4888,7 +4906,7 @@ async def get_preferences_profile(account_id: str = Query(...)):
         profile = rows[0].get("ai_priority_profile") if rows else None
     except Exception as e:
         logger.error(
-            f"[PREFERENCES/PROFILE] Read failed for {account_id} "
+            f"[PREFERENCES/PROFILE] Read failed for {effective_account_id} "
             f"(type={type(e).__name__}): {e}"
         )
         raise HTTPException(
@@ -4897,26 +4915,30 @@ async def get_preferences_profile(account_id: str = Query(...)):
         )
 
     return {
-        "account_id": account_id,
+        "account_id": effective_account_id,
         "ai_priority_profile": profile,
     }
 
 
 @api_router.put("/preferences/profile")
-async def update_preferences_profile(request: PreferencesProfileUpdateRequest):
+async def update_preferences_profile(
+    request: PreferencesProfileUpdateRequest,
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     """
     Write per-account AI priority profile.
 
     Uses read-then-update/insert to ensure ai_language and
     has_completed_onboarding are never silently clobbered.
     """
+    effective_account_id = _require_account_ownership(jwt_subject, request.account_id)
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
         store = _get_preferences_store()
         existing = (
             store.client.table("user_preferences")
             .select("account_id")
-            .eq("account_id", request.account_id)
+            .eq("account_id", effective_account_id)
             .limit(1)
             .execute()
         )
@@ -4928,23 +4950,23 @@ async def update_preferences_profile(request: PreferencesProfileUpdateRequest):
                     "ai_priority_profile": request.ai_priority_profile,
                     "updated_at": now_iso,
                 }
-            ).eq("account_id", request.account_id).execute()
+            ).eq("account_id", effective_account_id).execute()
         else:
             store.client.table("user_preferences").insert(
                 {
-                    "account_id": request.account_id,
+                    "account_id": effective_account_id,
                     "ai_priority_profile": request.ai_priority_profile,
                     "updated_at": now_iso,
                 }
             ).execute()
 
         return {
-            "account_id": request.account_id,
+            "account_id": effective_account_id,
             "ai_priority_profile": request.ai_priority_profile,
         }
     except Exception as e:
         logger.error(
-            f"[PREFERENCES/PROFILE] Write failed for {request.account_id} "
+            f"[PREFERENCES/PROFILE] Write failed for {effective_account_id} "
             f"(type={type(e).__name__}): {e}"
         )
         raise HTTPException(
@@ -5021,7 +5043,11 @@ async def translate_email_body(request: TranslateEmailRequest):
 
 
 @api_router.post("/emails/{gmail_message_id}/translate-render")
-async def translate_render_email(gmail_message_id: str, request: TranslateRenderRequest):
+async def translate_render_email(
+    gmail_message_id: str,
+    request: TranslateRenderRequest,
+    jwt_subject: str = Depends(require_jwt_auth),
+):
     """
     Message-bound translation endpoint returning an explicit translated render contract.
 
@@ -5034,13 +5060,12 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
       input  -> {"target_language": "en|fr|ar"}
       output -> TranslateRenderResponse
     """
-    record = await asyncio.to_thread(_lookup_email_record_by_message_id, gmail_message_id)
+    effective_account_id = _require_account_ownership(jwt_subject, None)
+    record = await asyncio.to_thread(
+        _lookup_email_record_by_message_id, effective_account_id, gmail_message_id
+    )
     if not record:
         raise HTTPException(status_code=404, detail="Email not found")
-
-    account_id = record.get("account_id")
-    if not account_id:
-        raise HTTPException(status_code=404, detail="Account not found for email")
 
     requested_language = (request.target_language or "").strip().lower()
     normalized_language = normalize_translation_language(requested_language)
@@ -5052,7 +5077,7 @@ async def translate_render_email(gmail_message_id: str, request: TranslateRender
 
     rendered_payload = await asyncio.to_thread(
         _build_rendered_email_payload,
-        account_id,
+        effective_account_id,
         gmail_message_id,
         record.get("body") or "",
     )
@@ -5287,6 +5312,7 @@ async def summarize_email_by_id(
     account_id: str = Query("default"),
     preferred_language: Optional[str] = Query(None),
     ai_language: Optional[str] = Query(None),
+    jwt_subject: str = Depends(require_jwt_auth),
 ):
     """
     Enqueue AI summarization job for specific email.
@@ -5309,7 +5335,7 @@ async def summarize_email_by_id(
     if not os.getenv("MISTRAL_API_KEY"):
         return {"status": "no_mistral_key"}
 
-    effective_account_id = resolve_account_id(None, account_id)
+    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     store = safe_get_store()
     if not store:
         return {"status": "error", "message": "Store unavailable"}

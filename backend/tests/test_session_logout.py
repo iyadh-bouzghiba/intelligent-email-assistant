@@ -144,36 +144,30 @@ class TestSessionLogoutRoutes(unittest.TestCase):
         self.assertIn("iea_session=", set_cookie)
         self.assertIn("max-age=0", set_cookie)
 
-    def test_disconnect_account_does_not_clear_cookie_for_non_subject_account(self):
+    def test_disconnect_account_rejects_non_subject_account(self):
         with patch.object(self.service, "CredentialStore", _FakeCredentialStore):
             response = self.client.post(
                 "/api/accounts/secondary%40example.com/disconnect",
                 cookies=self._cookie("active@example.com"),
             )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 403)
         self.assertEqual(
-            response.json(),
-            {"status": "disconnected", "account_id": "secondary@example.com"},
+            response.json().get("detail"),
+            "Access denied: account does not belong to the authenticated session.",
         )
-        self.assertEqual(
-            _FakeCredentialStore.deleted_accounts,
-            ["secondary@example.com"],
-        )
+        self.assertEqual(_FakeCredentialStore.deleted_accounts, [])
 
         set_cookie = response.headers.get("set-cookie", "").lower()
         self.assertNotIn("iea_session", set_cookie)
 
-    def test_disconnect_all_accounts_always_clears_cookie_on_success(self):
-        with patch.object(self.service, "safe_get_store", return_value=_FakeStore()):
-            response = self.client.post(
-                "/api/accounts/disconnect-all",
-                cookies=self._cookie("active@example.com"),
-            )
+    def test_disconnect_all_accounts_route_removed(self):
+        response = self.client.post(
+            "/api/accounts/disconnect-all",
+            cookies=self._cookie("active@example.com"),
+        )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"status": "success", "deleted_count": 1})
+        self.assertIn(response.status_code, (404, 405))
 
         set_cookie = response.headers.get("set-cookie", "").lower()
-        self.assertIn("iea_session=", set_cookie)
-        self.assertIn("max-age=0", set_cookie)
+        self.assertNotIn("iea_session=", set_cookie)
