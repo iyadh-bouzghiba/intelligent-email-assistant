@@ -138,11 +138,10 @@ class WebSocketService {
     }
 
     disconnect() {
-        if (this.socket) {
-            this.socket.removeAllListeners();
-            this.socket.disconnect();
-            this.socket = null;
-        }
+        if (!this.socket) return;
+        this.socket.removeAllListeners();
+        this.socket.disconnect();
+        this.socket = null;
     }
 
     on<K extends WebSocketEventName>(event: K, callback: WebSocketListener<K>) {

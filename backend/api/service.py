@@ -224,6 +224,19 @@ async def connect(sid, environ, auth=None):
         f"[SOCKET] Sentinel Connection Authenticated: {sid} "
         f"subject={subject}"
     )
+    # Resolve uid and join user room for targeted
+    # event routing. Best-effort: store failure
+    # must not reject an authenticated connection.
+    store = safe_get_store()
+    if store:
+        try:
+            uid = store.resolve_uid_by_account(
+                "gmail", subject)
+            if uid:
+                await sio.enter_room(sid, f"user:{uid}")
+        except Exception as e:
+            print(f"[SOCKET] Room join failed for "
+                  f"sid={sid}: {e}")
     await sio.emit(
         "connection_status",
         {"status": "stable", "transmission": "encrypted"},
@@ -1683,7 +1696,15 @@ async def _sync_now_impl(account_id: str, max_emails: int = 30, backfill_limit: 
 
         # Emit socket event for new emails
         try:
-            await sio.emit("emails_updated", {"count_new": stored_count})
+            uid = store.resolve_uid_by_account(
+                "gmail", effective_account_id)
+            if uid:
+                await sio.emit("emails_updated",
+                    {"count_new": stored_count},
+                    room=f"user:{uid}")
+            else:
+                await sio.emit("emails_updated",
+                    {"count_new": stored_count})
             logger.info(f"[SYNC] Socket.IO event emitted: emails_updated (count: {stored_count})")
         except Exception as e:
             logger.warning(f"[SYNC] Failed to emit socket event: {e}")
