@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef, useMemo } from 'react';
 import './i18n';
 import { apiService, AILanguage } from '@services';
 import { websocketService, type EmailsUpdatedData, type SummaryReadyData } from '@services/websocket';
@@ -1269,19 +1269,22 @@ export const App = () => {
     };
   }, [activeEmail]);
 
-  // Activate Socket.IO only when an authenticated account context is selected.
+  // Socket.IO is session-scoped, not account-scoped.
+  // The channel connects when any authenticated
+  // account exists and disconnects when none remain.
+  // Account switching does not affect this channel.
+  const hasAuthenticatedSession = useMemo(
+    () => accounts.some(a => !a.auth_required),
+    [accounts]
+  );
+
   useEffect(() => {
-    if (!activeEmail) {
+    if (hasAuthenticatedSession) {
+      websocketService.connect();
+    } else {
       websocketService.disconnect();
-      return;
     }
-
-    websocketService.connect();
-
-    return () => {
-      websocketService.disconnect();
-    };
-  }, [activeEmail]);
+  }, [hasAuthenticatedSession]);
 
   // Keep aiLanguageRef in sync for closure-safe access inside fetchEmails
   useEffect(() => {

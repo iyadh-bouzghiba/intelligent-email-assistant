@@ -27,7 +27,7 @@ logger.propagate = False
 
 # Socket.IO for realtime notifications
 try:
-    from backend.api.service import sio
+    from backend.api.service import sio, safe_get_store
     SOCKETIO_AVAILABLE = True
 except ImportError:
     SOCKETIO_AVAILABLE = False
@@ -359,15 +359,33 @@ def _sync_one_account(
 
         if written_count > 0 and SOCKETIO_AVAILABLE:
             try:
-                asyncio.run(
-                    sio.emit(
-                        "emails_updated",
-                        {
-                            "count": written_count,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        },
+                uid = None
+                store = safe_get_store()
+                if store:
+                    try:
+                        uid = store.resolve_uid_by_account(
+                            "gmail", account_id)
+                    except Exception:
+                        uid = None
+                if uid:
+                    asyncio.run(
+                        sio.emit(
+                            "emails_updated",
+                            {"count": written_count,
+                             "timestamp": datetime.now(
+                                 timezone.utc).isoformat()},
+                            room=f"user:{uid}"
+                        )
                     )
-                )
+                else:
+                    asyncio.run(
+                        sio.emit(
+                            "emails_updated",
+                            {"count": written_count,
+                             "timestamp": datetime.now(
+                                 timezone.utc).isoformat()}
+                        )
+                    )
                 emitted = True
                 logger.info(
                     f"[WORKER] [{account_id}] Socket.IO event emitted: emails_updated "
