@@ -373,6 +373,8 @@ if _REPO_ROOT not in sys.path:
 
 import backend.api.service as service  # noqa: E402
 from backend.api.service import TranslateRenderRequest  # noqa: E402
+from backend.auth_guard import JWTClaims  # noqa: E402
+from backend.tests.test_account_membership import FakeStore  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +383,8 @@ from backend.api.service import TranslateRenderRequest  # noqa: E402
 
 _FAKE_GMAIL_MESSAGE_ID = "msg-test-001"
 _FAKE_ACCOUNT_ID = "acc-test-001"
+_OWNER_ACCOUNT_ID = "owner@example.com"
+_TEST_UID = "00000000-0000-4000-8000-000000000001"
 _FAKE_BODY_TEXT = "Hello world. This is a test email."
 _FAKE_BODY_HTML = "<p>Hello world.</p><p>This is a test email.</p>"
 _FAKE_TRANSLATED_HTML = "<p>Bonjour le monde.</p><p>Ceci est un e-mail de test.</p>"
@@ -545,10 +549,33 @@ class TestHelperReasonCodes(unittest.IsolatedAsyncioTestCase):
 
 
 # ---------------------------------------------------------------------------
+# Shared mixin: patch safe_get_store for route-level tests
+# ---------------------------------------------------------------------------
+
+class TranslateRenderStorePatchMixin:
+    def setUp(self):
+        super().setUp()
+        self._claims = JWTClaims(sub=_OWNER_ACCOUNT_ID, uid=_TEST_UID)
+        self._safe_get_store_patcher = patch.object(
+            service,
+            "safe_get_store",
+            return_value=FakeStore(
+                owned_accounts=[_OWNER_ACCOUNT_ID],
+                primary=_OWNER_ACCOUNT_ID,
+            ),
+        )
+        self._safe_get_store_patcher.start()
+        self.addCleanup(self._safe_get_store_patcher.stop)
+
+
+# ---------------------------------------------------------------------------
 # Section A — Route-level contract proof
 # ---------------------------------------------------------------------------
 
-class TestTranslateRenderRouteContract(unittest.IsolatedAsyncioTestCase):
+class TestTranslateRenderRouteContract(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Deterministic proof of the route-level translated-render contract.
     The route function is called directly as a coroutine; all I/O is mocked.
@@ -591,6 +618,7 @@ class TestTranslateRenderRouteContract(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="en"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_mode"], "structured_html")
@@ -644,6 +672,7 @@ class TestTranslateRenderRouteContract(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         # Helper must not have been called — html_missing short-circuits before it.
@@ -691,6 +720,7 @@ class TestTranslateRenderRouteContract(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="en"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_mode"], "text_fallback")
@@ -738,6 +768,7 @@ class TestTranslateRenderRouteContract(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="en"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_mode"], "structured_html")
@@ -981,7 +1012,10 @@ class TestHtmlPreflightDegradation(unittest.TestCase):
         self.assertFalse(service._is_html_preflight_degraded(html))
 
 
-class TestPreflightDegradationRouteContract(unittest.IsolatedAsyncioTestCase):
+class TestPreflightDegradationRouteContract(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Section E (route) — Deterministic proof of the route-level contract when
     the preflight gate fires and when it does not.
@@ -1025,6 +1059,7 @@ class TestPreflightDegradationRouteContract(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         # Structured helper must not have been called — preflight short-circuits
@@ -1076,6 +1111,7 @@ class TestPreflightDegradationRouteContract(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_mode"], "structured_html")
@@ -1172,7 +1208,10 @@ class TestChunkFallbackHelpers(unittest.TestCase):
         self.assertEqual(len(chunks), 1)
 
 
-class TestChunkFallbackRouteContract(unittest.IsolatedAsyncioTestCase):
+class TestChunkFallbackRouteContract(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Section F (route level) — Deterministic proof that the translate-render
     route correctly routes large fallback bodies through the chunked path and
@@ -1220,6 +1259,7 @@ class TestChunkFallbackRouteContract(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         # generate_text_async called exactly once per chunk — not monolithically
@@ -1266,6 +1306,7 @@ class TestChunkFallbackRouteContract(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(mock_engine.generate_text_async.call_count, 1)
@@ -1325,6 +1366,7 @@ class TestChunkFallbackRouteContract(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         # Structured helper must NOT have been called — preflight gates it out
@@ -1380,6 +1422,7 @@ class TestChunkFallbackRouteContract(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="en"),
+                claims=self._claims,
             )
 
         # Chunking decision must never be consulted on the structured-success path
@@ -1474,7 +1517,10 @@ class TestHardSplitSegmentHelper(unittest.TestCase):
             )
 
 
-class TestHardSplitRouteContract(unittest.IsolatedAsyncioTestCase):
+class TestHardSplitRouteContract(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Section G (route level) — End-to-end proof that a large, no-punctuation
     body_text still produces multiple generate_text_async calls through the
@@ -1518,6 +1564,7 @@ class TestHardSplitRouteContract(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         # Multiple chunks → multiple calls (not one monolithic call)
@@ -1599,7 +1646,10 @@ class TestTokenVerifiedPrefixSplit(unittest.TestCase):
         self.assertTrue(all(len(c) <= service._FALLBACK_CHUNK_MAX_TOKENS for c in chunks))
 
 
-class TestTokenVerifiedRouteContract(unittest.IsolatedAsyncioTestCase):
+class TestTokenVerifiedRouteContract(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Section H (route level) — End-to-end proof that a large dense
     no-whitespace body (CJK-density tokeniser) still produces multiple
@@ -1642,6 +1692,7 @@ class TestTokenVerifiedRouteContract(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         # Multiple chunks → multiple calls (not one monolithic call).
@@ -1686,7 +1737,10 @@ class TestDenseTokenChunkingDecision(unittest.TestCase):
         engine.count_tokens.assert_called_once_with(dense_short)
 
 
-class TestDenseTokenChunkingRouteContract(unittest.IsolatedAsyncioTestCase):
+class TestDenseTokenChunkingRouteContract(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Section I (route level) — End-to-end proof that a dense-token body
     shorter than 3 000 characters still triggers chunking and produces
@@ -1729,6 +1783,7 @@ class TestDenseTokenChunkingRouteContract(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         # Chunking must have fired: multiple calls, not one monolithic call.
@@ -1851,7 +1906,10 @@ class TestSimplifiedFallbackSourceFidelity(unittest.TestCase):
         self.assertEqual(result, "")
 
 
-class TestSimplifiedFallbackSourceRouteIntegration(unittest.IsolatedAsyncioTestCase):
+class TestSimplifiedFallbackSourceRouteIntegration(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Route-level proofs for simplified fallback source (J11–J13).
     """
@@ -1899,6 +1957,7 @@ class TestSimplifiedFallbackSourceRouteIntegration(unittest.IsolatedAsyncioTestC
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
@@ -1946,6 +2005,7 @@ class TestSimplifiedFallbackSourceRouteIntegration(unittest.IsolatedAsyncioTestC
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
@@ -1984,6 +2044,7 @@ class TestSimplifiedFallbackSourceRouteIntegration(unittest.IsolatedAsyncioTestC
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         mock_derive.assert_not_called()
@@ -2045,7 +2106,10 @@ class TestSimplifiedSourcePreferenceGuard(unittest.TestCase):
         self.assertFalse(service._should_prefer_simplified_source("", "tiny"))
 
 
-class TestSimplifiedSourcePreferenceGuardRouteIntegration(unittest.IsolatedAsyncioTestCase):
+class TestSimplifiedSourcePreferenceGuardRouteIntegration(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Route-level proof that the guard blocks regressions (J18).
     """
@@ -2093,6 +2157,7 @@ class TestSimplifiedSourcePreferenceGuardRouteIntegration(unittest.IsolatedAsync
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
@@ -2203,7 +2268,10 @@ class TestAnchorAndStructurePreservingSource(unittest.TestCase):
         self.assertIn("Amount:", result)
 
 
-class TestAnchorAndStructurePreservingSourceRoute(unittest.IsolatedAsyncioTestCase):
+class TestAnchorAndStructurePreservingSourceRoute(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     End-to-end route tests for the improved derivation (K7–K8).
     Use real _derive_simplified_fallback_source — skipped if BS4 unavailable.
@@ -2254,6 +2322,7 @@ class TestAnchorAndStructurePreservingSourceRoute(unittest.IsolatedAsyncioTestCa
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
@@ -2300,6 +2369,7 @@ class TestAnchorAndStructurePreservingSourceRoute(unittest.IsolatedAsyncioTestCa
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
@@ -2422,7 +2492,10 @@ class TestProtectedContentAndActionableTargetFidelity(unittest.TestCase):
         self.assertNotIn("unsub@example.com", result)
 
 
-class TestProtectedContentFidelityRoute(unittest.IsolatedAsyncioTestCase):
+class TestProtectedContentFidelityRoute(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Route-level integration proofs for R3F-P1R3 (L7–L9).
     Use real _derive_simplified_fallback_source — skipped if BS4 unavailable.
@@ -2474,6 +2547,7 @@ class TestProtectedContentFidelityRoute(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
@@ -2528,6 +2602,7 @@ class TestProtectedContentFidelityRoute(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
@@ -2566,6 +2641,7 @@ class TestProtectedContentFidelityRoute(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         mock_derive.assert_not_called()
@@ -2743,7 +2819,10 @@ class TestBuildTranslationSystemPromptProtected(unittest.TestCase):
             self.assertNotIn("PROT_N", prompt)
 
 
-class TestProtectedTokenPreservationRoute(unittest.IsolatedAsyncioTestCase):
+class TestProtectedTokenPreservationRoute(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Route-level integration proofs for P1R4 (M14–M17).
     Use real _derive_protected_fallback_source — skipped if BS4 unavailable.
@@ -2796,6 +2875,7 @@ class TestProtectedTokenPreservationRoute(unittest.IsolatedAsyncioTestCase):
             await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         combined_sys = "\n".join(captured_system_prompts)
@@ -2843,6 +2923,7 @@ class TestProtectedTokenPreservationRoute(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertIn("USD 99.00", result["translated_body_text"])
@@ -2884,6 +2965,7 @@ class TestProtectedTokenPreservationRoute(unittest.IsolatedAsyncioTestCase):
             await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         combined_sys = "\n".join(captured_system_prompts)
@@ -2921,6 +3003,7 @@ class TestProtectedTokenPreservationRoute(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         mock_derive.assert_not_called()
@@ -2947,7 +3030,10 @@ _N_GUARD_APPROVE_CONTENT_HTML = (
 )
 
 
-class TestPlaceholderActivationGuard(unittest.IsolatedAsyncioTestCase):
+class TestPlaceholderActivationGuard(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Route-level proofs for the P1R4R1 activation guard and restore ordering
     (N1–N5). Uses real _derive_protected_fallback_source — skipped if BS4
@@ -2998,6 +3084,7 @@ class TestPlaceholderActivationGuard(unittest.IsolatedAsyncioTestCase):
             await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         combined_sys = "\n".join(captured_system_prompts)
@@ -3038,6 +3125,7 @@ class TestPlaceholderActivationGuard(unittest.IsolatedAsyncioTestCase):
             await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         mock_restore.assert_not_called()
@@ -3080,6 +3168,7 @@ class TestPlaceholderActivationGuard(unittest.IsolatedAsyncioTestCase):
             await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         combined_sys = "\n".join(captured_system_prompts)
@@ -3122,6 +3211,7 @@ class TestPlaceholderActivationGuard(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertIn("USD 42.00", result["translated_body_text"])
@@ -3172,6 +3262,7 @@ class TestPlaceholderActivationGuard(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translated_body_text"], "USD 42.00")
@@ -3182,7 +3273,10 @@ class TestPlaceholderActivationGuard(unittest.IsolatedAsyncioTestCase):
 # Section O — Protected-token chunking integrity (P3.5-R3F-P1R4R2)
 # ---------------------------------------------------------------------------
 
-class TestProtectedTokenChunkingIntegrity(unittest.IsolatedAsyncioTestCase):
+class TestProtectedTokenChunkingIntegrity(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Proofs that [[PROT_N]] placeholder tokens survive chunked fallback
     translation intact (O1–O4).
@@ -3337,6 +3431,7 @@ class TestProtectedTokenChunkingIntegrity(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         translated = result["translated_body_text"]
@@ -3392,7 +3487,10 @@ _P_CONTENT_HTML = (
 )
 
 
-class TestFailSafeProtectedHandlingAndHelperDedup(unittest.IsolatedAsyncioTestCase):
+class TestFailSafeProtectedHandlingAndHelperDedup(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Proofs for the P1R4R3 fail-safe and dedup changes (P1–P6).
 
@@ -3448,6 +3546,7 @@ class TestFailSafeProtectedHandlingAndHelperDedup(unittest.IsolatedAsyncioTestCa
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         # Exactly one translation call — no retry.
@@ -3494,6 +3593,7 @@ class TestFailSafeProtectedHandlingAndHelperDedup(unittest.IsolatedAsyncioTestCa
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         # Two calls: primary (dropped) + retry.
@@ -3541,6 +3641,7 @@ class TestFailSafeProtectedHandlingAndHelperDedup(unittest.IsolatedAsyncioTestCa
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(call_count[0], 2)
@@ -3615,6 +3716,7 @@ class TestFailSafeProtectedHandlingAndHelperDedup(unittest.IsolatedAsyncioTestCa
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         mock_impl.assert_not_called()
@@ -3636,7 +3738,10 @@ _Q_CONTENT_HTML = (
 )
 
 
-class TestRetryFailureContractParity(unittest.IsolatedAsyncioTestCase):
+class TestRetryFailureContractParity(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Proofs that the fail-safe retry path raises the same HTTP exceptions as
     the main text-fallback path for each error class (Q1–Q3).
@@ -3694,6 +3799,7 @@ class TestRetryFailureContractParity(unittest.IsolatedAsyncioTestCase):
                 await service.translate_render_email(
                     _FAKE_GMAIL_MESSAGE_ID,
                     TranslateRenderRequest(target_language="fr"),
+                    claims=self._claims,
                 )
 
         self.assertEqual(ctx.exception.status_code, 503)
@@ -3738,6 +3844,7 @@ class TestRetryFailureContractParity(unittest.IsolatedAsyncioTestCase):
                 await service.translate_render_email(
                     _FAKE_GMAIL_MESSAGE_ID,
                     TranslateRenderRequest(target_language="fr"),
+                    claims=self._claims,
                 )
 
         self.assertEqual(ctx.exception.status_code, 502)
@@ -3782,6 +3889,7 @@ class TestRetryFailureContractParity(unittest.IsolatedAsyncioTestCase):
                 await service.translate_render_email(
                     _FAKE_GMAIL_MESSAGE_ID,
                     TranslateRenderRequest(target_language="fr"),
+                    claims=self._claims,
                 )
 
         self.assertEqual(ctx.exception.status_code, 502)
@@ -4052,7 +4160,10 @@ class TestCanonicalSourceSelectionAndPostProcessing(unittest.TestCase):
         self.assertEqual(len(result.split("\n\n")), 3)
 
 
-class TestCanonicalSourceSelectionRouteLevel(unittest.IsolatedAsyncioTestCase):
+class TestCanonicalSourceSelectionRouteLevel(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Route-level async proofs for Section R (R18–R20).
     Requires BS4 for R18/R19 (skipped if unavailable).
@@ -4108,6 +4219,7 @@ class TestCanonicalSourceSelectionRouteLevel(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_mode"], "text_fallback")
@@ -4176,6 +4288,7 @@ class TestCanonicalSourceSelectionRouteLevel(unittest.IsolatedAsyncioTestCase):
             await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         # Since P3.5-R3F-R2 added pre-translation normalization, _trim_footer_tail and
@@ -4222,6 +4335,7 @@ class TestCanonicalSourceSelectionRouteLevel(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_mode"], "structured_html")
@@ -4485,7 +4599,10 @@ class TestRateLimitAwareChunkRetry(unittest.IsolatedAsyncioTestCase):
                          f"Zero-delay retry must never occur: {sleep_calls}")
 
 
-class TestPreNormalizationRouteLevel(unittest.IsolatedAsyncioTestCase):
+class TestPreNormalizationRouteLevel(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Section S route-level proofs (S1–S4) for P3.5-R3F-R2.
     """
@@ -4525,6 +4642,7 @@ class TestPreNormalizationRouteLevel(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_reason_code"], "structured_preflight_degraded")
@@ -4586,6 +4704,7 @@ class TestPreNormalizationRouteLevel(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_mode"], "text_fallback")
@@ -4643,6 +4762,7 @@ class TestPreNormalizationRouteLevel(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_mode"], "text_fallback")
@@ -4675,6 +4795,7 @@ class TestPreNormalizationRouteLevel(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_mode"], "structured_html")
@@ -4804,7 +4925,10 @@ class TestBudgetRichBodyForTranslation(unittest.TestCase):
         self.assertEqual(result, "")
 
 
-class TestBudgetingRouteIntegration(unittest.IsolatedAsyncioTestCase):
+class TestBudgetingRouteIntegration(
+    TranslateRenderStorePatchMixin,
+    unittest.IsolatedAsyncioTestCase,
+):
     """
     Section T (T11–T12): Route-level tests for body budgeting and governor wiring.
     """
@@ -4854,6 +4978,7 @@ class TestBudgetingRouteIntegration(unittest.IsolatedAsyncioTestCase):
             result = await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(result["translation_mode"], "text_fallback")
@@ -4899,6 +5024,7 @@ class TestBudgetingRouteIntegration(unittest.IsolatedAsyncioTestCase):
             await service.translate_render_email(
                 _FAKE_GMAIL_MESSAGE_ID,
                 TranslateRenderRequest(target_language="fr"),
+                claims=self._claims,
             )
 
         self.assertEqual(len(begin_calls), 1, "begin_interactive must be called exactly once")
@@ -4940,6 +5066,7 @@ class TestBudgetingRouteIntegration(unittest.IsolatedAsyncioTestCase):
                 await service.translate_render_email(
                     _FAKE_GMAIL_MESSAGE_ID,
                     TranslateRenderRequest(target_language="fr"),
+                    claims=self._claims,
                 )
             except Exception:
                 pass

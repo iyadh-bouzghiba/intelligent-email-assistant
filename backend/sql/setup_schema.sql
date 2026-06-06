@@ -2,6 +2,8 @@
 -- Canonical Supabase/Postgres schema bootstrap (idempotent)
 -- Required by ControlPlane.verify_schema() and WORKER-PERF-01
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- 0) SCHEMA VERSION (required: schema_version.version + schema_version.applied_at; expected v3)
 -- Upgrade-safe: do NOT assume an id column exists.
 CREATE TABLE IF NOT EXISTS public.schema_version (
@@ -445,6 +447,22 @@ ON public.sent_emails (account_id, sent_at DESC);
 
 -- GUARD: Never paste HTML entities into this SQL file. Use raw comparison operators (<=, >=) only.
 
+-- 12) APP USERS + ACCOUNT MEMBERSHIPS (MUI01-R1-B — multi-user identity foundation)
+CREATE TABLE IF NOT EXISTS public.app_users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.account_memberships (
+  user_id UUID NOT NULL REFERENCES public.app_users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL DEFAULT 'gmail',
+  account_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, provider, account_id)
+);
+
 -- ============================================================
 -- MULTI-USER-ISOLATION-01: Row Level Security
 -- Mirrors backend/migrations/20260604_multi_user_isolation_rls.sql
@@ -458,6 +476,8 @@ ALTER TABLE public.email_ai_summaries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.account_intelligence_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.account_memberships ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Service role has full access to credentials" ON public.credentials;
 DROP POLICY IF EXISTS "Service role has full access to emails" ON public.emails;
@@ -692,3 +712,66 @@ ON public.account_intelligence_profiles
 FOR DELETE
 TO authenticated
 USING ((current_setting('request.jwt.claims', true)::jsonb ->> 'sub') = account_id);
+
+-- MUI01-R1-B: app_users + account_memberships policies (idempotent)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'app_users'
+      AND policyname = 'app_users_service_role_all'
+  ) THEN
+    CREATE POLICY app_users_service_role_all
+      ON public.app_users
+      FOR ALL
+      TO service_role
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'account_memberships'
+      AND policyname = 'account_memberships_service_role_all'
+  ) THEN
+    CREATE POLICY account_memberships_service_role_all
+      ON public.account_memberships
+      FOR ALL
+      TO service_role
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'app_users'
+      AND policyname = 'app_users_authenticated_select_own'
+  ) THEN
+    CREATE POLICY app_users_authenticated_select_own
+      ON public.app_users
+      FOR SELECT
+      TO authenticated
+      USING (id::text = auth.jwt() ->> 'uid');
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'account_memberships'
+      AND policyname = 'account_memberships_authenticated_select_own'
+  ) THEN
+    CREATE POLICY account_memberships_authenticated_select_own
+      ON public.account_memberships
+      FOR SELECT
+      TO authenticated
+      USING (user_id::text = auth.jwt() ->> 'uid');
+  END IF;
+END $$;

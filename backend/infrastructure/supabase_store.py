@@ -660,6 +660,110 @@ class SupabaseStore:
 
         return self.get_account_intelligence_profile(account_id)
 
+    # ── MUI01-R1-B: UUID principal + membership methods ──────────────────────
+
+    def get_or_create_app_user(self) -> str:
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            result = self.client.table("app_users").insert({
+                "created_at": now,
+                "updated_at": now,
+            }).execute()
+        except Exception as e:
+            logger.error(f"[APP-USERS] Insert failed: {type(e).__name__}: {e}")
+            raise
+        if not result.data or not result.data[0].get("id"):
+            raise RuntimeError("[APP-USERS] Insert returned no id")
+        uid = str(result.data[0]["id"])
+        logger.info(f"[APP-USERS] Created app_user uid={uid}")
+        return uid
+
+    def resolve_uid_by_account(self, provider: str, account_id: str) -> Optional[str]:
+        try:
+            result = (
+                self.client.table("account_memberships")
+                .select("user_id")
+                .eq("provider", provider)
+                .eq("account_id", account_id)
+                .order("updated_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(f"[MEMBERSHIPS] resolve_uid_by_account failed: {type(e).__name__}: {e}")
+            return None
+        if result.data:
+            return str(result.data[0]["user_id"])
+        return None
+
+    def upsert_membership(self, user_uid: str, provider: str, account_id: str) -> None:
+        payload = {
+            "user_id": user_uid,
+            "provider": provider,
+            "account_id": account_id,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            self.client.table("account_memberships").upsert(
+                payload,
+                on_conflict="user_id,provider,account_id",
+            ).execute()
+            logger.info(f"[MEMBERSHIPS] Upserted membership uid={user_uid} provider={provider} account={account_id}")
+        except Exception as e:
+            logger.error(f"[MEMBERSHIPS] upsert_membership failed: {type(e).__name__}: {e}")
+            raise
+
+    def check_membership(self, user_uid: str, provider: str, account_id: str) -> bool:
+        try:
+            result = (
+                self.client.table("account_memberships")
+                .select("user_id")
+                .eq("user_id", user_uid)
+                .eq("provider", provider)
+                .eq("account_id", account_id)
+                .limit(1)
+                .execute()
+            )
+            return bool(result.data)
+        except Exception as e:
+            logger.warning(f"[MEMBERSHIPS] check_membership failed: {type(e).__name__}: {e}")
+            return False
+
+    def get_primary_account(self, user_uid: str, provider: str) -> Optional[str]:
+        if not user_uid:
+            return None
+        try:
+            result = (
+                self.client.table("account_memberships")
+                .select("account_id")
+                .eq("user_id", user_uid)
+                .eq("provider", provider)
+                .order("updated_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(f"[MEMBERSHIPS] get_primary_account failed: {type(e).__name__}: {e}")
+            return None
+        if result.data:
+            return str(result.data[0]["account_id"])
+        return None
+
+    def list_memberships(self, user_uid: str, provider: str) -> list:
+        try:
+            result = (
+                self.client.table("account_memberships")
+                .select("account_id")
+                .eq("user_id", user_uid)
+                .eq("provider", provider)
+                .order("updated_at", desc=True)
+                .execute()
+            )
+            return [str(row["account_id"]) for row in (result.data or [])]
+        except Exception as e:
+            logger.warning(f"[MEMBERSHIPS] list_memberships failed: {type(e).__name__}: {e}")
+            return []
+
 
 _DEFAULT_NOTIFICATION_PREFERENCES = {
     "urgency_escalation_enabled": False,

@@ -10,6 +10,7 @@ from starlette.requests import Request
 from backend import auth_guard as ag
 
 TEST_SECRET = "session-logout-01-test-secret-with-at-least-32-bytes"
+TEST_UID = "00000000-0000-4000-8000-000000000001"
 
 
 def _reset_cached_secret():
@@ -27,6 +28,17 @@ def _request_for_scheme(scheme):
             "server": ("testserver", 443 if scheme == "https" else 80),
         }
     )
+
+
+class _FakeOwnershipStore:
+    def __init__(self, owned_accounts=None):
+        self._owned = set(owned_accounts or [])
+
+    def check_membership(self, user_uid, provider, account_id):
+        return account_id in self._owned
+
+    def get_primary_account(self, user_uid, provider):
+        return next(iter(self._owned), None)
 
 
 class _FakeCredentialStore:
@@ -123,15 +135,17 @@ class TestSessionLogoutRoutes(unittest.TestCase):
     def _cookie(self, subject):
         with patch.dict(os.environ, {"JWT_SECRET": TEST_SECRET}, clear=False):
             _reset_cached_secret()
-            token = ag.create_access_token(subject)
+            token = ag.create_access_token(subject=subject, uid=TEST_UID)
         return {"iea_session": token}
 
     def test_disconnect_account_clears_cookie_when_account_matches_subject(self):
+        fake_store = _FakeOwnershipStore(owned_accounts=["active@example.com"])
         with patch.object(self.service, "CredentialStore", _FakeCredentialStore):
-            response = self.client.post(
-                "/api/accounts/active%40example.com/disconnect",
-                cookies=self._cookie("active@example.com"),
-            )
+            with patch.object(self.service, "safe_get_store", return_value=fake_store):
+                response = self.client.post(
+                    "/api/accounts/active%40example.com/disconnect",
+                    cookies=self._cookie("active@example.com"),
+                )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -145,11 +159,13 @@ class TestSessionLogoutRoutes(unittest.TestCase):
         self.assertIn("max-age=0", set_cookie)
 
     def test_disconnect_account_rejects_non_subject_account(self):
+        fake_store = _FakeOwnershipStore(owned_accounts=["active@example.com"])
         with patch.object(self.service, "CredentialStore", _FakeCredentialStore):
-            response = self.client.post(
-                "/api/accounts/secondary%40example.com/disconnect",
-                cookies=self._cookie("active@example.com"),
-            )
+            with patch.object(self.service, "safe_get_store", return_value=fake_store):
+                response = self.client.post(
+                    "/api/accounts/secondary%40example.com/disconnect",
+                    cookies=self._cookie("active@example.com"),
+                )
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(
