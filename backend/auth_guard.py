@@ -1,5 +1,6 @@
 ﻿import os
 import time
+from dataclasses import dataclass
 from http.cookies import CookieError, SimpleCookie
 from typing import Optional
 
@@ -12,6 +13,12 @@ _JWT_SECRET: Optional[str] = None
 _JWT_TTL: int = int(os.getenv("JWT_TTL_SECONDS", "604800"))
 
 
+@dataclass(frozen=True)
+class JWTClaims:
+    sub: str
+    uid: str
+
+
 def _get_secret() -> str:
     global _JWT_SECRET
     if _JWT_SECRET is None:
@@ -21,10 +28,11 @@ def _get_secret() -> str:
     return _JWT_SECRET
 
 
-def create_access_token(subject: str) -> str:
+def create_access_token(subject: str, uid: str) -> str:
     ttl = int(os.getenv("JWT_TTL_SECONDS", str(_JWT_TTL)))
     payload = {
         "sub": subject,
+        "uid": uid,
         "iat": int(time.time()),
         "exp": int(time.time()) + ttl,
     }
@@ -183,7 +191,7 @@ def build_session_cookie_clear_kwargs(request: Request) -> dict:
         "expires": 0,
     }
 
-def require_jwt_auth(request: Request) -> str:
+def require_jwt_auth(request: Request) -> JWTClaims:
     token = request.cookies.get(COOKIE_NAME)
     if not token:
         raise HTTPException(
@@ -192,7 +200,6 @@ def require_jwt_auth(request: Request) -> str:
         )
     try:
         payload = decode_access_token(token)
-        return payload.get("sub", "")
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -203,3 +210,11 @@ def require_jwt_auth(request: Request) -> str:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid session token",
         )
+    subject = payload.get("sub", "")
+    if not isinstance(subject, str) or not subject.strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session token",
+        )
+    uid = payload.get("uid", "")
+    return JWTClaims(sub=subject.strip(), uid=(uid or "").strip())

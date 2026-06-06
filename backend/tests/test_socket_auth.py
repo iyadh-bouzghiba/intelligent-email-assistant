@@ -18,6 +18,7 @@ from backend import auth_guard as ag
 
 
 TEST_SECRET = "sockauth01-test-secret-with-at-least-32-bytes"
+TEST_UID = "00000000-0000-4000-8000-000000000001"
 
 
 def _reset_cached_secret():
@@ -37,7 +38,7 @@ class TestSocketAuthHelpers(unittest.TestCase):
     def _create_token(self, subject):
         with self._auth_env():
             _reset_cached_secret()
-            return ag.create_access_token(subject)
+            return ag.create_access_token(subject=subject, uid=TEST_UID)
 
     def _encode_payload(self, payload):
         return jwt.encode(payload, TEST_SECRET, algorithm="HS256")

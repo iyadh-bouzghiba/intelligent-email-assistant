@@ -74,9 +74,12 @@ from backend.config import Config
 from backend.core import EmailAssistant
 
 from backend.auth_guard import (  # noqa: E402
+    COOKIE_NAME,
+    JWTClaims,
     build_session_cookie_clear_kwargs,
     build_session_cookie_kwargs,
     create_access_token,
+    decode_access_token,
     require_jwt_auth,
     resolve_socket_auth_subject,
 )
@@ -504,29 +507,39 @@ def resolve_account_id(state: Optional[str], account_id: Optional[str]) -> str:
     return effective or "default"
 
 def _require_account_ownership(
-    jwt_subject: str,
+    user_uid: str,
     requested_account_id: Optional[str],
+    store,
 ) -> str:
     """
-    Enforce that the requested account_id belongs to the authenticated JWT subject.
+    Security primitive. This function's 403 detail
+    string, parameter names, and return contract
+    must not change.
 
-    - If requested_account_id is None or empty:
-      return jwt_subject (safe default).
-    - If requested_account_id equals jwt_subject:
-      return jwt_subject (authorized).
-    - If requested_account_id differs from jwt_subject:
-      raise HTTP 403 immediately.
+    Invariant: returns an account_id that is provably
+    owned by user_uid through a database membership
+    record. Never returns an account_id not owned.
 
-    Never returns a value that does not equal the JWT subject.
+    If user_uid is empty (legacy JWT without uid
+    claim), membership lookup returns no results and
+    HTTP 403 is raised, prompting re-authentication.
     """
     if not requested_account_id:
-        return jwt_subject
-    if requested_account_id != jwt_subject:
+        primary = store.get_primary_account(user_uid, "gmail")
+        if not primary:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: account does not belong to the authenticated session.",
+            )
+        return primary
+
+    owned = store.check_membership(user_uid, "gmail", requested_account_id)
+    if not owned:
         raise HTTPException(
             status_code=403,
             detail="Access denied: account does not belong to the authenticated session.",
         )
-    return jwt_subject
+    return requested_account_id
 
 
 @app.get("/debug-config", dependencies=[Depends(require_jwt_auth)])
@@ -603,10 +616,10 @@ async def debug_imports():
         "package_context": __package__ or "None (not executed as package)",
     }
 
-@app.get("/accounts", dependencies=[Depends(require_jwt_auth)])
-async def list_accounts_root():
+@app.get("/accounts")
+async def list_accounts_root(claims: JWTClaims = Depends(require_jwt_auth)):
     """Compatibility bridge: root /accounts delegates to canonical /api/accounts."""
-    return await list_accounts()
+    return await list_accounts(claims=claims)
 
 # ------------------------------------------------------------------
 # FRONTEND BRIDGE ROUTES
@@ -1203,7 +1216,7 @@ def _build_rendered_email_payload(
 @api_router.get("/emails")
 async def list_emails(
     account_id: Optional[str] = Query(None),
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     REST endpoint for stabilized frontend polling. Reads from Supabase Source of Truth.
@@ -1214,11 +1227,11 @@ async def list_emails(
     Returns:
         List of email objects from Supabase
     """
-    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     store = safe_get_store()
     if not store:
         logger.warning("[API] /emails called but store unavailable")
         return []
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
 
     try:
         logger.info(f"[API] /emails called with account_id={effective_account_id}")
@@ -1237,7 +1250,7 @@ async def list_emails(
 async def list_emails_with_summaries(
     account_id: Optional[str] = Query(None),
     preferred_language: str = Query("en"),
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     OPTIMIZED endpoint that fetches emails with AI summaries in batch.
@@ -1254,11 +1267,11 @@ async def list_emails_with_summaries(
         - ai_summary_text: Plain text overview or null
         - ai_summary_model: Model used or null
     """
-    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     store = safe_get_store()
     if not store:
         logger.warning("[API] /emails-with-summaries called but store unavailable")
         return []
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
 
     try:
         preferred_language = normalize_language(preferred_language)
@@ -1279,9 +1292,12 @@ async def list_emails_with_summaries(
 @api_router.get("/emails/{gmail_message_id}/rendered")
 async def get_rendered_email(
     gmail_message_id: str,
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
-    effective_account_id = _require_account_ownership(jwt_subject, None)
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, None, store)
     record = await asyncio.to_thread(
         _lookup_email_record_by_message_id, effective_account_id, gmail_message_id
     )
@@ -1309,14 +1325,17 @@ async def get_attachment_stream(
     message_id: str,
     attachment_key: str,
     download: bool = Query(False),
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Serve attachment bytes by stable attachment_key.
     The stable key is deterministic from message-local metadata (ordinal + filename + mime + size).
     It is never the opaque Gmail attachmentId — that is resolved internally after lookup.
     """
-    effective_account_id = _require_account_ownership(jwt_subject, None)
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, None, store)
     record = await asyncio.to_thread(
         _lookup_email_record_by_message_id, effective_account_id, message_id
     )
@@ -1391,7 +1410,7 @@ async def sync_now(
     account_id: str = Query("default"),
     max_emails: int = Query(10, description="Maximum emails to fetch (default: 10, validation: 10)"),
     backfill_limit: int = Query(0, description="Maximum legacy emails to backfill (default: 0=skip, validation: 10)"),
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     User-driven Gmail sync endpoint with timeout protection.
@@ -1409,7 +1428,10 @@ async def sync_now(
     - {"status": "timeout"} if sync takes longer than 28 seconds
     - {"status": "error"} on failure (no secrets leaked)
     """
-    effective_account_id = _require_account_ownership(jwt_subject, account_id)
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
     try:
         # Wrap with 28s timeout (Render has 30s HTTP timeout — 2s buffer)
         return await asyncio.wait_for(
@@ -1762,7 +1784,7 @@ async def get_email_summary(
     gmail_message_id: str,
     account_id: str = Query("default"),
     preferred_language: str = Query("en"),
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Fetch AI summary for specific email.
@@ -1777,11 +1799,11 @@ async def get_email_summary(
         - ai_preferred_language: the requested language
         - ai_preferred_language_available: whether the preferred variant exists
     """
-    effective_account_id = _require_account_ownership(jwt_subject, account_id)
-    preferred_language = normalize_language(preferred_language)
     store = safe_get_store()
     if not store:
         return {"status": "error", "message": "Store unavailable"}
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
+    preferred_language = normalize_language(preferred_language)
 
     try:
         # Fetch all email-summary language variants for this message.
@@ -1968,7 +1990,7 @@ class AgentFeedbackRequest(BaseModel):
 async def draft_thread_reply(
     thread_id: str,
     request: AgentDraftRequest,
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Generate a draft reply proposal using the AI agent.
@@ -1984,7 +2006,7 @@ async def draft_thread_reply(
     store = safe_get_store()
     if not store:
         raise HTTPException(status_code=503, detail="Storage unavailable")
-    effective_account_id = _require_account_ownership(jwt_subject, request.account_id)
+    effective_account_id = _require_account_ownership(claims.uid, request.account_id, store)
 
     # Fetch email from DB — never trust client-provided body content
     try:
@@ -2068,7 +2090,7 @@ class SendEmailRequest(BaseModel):
 async def send_thread_reply(
     thread_id: str,
     request: Request,
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Send an email reply with RFC-compliant threading headers.
@@ -2152,12 +2174,11 @@ async def send_thread_reply(
             cc_val = json_data.get("cc") or None
             account_id_from_body = json_data.get("account_id") or None
 
-        effective_account_id = _require_account_ownership(jwt_subject, account_id_from_body)
-
         # Step 1: Verify thread belongs to effective_account_id
         store = safe_get_store()
         if not store:
             return {"success": False, "error": "Database unavailable"}
+        effective_account_id = _require_account_ownership(claims.uid, account_id_from_body, store)
 
         try:
             thread_records = await asyncio.to_thread(
@@ -2377,7 +2398,7 @@ async def send_thread_reply(
 async def set_thread_read_state(
     thread_id: str,
     request: Request,
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Mark a Gmail thread as read or unread.
@@ -2400,11 +2421,11 @@ async def set_thread_read_state(
         body = await request.json()
         is_read: bool = bool(body.get("is_read", True))
         requested_account_id: Optional[str] = body.get("account_id") or None
-        effective_account_id: str = _require_account_ownership(jwt_subject, requested_account_id)
 
         store = safe_get_store()
         if not store:
             return {"success": False, "error": "Database unavailable"}
+        effective_account_id: str = _require_account_ownership(claims.uid, requested_account_id, store)
 
         credential_store = CredentialStore(persistence)
         token_data = await asyncio.to_thread(credential_store.load_credentials, effective_account_id)
@@ -2489,18 +2510,18 @@ async def get_inbox_threads(
     account_id: str = Query(...),
     limit: int = Query(50),
     preferred_language: str = Query("en"),
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Thread-aware inbox: one representative row per thread, sorted by latest activity DESC.
     Considers both inbox message dates and sent message timestamps so that a thread where
     the user replied last still surfaces at the correct position.
     """
-    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     store = safe_get_store()
     if not store:
         logger.warning("[INBOX] Store unavailable")
         return []
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
     try:
         preferred_language = normalize_language(preferred_language)
         # Fetch raw inbox messages with a larger cap to avoid cutting mid-thread duplicates
@@ -2609,7 +2630,7 @@ async def search_emails(
     preferred_language: str = Query("en"),
     limit: int = Query(50),
     has_attachments: Optional[bool] = Query(None),
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Full-text search over the inbox.  Returns InboxThreadRow-compatible dicts.
@@ -2619,17 +2640,16 @@ async def search_emails(
     sent-activity merge, thread-collapse, and unread-propagation logic as
     /api/inbox.  Results are sorted by relevance DESC, latest activity DESC.
     """
-    effective_account_id = _require_account_ownership(jwt_subject, account_id)
+    store = safe_get_store()
+    if not store:
+        logger.warning("[SEARCH] Store unavailable")
+        return []
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
     q = (q or "").strip()
     if len(q) < 2:
         return []
     limit = min(max(limit, 1), 50)
     preferred_language = normalize_language(preferred_language)
-
-    store = safe_get_store()
-    if not store:
-        logger.warning("[SEARCH] Store unavailable")
-        return []
 
     try:
         # 1. Fetch ranked candidates from the DB function (bounded at 200)
@@ -3159,7 +3179,7 @@ async def export_data(tenant_id: str = "primary"):
 
 
 @api_router.get("/accounts")
-async def list_accounts():
+async def list_accounts(claims: JWTClaims = Depends(require_jwt_auth)):
     """
     Lists all connected Gmail accounts with truthful credential status.
 
@@ -3173,13 +3193,27 @@ async def list_accounts():
     if not store:
         return {"accounts": []}
     try:
-        gmail_creds = await asyncio.to_thread(store.list_credentials, "gmail") or []
+        account_ids = await asyncio.to_thread(store.list_memberships, claims.uid, "gmail")
+        if not account_ids:
+            return {"accounts": []}
+
+        raw = await asyncio.to_thread(
+            lambda: (
+                store.client.table("credentials")
+                .select("*")
+                .eq("provider", "gmail")
+                .in_("account_id", account_ids)
+                .execute()
+            )
+        )
+        gmail_creds = raw.data or []
 
         credential_store = CredentialStore(persistence)
         accounts = []
         for c in gmail_creds:
             account_id = c.get("account_id")
-            scopes = c.get("scopes", [])
+            scopes_raw = c.get("scopes", "") or ""
+            scopes = [s.strip() for s in scopes_raw.split(",") if s.strip()] if isinstance(scopes_raw, str) else (scopes_raw or [])
             # Attempt decrypt to distinguish "row exists" from "usable credentials"
             try:
                 token_data = await asyncio.to_thread(
@@ -3209,15 +3243,18 @@ async def disconnect_account(
     account_id: str,
     request: Request,
     response: Response,
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Disconnects a Google account by deleting its credentials.
     """
-    effective_account_id = _require_account_ownership(jwt_subject, account_id)
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
     credential_store = CredentialStore(persistence)
     await asyncio.to_thread(credential_store.delete_credentials, effective_account_id)
-    if effective_account_id == jwt_subject:
+    if effective_account_id == claims.sub:
         response.set_cookie(**build_session_cookie_clear_kwargs(request))
     return {"status": "disconnected", "account_id": effective_account_id}
 
@@ -3233,12 +3270,12 @@ class IntelligenceProfileUpdateRequest(BaseModel):
 @api_router.get("/accounts/{account_id}/intelligence-profile")
 async def get_account_intelligence_profile(
     account_id: str,
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     store = safe_get_store()
     if not store:
         raise HTTPException(status_code=503, detail="Store unavailable")
-    effective_account_id = _require_account_ownership(jwt_subject, account_id)
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
     try:
         profile = await asyncio.to_thread(store.get_account_intelligence_profile, effective_account_id)
         return profile
@@ -3251,12 +3288,12 @@ async def get_account_intelligence_profile(
 async def update_account_intelligence_profile(
     account_id: str,
     request: IntelligenceProfileUpdateRequest,
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     store = safe_get_store()
     if not store:
         raise HTTPException(status_code=503, detail="Store unavailable")
-    effective_account_id = _require_account_ownership(jwt_subject, account_id)
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
     if hasattr(request, "model_dump"):
         updates = request.model_dump(exclude_unset=True)
     else:
@@ -4792,7 +4829,7 @@ async def delete_template(template_id: str, account_id: str = Query(...)):
 @api_router.get("/preferences")
 async def get_preferences(
     account_id: str = Query(...),
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Read per-account AI language preference.
@@ -4802,7 +4839,10 @@ async def get_preferences(
     - null/invalid value -> English
     - lookup failure -> English
     """
-    effective_account_id = _require_account_ownership(jwt_subject, account_id)
+    store = safe_get_store()
+    if not store:
+        return {"account_id": account_id, "ai_language": "en"}
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
     ai_language = "en"
 
     try:
@@ -4832,14 +4872,17 @@ async def get_preferences(
 @api_router.post("/preferences")
 async def update_preferences(
     request: PreferencesUpdateRequest,
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Upsert per-account AI language preference.
 
     Accepted values are defined by backend.languages.SUPPORTED_LANGUAGES.
     """
-    effective_account_id = _require_account_ownership(jwt_subject, request.account_id)
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, request.account_id, store)
     requested = (request.ai_language or "").strip()
     normalized = normalize_language(requested)
 
@@ -4882,7 +4925,7 @@ async def update_preferences(
 @api_router.get("/preferences/profile")
 async def get_preferences_profile(
     account_id: str = Query(...),
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Read per-account AI priority profile.
@@ -4892,7 +4935,10 @@ async def get_preferences_profile(
     - field null -> null
     - lookup failure -> HTTP 500
     """
-    effective_account_id = _require_account_ownership(jwt_subject, account_id)
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
     try:
         store = _get_preferences_store()
         response = (
@@ -4923,7 +4969,7 @@ async def get_preferences_profile(
 @api_router.put("/preferences/profile")
 async def update_preferences_profile(
     request: PreferencesProfileUpdateRequest,
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Write per-account AI priority profile.
@@ -4931,7 +4977,10 @@ async def update_preferences_profile(
     Uses read-then-update/insert to ensure ai_language and
     has_completed_onboarding are never silently clobbered.
     """
-    effective_account_id = _require_account_ownership(jwt_subject, request.account_id)
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, request.account_id, store)
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
         store = _get_preferences_store()
@@ -5046,7 +5095,7 @@ async def translate_email_body(request: TranslateEmailRequest):
 async def translate_render_email(
     gmail_message_id: str,
     request: TranslateRenderRequest,
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Message-bound translation endpoint returning an explicit translated render contract.
@@ -5060,7 +5109,10 @@ async def translate_render_email(
       input  -> {"target_language": "en|fr|ar"}
       output -> TranslateRenderResponse
     """
-    effective_account_id = _require_account_ownership(jwt_subject, None)
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, None, store)
     record = await asyncio.to_thread(
         _lookup_email_record_by_message_id, effective_account_id, gmail_message_id
     )
@@ -5312,7 +5364,7 @@ async def summarize_email_by_id(
     account_id: str = Query("default"),
     preferred_language: Optional[str] = Query(None),
     ai_language: Optional[str] = Query(None),
-    jwt_subject: str = Depends(require_jwt_auth),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Enqueue AI summarization job for specific email.
@@ -5335,10 +5387,10 @@ async def summarize_email_by_id(
     if not os.getenv("MISTRAL_API_KEY"):
         return {"status": "no_mistral_key"}
 
-    effective_account_id = _require_account_ownership(jwt_subject, account_id)
     store = safe_get_store()
     if not store:
         return {"status": "error", "message": "Store unavailable"}
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
 
     # Normalize the requested language; fall back to "en" if absent/invalid
     raw_lang = preferred_language or ai_language
@@ -5740,7 +5792,39 @@ async def google_oauth_callback(request: Request, code: str, state: str = None, 
         import urllib.parse
         encoded_account_id = urllib.parse.quote(effective_account_id)
         redirect = RedirectResponse(url=f"{frontend_url}/?auth=success&account_id={encoded_account_id}")
-        jwt_token = create_access_token(effective_account_id)
+
+        # MUI01-R1-B: Resolve stable user UUID for JWT uid claim
+        store = SupabaseStore()
+        existing_uid = None
+
+        existing_cookie = request.cookies.get(COOKIE_NAME)
+        if existing_cookie:
+            try:
+                cookie_payload = decode_access_token(existing_cookie)
+                cookie_uid = (cookie_payload.get("uid") or "").strip()
+                if cookie_uid:
+                    existing_uid = cookie_uid
+                else:
+                    legacy_sub = (cookie_payload.get("sub") or "").strip()
+                    if legacy_sub:
+                        existing_uid = store.resolve_uid_by_account("gmail", legacy_sub)
+            except Exception:
+                pass  # expired/invalid cookie; continue with existing_uid = None
+
+        if not existing_uid:
+            existing_uid = store.resolve_uid_by_account("gmail", effective_account_id)
+
+        if not existing_uid:
+            existing_uid = store.get_or_create_app_user()
+
+        user_uid = existing_uid
+        store.upsert_membership(user_uid, "gmail", effective_account_id)
+        print(f"[OAUTH] Membership upserted uid={user_uid} account={effective_account_id}")
+
+        jwt_token = create_access_token(
+            subject=effective_account_id,
+            uid=user_uid,
+        )
         cookie_kwargs = build_session_cookie_kwargs(request)
         redirect.set_cookie(value=jwt_token, **cookie_kwargs)
         return redirect

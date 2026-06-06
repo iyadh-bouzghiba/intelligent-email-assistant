@@ -21,6 +21,7 @@ from backend.infrastructure.supabase_store import (
 )
 
 TEST_JWT_SECRET = "test-secret-for-intelligence-profile-tests-32bytes"
+TEST_UID = "00000000-0000-4000-8000-000000000001"
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +363,7 @@ class TestIntelligenceProfileAPI(unittest.TestCase):
     def _cookie(self, subject="user@example.com"):
         with patch.dict(os.environ, {"JWT_SECRET": TEST_JWT_SECRET}, clear=False):
             self.ag._JWT_SECRET = None
-            token = self.ag.create_access_token(subject)
+            token = self.ag.create_access_token(subject=subject, uid=TEST_UID)
         return {"iea_session": token}
 
     def _default_profile(self, account_id="user@example.com"):
@@ -380,6 +381,7 @@ class TestIntelligenceProfileAPI(unittest.TestCase):
 
     def _mock_store(self, profile):
         mock_store = MagicMock()
+        mock_store.check_membership.return_value = True
         mock_store.get_account_intelligence_profile.return_value = profile
         mock_store.upsert_account_intelligence_profile.return_value = profile
         return mock_store
@@ -398,6 +400,7 @@ class TestIntelligenceProfileAPI(unittest.TestCase):
 
     def test_get_rejects_non_subject_account_id_from_path(self):
         mock_store = MagicMock()
+        mock_store.check_membership.return_value = False
         with patch.object(self.service, "safe_get_store", return_value=mock_store):
             response = self.client.get(
                 "/api/accounts/other%40example.com/intelligence-profile",
