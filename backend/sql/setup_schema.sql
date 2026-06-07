@@ -89,7 +89,7 @@ ON public.credentials (provider, account_id);
 CREATE TABLE IF NOT EXISTS public.email_threads (
   id BIGSERIAL PRIMARY KEY,
   thread_id VARCHAR(255) NOT NULL,
-  account_id VARCHAR(255) DEFAULT 'default',
+  account_id VARCHAR(255) NOT NULL,
   subject TEXT,
   summary TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
