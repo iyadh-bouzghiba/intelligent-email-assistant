@@ -1,4 +1,4 @@
-﻿"""
+"""
 Intelligent Email Assistant - API Service
 
 FastAPI application providing:
@@ -648,11 +648,6 @@ async def process_briefing():
     except Exception as e:
         print(f"[WARN] /process error: {e}")
         return {"briefings": [], "account": "primary", "error": str(e)}
-
-@app.get("/emails", dependencies=[Depends(require_jwt_auth)])
-async def list_emails_root(account_id: Optional[str] = Query(None)):
-    """Compatibility bridge: root /emails delegates to canonical /api/emails."""
-    return await list_emails(account_id)
 
 # ------------------------------------------------------------------
 # API ROUTES
@@ -1891,7 +1886,10 @@ async def get_email_summary(
 
 
 @api_router.get("/threads")
-async def list_threads(account_id: str = Query(None)):
+async def list_threads(
+    account_id: Optional[str] = Query(None),
+    claims: JWTClaims = Depends(require_jwt_auth),
+):
     """
     List real tracked Gmail threads from database.
     CRITICAL: Returns same data source as send endpoint (email_threads table).
@@ -1899,21 +1897,14 @@ async def list_threads(account_id: str = Query(None)):
     """
     store = safe_get_store()
     if not store:
-        return {
-            "count": 0,
-            "threads": [],
-            "error": "Database unavailable"
-        }
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
 
     try:
         # Query email_threads table (same source as send endpoint)
-        # CRITICAL: Filter by account_id if provided
         query = store.client.table("email_threads").select(
             "thread_id, account_id, subject, summary, created_at"
-        )
-
-        if account_id:
-            query = query.eq("account_id", account_id)
+        ).eq("account_id", effective_account_id)
 
         thread_records = await asyncio.to_thread(
             lambda q=query: q.order("created_at", desc=True).limit(100).execute()
@@ -2229,7 +2220,7 @@ async def send_thread_reply(
                 try:
                     await asyncio.to_thread(
                         lambda: store.client.table("email_threads")
-                        .upsert({"thread_id": thread_id, "account_id": effective_account_id}, on_conflict="thread_id")
+                        .upsert({"thread_id": thread_id, "account_id": effective_account_id}, on_conflict="thread_id,account_id")
                         .execute()
                     )
                     logger.info(f"[SEND] Upserted thread {thread_id} into email_threads for account {effective_account_id}")
@@ -2500,20 +2491,25 @@ async def set_thread_read_state(
 
 
 @api_router.get("/sent")
-async def get_sent_emails(account_id: str, limit: int = 50, offset: int = 0):
+async def get_sent_emails(
+    account_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    claims: JWTClaims = Depends(require_jwt_auth),
+):
     """
     Returns sent emails for an account, ordered by sent_at DESC.
     Returns [] on empty — never errors for empty result.
     """
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
     try:
-        store = safe_get_store()
-        if not store:
-            logger.warning("[SENT] Store unavailable")
-            return []
         result = await asyncio.to_thread(
             lambda: store.client.table("sent_emails")
                 .select("*")
-                .eq("account_id", account_id)
+                .eq("account_id", effective_account_id)
                 .eq("source", "app_send")
                 .order("sent_at", desc=True)
                 .limit(limit)
@@ -2617,6 +2613,7 @@ async def get_thread_messages(
     thread_id: str,
     account_id: str = Query(...),
     preferred_language: str = Query("en"),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Returns inbox-side messages for a single thread,
@@ -2624,19 +2621,19 @@ async def get_thread_messages(
     """
     store = safe_get_store()
     if not store:
-        logger.warning("[THREAD_MESSAGES] Store unavailable")
-        return []
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
     try:
         preferred_language = normalize_language(preferred_language)
         raw_emails = await asyncio.to_thread(
-            store.get_emails_with_summaries, limit=200, account_id=account_id,
+            store.get_emails_with_summaries, limit=200, account_id=effective_account_id,
             preferred_language=preferred_language
         )
         messages = [e for e in raw_emails if e.get("thread_id") == thread_id]
         messages.sort(key=lambda e: e.get("date") or e.get("created_at") or "")
         logger.info(
             f"[THREAD_MESSAGES] Returning {len(messages)} messages"
-            f" for thread={thread_id} account={account_id}"
+            f" for thread={thread_id} account={effective_account_id}"
         )
         return messages
     except Exception as e:
@@ -2856,7 +2853,10 @@ async def search_emails(
 
 
 @api_router.post("/backfill-sent")
-async def backfill_sent_emails(account_id: str = Query(...)):
+async def backfill_sent_emails(
+    account_id: str = Query(...),
+    claims: JWTClaims = Depends(require_jwt_auth),
+):
     """
     Backfills historical sent messages from Gmail into sent_emails table.
 
@@ -2866,14 +2866,15 @@ async def backfill_sent_emails(account_id: str = Query(...)):
     """
     from backend.services.gmail_engine import fetch_sent_messages
 
-    credential_store = CredentialStore(persistence)
-    token_data = credential_store.load_credentials(account_id)
-    if not token_data or 'token' not in token_data:
-        raise HTTPException(status_code=401, detail=f"No valid credentials for account: {account_id}")
-
     store = safe_get_store()
     if not store:
-        raise HTTPException(status_code=503, detail="Store unavailable")
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
+
+    credential_store = CredentialStore(persistence)
+    token_data = credential_store.load_credentials(effective_account_id)
+    if not token_data or 'token' not in token_data:
+        raise HTTPException(status_code=401, detail=f"No valid credentials for account: {effective_account_id}")
 
     # Fetch recent sent messages from Gmail (bounded at 100)
     sent_rows = await asyncio.to_thread(fetch_sent_messages, token_data, 100)
@@ -2889,7 +2890,7 @@ async def backfill_sent_emails(account_id: str = Query(...)):
         existing_result = await asyncio.to_thread(
             lambda: store.client.table("sent_emails")
                 .select("gmail_message_id")
-                .eq("account_id", account_id)
+                .eq("account_id", effective_account_id)
                 .execute()
         )
         existing_ids = {
@@ -2911,7 +2912,7 @@ async def backfill_sent_emails(account_id: str = Query(...)):
         batch = new_rows[i:i + 50]
         payloads = [
             {
-                "account_id": account_id,
+                "account_id": effective_account_id,
                 "gmail_message_id": r["gmail_message_id"],
                 "thread_id": r["thread_id"],
                 "to_address": r["to_address"],
@@ -2929,7 +2930,7 @@ async def backfill_sent_emails(account_id: str = Query(...)):
                 lambda p=payloads: store.client.table("sent_emails").insert(p).execute()
             )
             inserted += len(batch)
-            logger.info(f"[BACKFILL-SENT] Inserted batch of {len(batch)} rows for {account_id}")
+            logger.info(f"[BACKFILL-SENT] Inserted batch of {len(batch)} rows for {effective_account_id}")
         except Exception as batch_err:
             logger.error(f"[BACKFILL-SENT] Batch insert failed (rows {i}–{i + len(batch)}): {batch_err}")
 
@@ -2942,7 +2943,7 @@ async def backfill_sent_emails(account_id: str = Query(...)):
             await asyncio.to_thread(
                 lambda: store.client.table("sent_emails")
                     .update({"has_attachments": v})
-                    .eq("account_id", account_id)
+                    .eq("account_id", effective_account_id)
                     .eq("gmail_message_id", mid)
                     .execute()
             )
@@ -2952,7 +2953,7 @@ async def backfill_sent_emails(account_id: str = Query(...)):
 
     logger.info(
         f"[BACKFILL-SENT] Completed: {inserted} inserted, {skipped} existing "
-        f"({refreshed} refreshed) for {account_id}"
+        f"({refreshed} refreshed) for {effective_account_id}"
     )
     return {"status": "ok", "inserted": inserted, "skipped": skipped, "refreshed": refreshed}
 
@@ -2962,6 +2963,7 @@ async def correct_inbox_attachments(
     account_id: str = Query(...),
     limit: int = Query(50),
     offset: int = Query(0),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Correction of has_attachments for historical inbox emails — one bounded,
@@ -2987,12 +2989,13 @@ async def correct_inbox_attachments(
 
     store = safe_get_store()
     if not store:
-        raise HTTPException(status_code=503, detail="Store unavailable")
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
 
     provider = GmailProvider()
-    token_data = provider._load_token_data(account_id)
+    token_data = provider._load_token_data(effective_account_id)
     if not token_data or "token" not in token_data:
-        raise HTTPException(status_code=401, detail=f"No valid credentials for account: {account_id}")
+        raise HTTPException(status_code=401, detail=f"No valid credentials for account: {effective_account_id}")
 
     gmail_client = WorkerGmailClient(provider._build_worker_token_data(token_data))
 
@@ -3000,7 +3003,7 @@ async def correct_inbox_attachments(
         db_result = await asyncio.to_thread(
             lambda: store.client.table("emails")
                 .select("id,gmail_message_id")
-                .eq("account_id", account_id)
+                .eq("account_id", effective_account_id)
                 .order("created_at", desc=False)
                 .order("id", desc=False)
                 .offset(offset)
@@ -3042,13 +3045,13 @@ async def correct_inbox_attachments(
                 updated_false += 1
         except Exception as e:
             logger.error(
-                f"[INBOX-CORRECTION] {account_id} msg={msg_id[:8]}...: "
+                f"[INBOX-CORRECTION] {effective_account_id} msg={msg_id[:8]}...: "
                 f"{type(e).__name__}: {e}"
             )
             errors += 1
 
     logger.info(
-        f"[INBOX-CORRECTION] account={account_id} scanned={scanned} "
+        f"[INBOX-CORRECTION] account={effective_account_id} scanned={scanned} "
         f"true={updated_true} false={updated_false} skipped={skipped} errors={errors} "
         f"offset={offset} limit={limit}"
     )
@@ -3069,6 +3072,7 @@ async def correct_sent_attachments(
     account_id: str = Query(...),
     limit: int = Query(50),
     offset: int = Query(0),
+    claims: JWTClaims = Depends(require_jwt_auth),
 ):
     """
     Correction of has_attachments for historical sent emails — one bounded,
@@ -3094,12 +3098,13 @@ async def correct_sent_attachments(
 
     store = safe_get_store()
     if not store:
-        raise HTTPException(status_code=503, detail="Store unavailable")
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
 
     provider = GmailProvider()
-    token_data = provider._load_token_data(account_id)
+    token_data = provider._load_token_data(effective_account_id)
     if not token_data or "token" not in token_data:
-        raise HTTPException(status_code=401, detail=f"No valid credentials for account: {account_id}")
+        raise HTTPException(status_code=401, detail=f"No valid credentials for account: {effective_account_id}")
 
     gmail_client = WorkerGmailClient(provider._build_worker_token_data(token_data))
 
@@ -3107,7 +3112,7 @@ async def correct_sent_attachments(
         db_result = await asyncio.to_thread(
             lambda: store.client.table("sent_emails")
                 .select("id,gmail_message_id")
-                .eq("account_id", account_id)
+                .eq("account_id", effective_account_id)
                 .order("sent_at", desc=False)
                 .order("id", desc=False)
                 .offset(offset)
@@ -3149,13 +3154,13 @@ async def correct_sent_attachments(
                 updated_false += 1
         except Exception as e:
             logger.error(
-                f"[SENT-CORRECTION] {account_id} msg={msg_id[:8]}...: "
+                f"[SENT-CORRECTION] {effective_account_id} msg={msg_id[:8]}...: "
                 f"{type(e).__name__}: {e}"
             )
             errors += 1
 
     logger.info(
-        f"[SENT-CORRECTION] account={account_id} scanned={scanned} "
+        f"[SENT-CORRECTION] account={effective_account_id} scanned={scanned} "
         f"true={updated_true} false={updated_false} skipped={skipped} errors={errors} "
         f"offset={offset} limit={limit}"
     )
@@ -3214,7 +3219,8 @@ async def list_accounts(claims: JWTClaims = Depends(require_jwt_auth)):
     if not store:
         return {"accounts": []}
     try:
-        account_ids = await asyncio.to_thread(store.list_memberships, claims.uid, "gmail")
+        _require_account_ownership(claims.uid, None, store)
+        account_ids = await asyncio.to_thread(store.list_memberships, getattr(claims, "uid"), "gmail")
         if not account_ids:
             return {"accounts": []}
 
@@ -4716,15 +4722,18 @@ async def list_tones():
 
 
 @api_router.get("/templates")
-async def list_templates(account_id: str, language: str = Query("en")):
+async def list_templates(
+    account_id: str,
+    language: str = Query("en"),
+    claims: JWTClaims = Depends(require_jwt_auth),
+):
     """
     List templates for an account filtered by the active language plus neutral templates.
     """
     store = safe_get_store()
     if not store:
         raise HTTPException(status_code=503, detail="Storage unavailable")
-
-    effective_account_id = resolve_account_id(None, account_id)
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
     requested_language = (language or "en").strip()
 
     if requested_language.lower() == "neutral":
@@ -4757,15 +4766,17 @@ async def list_templates(account_id: str, language: str = Query("en")):
 
 
 @api_router.post("/templates")
-async def create_template(request: TemplateCreateRequest):
+async def create_template(
+    request: TemplateCreateRequest,
+    claims: JWTClaims = Depends(require_jwt_auth),
+):
     """
     Create a reusable email template for one account.
     """
     store = safe_get_store()
     if not store:
         raise HTTPException(status_code=503, detail="Storage unavailable")
-
-    effective_account_id = resolve_account_id(None, request.account_id)
+    effective_account_id = _require_account_ownership(claims.uid, request.account_id, store)
     name = (request.name or "").strip()
     body = (request.body or "").strip()
     requested_tone = (request.tone or "professional").strip().lower()
@@ -4818,15 +4829,18 @@ async def create_template(request: TemplateCreateRequest):
 
 
 @api_router.delete("/templates/{template_id}")
-async def delete_template(template_id: str, account_id: str = Query(...)):
+async def delete_template(
+    template_id: str,
+    account_id: str = Query(...),
+    claims: JWTClaims = Depends(require_jwt_auth),
+):
     """
     Delete a template for one account only.
     """
     store = safe_get_store()
     if not store:
         raise HTTPException(status_code=503, detail="Storage unavailable")
-
-    effective_account_id = resolve_account_id(None, account_id)
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
 
     try:
         result = await asyncio.to_thread(
@@ -5454,7 +5468,10 @@ async def summarize_email_by_id(
 # ------------------------------------------------------------------
 
 @api_router.post("/agent/consent")
-async def agent_set_consent(request: AgentConsentRequest):
+async def agent_set_consent(
+    request: AgentConsentRequest,
+    claims: JWTClaims = Depends(require_jwt_auth),
+):
     """
     Enable AI assistant for this account.
 
@@ -5469,7 +5486,7 @@ async def agent_set_consent(request: AgentConsentRequest):
     store = safe_get_store()
     if not store:
         raise HTTPException(status_code=503, detail="Storage unavailable")
-    effective_account_id = resolve_account_id(None, request.account_id)
+    effective_account_id = _require_account_ownership(claims.uid, request.account_id, store)
     now_iso = datetime.now(timezone.utc).isoformat()
     try:
         store.client.table("audit_log").insert({
@@ -5489,15 +5506,18 @@ async def agent_set_consent(request: AgentConsentRequest):
 
 
 @api_router.get("/agent/status")
-async def agent_get_status(account_id: str = Query(...)):
+async def agent_get_status(
+    account_id: str = Query(...),
+    claims: JWTClaims = Depends(require_jwt_auth),
+):
     """
     Return approval state and remaining rate-limit quota for this account.
     Frontend uses this to decide whether to show consent UI or the instruction input.
     """
     store = safe_get_store()
     if not store:
-        return {"approved": False, "rate_limit_remaining": 0, "rate_limit_max": 10}
-    effective_account_id = resolve_account_id(None, account_id)
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
 
     from backend.assistant.approval_gate import check_agent_approved
     approved = check_agent_approved(store, effective_account_id)
@@ -5526,7 +5546,10 @@ async def agent_get_status(account_id: str = Query(...)):
 
 
 @api_router.post("/agent/feedback")
-async def agent_record_feedback(request: AgentFeedbackRequest):
+async def agent_record_feedback(
+    request: AgentFeedbackRequest,
+    claims: JWTClaims = Depends(require_jwt_auth),
+):
     """
     Record user feedback on an AI draft proposal.
 
@@ -5535,8 +5558,8 @@ async def agent_record_feedback(request: AgentFeedbackRequest):
     """
     store = safe_get_store()
     if not store:
-        return {"status": "ok"}
-    effective_account_id = resolve_account_id(None, request.account_id)
+        raise HTTPException(status_code=503, detail="Storage unavailable")
+    effective_account_id = _require_account_ownership(claims.uid, request.account_id, store)
     from backend.learning.feedback_collector import record_feedback
     record_feedback(
         store=store,

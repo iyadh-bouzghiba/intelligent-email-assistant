@@ -282,13 +282,8 @@ export const apiService = {
             const response = await api.get(`${API_ROOT}/emails`, { params });
             return response.data;
         } catch {
-            try {
-                const response = await api.get("/emails", { params });
-                return response.data;
-            } catch {
-                console.warn("📡 API: Emails unreachable, degrading gracefully.");
-                return [];
-            }
+            console.warn("📡 API: Emails unreachable, degrading gracefully.");
+            return [];
         }
     },
 
