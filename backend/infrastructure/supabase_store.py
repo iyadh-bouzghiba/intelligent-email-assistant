@@ -764,6 +764,25 @@ class SupabaseStore:
             logger.warning(f"[MEMBERSHIPS] list_memberships failed: {type(e).__name__}: {e}")
             return []
 
+    def delete_user_data(self, uid: str) -> dict:
+        """
+        Calls delete_user_data RPC to atomically delete
+        all data for the given uid.
+        Returns the RPC result dict.
+        Raises on RPC error.
+        """
+        result = (
+            self.client
+            .rpc("delete_user_data", {"p_uid": uid})
+            .execute()
+        )
+        if result.data is None:
+            raise RuntimeError(
+                f"delete_user_data RPC returned None "
+                f"for uid={uid}"
+            )
+        return result.data
+
 
 _DEFAULT_NOTIFICATION_PREFERENCES = {
     "urgency_escalation_enabled": False,
