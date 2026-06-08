@@ -422,6 +422,23 @@ export const apiService = {
         return response.data;
     },
 
+  async deleteUserAccount(): Promise<{
+    status: string;
+    accounts_removed: number;
+    rows_removed: number;
+  }> {
+    const response = await api.delete(
+      `${API_ROOT}/user`,
+      {
+        data: {
+          confirm: true,
+          confirm_phrase: "DELETE MY ACCOUNT"
+        }
+      }
+    );
+    return response.data;
+  },
+
     getAccountIntelligenceProfile: async (account_id: string): Promise<AccountIntelligenceProfile> => {
         const response = await api.get(
             `${API_ROOT}/accounts/${encodeURIComponent(account_id)}/intelligence-profile`

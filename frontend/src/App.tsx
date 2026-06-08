@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import './i18n';
 import { apiService, AILanguage } from '@services';
 import { websocketService, type EmailsUpdatedData, type SummaryReadyData } from '@services/websocket';
@@ -21,6 +21,7 @@ import AttachmentSearchToggle from './components/AttachmentSearchToggle';
 import { isSearchQueryActive, shouldDisableAttachmentToggle, shouldResetAttachmentFilterOnInput, resolveSearchEmptyBodyKey } from './utils/searchFilterState';
 import { deriveSpineSignals } from '@utils/deriveSpineSignals';
 import { ThreadSpine } from './components/ThreadSpine';
+import DeleteAccountModal from './components/DeleteAccountModal';
 
 const devLog = (...args: unknown[]) => {
   if (import.meta.env.DEV) {
@@ -104,6 +105,9 @@ export const App = () => {
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [activeEmail, setActiveEmail] = useState<string | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const activeEmailRef = useRef<string | null>(null); // Track current activeEmail for closures
   const lastSyncTimeRef = useRef<number>(0); // Track last sync timestamp for cooldown
@@ -1595,6 +1599,21 @@ export const App = () => {
       setError(t('auth.disconnect_account_failed', { account: account_id }));
     }
   };
+
+  const handleDeleteAccountSuccess =
+    async () => {
+      setIsDeletingAccount(true);
+      try {
+        await apiService.deleteUserAccount();
+        websocketService.disconnect();
+        window.location.href = '/';
+      } catch (err) {
+        setDeleteAccountError(
+          'Deletion failed. Please try again.'
+        );
+        setIsDeletingAccount(false);
+      }
+    };
 
   const connectedAccounts = accounts.filter(a => a.connected);
   const hasLegacyAccounts = connectedAccounts.some(a => a.account_id === 'default' || a.account_id === 'PRIMARY');
@@ -3557,6 +3576,15 @@ export const App = () => {
           </div>
           <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest opacity-50">{t('footer.executive_brain_ecosystem_2026')}</p>
         </div>
+        <div className="mt-8 pt-6 border-t border-white/5 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setShowDeleteModal(true)}
+            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all"
+          >
+            Delete Account
+          </button>
+        </div>
       </footer>
 
       <AnimatePresence>
@@ -3692,6 +3720,17 @@ export const App = () => {
           </div>
         </>
       )}
+
+      <DeleteAccountModal
+        isOpen={showDeleteModal}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setDeleteAccountError(null);
+        }}
+        onSuccess={handleDeleteAccountSuccess}
+        isDeleting={isDeletingAccount}
+        error={deleteAccountError}
+      />
 
       {/* Scroll to Top FAB - Bottom Right — hidden while any modal is open */}
       <AnimatePresence>

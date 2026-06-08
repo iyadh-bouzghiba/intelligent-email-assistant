@@ -3285,6 +3285,81 @@ async def disconnect_account(
         response.set_cookie(**build_session_cookie_clear_kwargs(request))
     return {"status": "disconnected", "account_id": effective_account_id}
 
+
+class DeleteUserRequest(BaseModel):
+    confirm: bool
+    confirm_phrase: str
+
+
+@api_router.delete("/user")
+async def delete_user_account(
+    request: Request,
+    response: Response,
+    body: DeleteUserRequest,
+    claims: JWTClaims = Depends(require_jwt_auth),
+):
+    """
+    Permanently deletes all data for the authenticated
+    user. Requires explicit confirmation. Irreversible.
+    """
+    if not body.confirm or \
+       body.confirm_phrase != "DELETE MY ACCOUNT":
+        raise HTTPException(
+            status_code=400,
+            detail="Deletion requires confirm=true "
+                   "and confirm_phrase="
+                   "'DELETE MY ACCOUNT'."
+        )
+
+    store = safe_get_store()
+    if not store:
+        raise HTTPException(
+            status_code=503,
+            detail="Storage unavailable"
+        )
+
+    try:
+        store.client.table("audit_log").insert({
+            "tenant_id": "primary",
+            "action": "user_data_deletion_initiated",
+            "metadata": {
+                "uid": claims.uid,
+                "sub": claims.sub,
+                "initiated_at": datetime.utcnow()
+                                .isoformat()
+            }
+        }).execute()
+    except Exception:
+        logger.error(
+            "audit_log insert failed for deletion; "
+            "continuing deletion.",
+            exc_info=True,
+        )
+
+    try:
+        result = await asyncio.to_thread(
+            store.delete_user_data, claims.uid
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Deletion failed. "
+                   "The operation was rolled back."
+        ) from exc
+
+    response.set_cookie(
+        **build_session_cookie_clear_kwargs(request)
+    )
+
+    return {
+        "status": "deleted",
+        "accounts_removed": result.get(
+            "accounts_removed", 0),
+        "rows_removed": result.get(
+            "rows_removed", 0)
+    }
+
+
 class IntelligenceProfileUpdateRequest(BaseModel):
     observed_categories: Optional[Dict[str, Any]] = None
     category_corrections: Optional[List[Dict[str, Any]]] = None
