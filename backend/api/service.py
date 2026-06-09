@@ -42,7 +42,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 import socketio
 
-from backend.infrastructure.supabase_store import SupabaseStore
+from backend.infrastructure.supabase_store import SupabaseStore, get_store_instance
 from backend.infrastructure.mistral_governor import get_governor as _get_mistral_governor
 from backend.languages import (
     normalize_language,
@@ -262,7 +262,7 @@ app.add_middleware(CacheControlMiddleware)
 def safe_get_store():
     """Prevents startup crashes when Supabase is unreachable"""
     try:
-        return SupabaseStore()
+        return get_store_instance()
     except Exception as e:
         print(f"[WARN] Store unavailable: {e}")
         return None
@@ -3437,7 +3437,7 @@ class TranslateRenderRequest(BaseModel):
 
 def _get_preferences_store() -> SupabaseStore:
     """Create a Supabase store for preference reads/writes."""
-    return SupabaseStore()
+    return get_store_instance()
 
 
 def _build_translation_system_prompt(
@@ -5913,7 +5913,7 @@ async def google_oauth_callback(request: Request, code: str, state: str = None, 
         redirect = RedirectResponse(url=f"{frontend_url}/?auth=success&account_id={encoded_account_id}")
 
         # MUI01-R1-B: Resolve stable user UUID for JWT uid claim
-        store = SupabaseStore()
+        store = get_store_instance()
         existing_uid = None
 
         existing_cookie = request.cookies.get(COOKIE_NAME)

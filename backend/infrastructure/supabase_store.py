@@ -3,6 +3,7 @@ import logging
 from typing import Optional
 from supabase import create_client
 from datetime import datetime, timezone
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -831,3 +832,35 @@ def _safe_intelligence_row_fields(row: dict, account_id: str) -> dict:
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
     }
+
+# ------------------------------------
+# Module-level singleton
+# ------------------------------------
+_store_instance: "SupabaseStore | None" = None
+_store_lock = threading.Lock()
+
+
+def get_store_instance() -> "SupabaseStore":
+    """
+    Returns the module-level SupabaseStore singleton.
+    Thread-safe via double-checked locking.
+    Raises RuntimeError if env vars are missing.
+    Called by safe_get_store() and all direct
+    SupabaseStore construction paths in scope.
+    """
+    global _store_instance
+    if _store_instance is None:
+        with _store_lock:
+            if _store_instance is None:
+                _store_instance = SupabaseStore()
+    return _store_instance
+
+
+def reset_store_instance() -> None:
+    """
+    Resets singleton for test isolation only.
+    Must not be called in production code.
+    """
+    global _store_instance
+    with _store_lock:
+        _store_instance = None

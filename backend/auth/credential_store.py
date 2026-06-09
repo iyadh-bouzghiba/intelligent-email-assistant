@@ -51,8 +51,8 @@ class CredentialStore:
         # PRIMARY: Write to Supabase (production persistence)
         supabase_success = False
         try:
-            from backend.infrastructure.supabase_store import SupabaseStore
-            store = SupabaseStore()
+            from backend.infrastructure.supabase_store import SupabaseStore, get_store_instance
+            store = get_store_instance()
             store.save_credential(
                 provider="gmail",
                 account_id=user_id,
@@ -106,8 +106,8 @@ class CredentialStore:
 
         # PRIMARY: Read from Supabase — canonical provider is "gmail"
         try:
-            from backend.infrastructure.supabase_store import SupabaseStore
-            store = SupabaseStore()
+            from backend.infrastructure.supabase_store import SupabaseStore, get_store_instance
+            store = get_store_instance()
             cred_data = store.get_credential(provider="gmail", account_id=user_id)
             if cred_data:
                 encrypted_creds = cred_data["encrypted_payload"]
@@ -165,8 +165,8 @@ class CredentialStore:
         """
         # PRIMARY: Delete from Supabase — canonical provider is "gmail"
         try:
-            from backend.infrastructure.supabase_store import SupabaseStore
-            store = SupabaseStore()
+            from backend.infrastructure.supabase_store import SupabaseStore, get_store_instance
+            store = get_store_instance()
             store.delete_credential(provider="gmail", account_id=user_id)
             logger.info(f"[OK] [CREDENTIAL] Deleted credentials from Supabase for user {user_id} (provider=gmail)")
         except Exception as e:
