@@ -1616,6 +1616,7 @@ export const App = () => {
     };
 
   const connectedAccounts = accounts.filter(a => a.connected);
+  const canDeleteAccount = connectedAccounts.length > 0;
   const hasLegacyAccounts = connectedAccounts.some(a => a.account_id === 'default' || a.account_id === 'PRIMARY');
 
   // ── BL-01: Reply compose helpers ──────────────────────────────────────────
@@ -3576,15 +3577,17 @@ export const App = () => {
           </div>
           <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest opacity-50">{t('footer.executive_brain_ecosystem_2026')}</p>
         </div>
-        <div className="mt-8 pt-6 border-t border-white/5 flex justify-center">
-          <button
-            type="button"
-            onClick={() => setShowDeleteModal(true)}
-            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all"
-          >
-            Delete Account
-          </button>
-        </div>
+        {canDeleteAccount && (
+          <div className="mt-8 pt-6 border-t border-white/5 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setShowDeleteModal(true)}
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all"
+            >
+              Delete Account
+            </button>
+          </div>
+        )}
       </footer>
 
       <AnimatePresence>
@@ -3729,6 +3732,7 @@ export const App = () => {
         }}
         onSuccess={handleDeleteAccountSuccess}
         isDeleting={isDeletingAccount}
+        connectedAccounts={connectedAccounts}
         error={deleteAccountError}
       />
 

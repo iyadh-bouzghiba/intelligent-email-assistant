@@ -9,6 +9,7 @@ interface Props {
   onSuccess: () => void;
   isDeleting: boolean;
   error?: string | null;
+  connectedAccounts?: Array<{ account_id: string }>;
 }
 
 const CONFIRM_PHRASE = 'DELETE MY ACCOUNT';
@@ -22,7 +23,7 @@ const CONSEQUENCES = [
   'This action cannot be undone.',
 ];
 
-export function DeleteAccountModal({ isOpen, onClose, onSuccess, isDeleting, error }: Props) {
+export function DeleteAccountModal({ isOpen, onClose, onSuccess, isDeleting, error, connectedAccounts }: Props) {
   const [step, setStep] = useState<1 | 2>(1);
   const [confirmPhrase, setConfirmPhrase] = useState('');
 
@@ -125,6 +126,25 @@ export function DeleteAccountModal({ isOpen, onClose, onSuccess, isDeleting, err
                       </li>
                     ))}
                   </ul>
+
+                  {connectedAccounts && connectedAccounts.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-rose-500/20">
+                      <p className="text-xs font-bold text-rose-300 mb-2">
+                        Accounts that will be permanently deleted:
+                      </p>
+                      <ul className="space-y-1">
+                        {connectedAccounts.map((a) => (
+                          <li
+                            key={a.account_id}
+                            className="flex items-center gap-2 text-xs text-rose-100/70"
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-rose-400 flex-shrink-0" />
+                            {a.account_id}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">
