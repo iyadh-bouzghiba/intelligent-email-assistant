@@ -189,7 +189,7 @@ export const apiService = {
         return response.data;
     },
 
-    disconnectAccount: async (account_id: string): Promise<{ status: string }> => {
+    disconnectAccount: async (account_id: string): Promise<{ status: string; account_id: string }> => {
         const response = await api.post(`${API_ROOT}/accounts/${encodeURIComponent(account_id)}/disconnect`);
         return response.data;
     },

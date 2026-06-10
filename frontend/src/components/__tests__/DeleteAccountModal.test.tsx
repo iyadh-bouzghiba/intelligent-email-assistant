@@ -20,17 +20,50 @@ vi.mock('../FocusTrap', () => ({
     React.createElement(React.Fragment, null, children),
 }));
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
+}));
+
 const MOCK_ACCOUNTS = [
-  { account_id: 'user1@gmail.com' },
-  { account_id: 'user2@gmail.com' },
+  {
+    account_id: 'user1@gmail.com',
+    connected: true,
+    auth_required: false,
+  },
+  {
+    account_id: 'user2@gmail.com',
+    connected: true,
+    auth_required: true,
+  },
 ];
 
 const defaultProps = {
   isOpen: true,
   onClose: vi.fn(),
   onSuccess: vi.fn(),
-  isDeleting: false,
+  isDisconnecting: false,
   connectedAccounts: MOCK_ACCOUNTS,
+  onDeleteAllData: vi.fn(),
+};
+
+const renderModal = (
+  props: Partial<React.ComponentProps<typeof DeleteAccountModal>> = {}
+) => render(
+  React.createElement(DeleteAccountModal, {
+    ...defaultProps,
+    ...props,
+  })
+);
+
+const selectFirstAccountAndContinue = () => {
+  fireEvent.click(
+    screen.getByRole('radio', { name: /user1@gmail\.com/ })
+  );
+  fireEvent.click(
+    screen.getByRole('button', { name: 'delete_modal.btn_continue' })
+  );
 };
 
 beforeEach(() => {
@@ -39,32 +72,30 @@ beforeEach(() => {
 
 describe('DeleteAccountModal', () => {
   it('renders nothing when closed', () => {
-    render(
-      React.createElement(DeleteAccountModal, {
-        ...defaultProps, isOpen: false
-      })
-    );
+    renderModal({ isOpen: false });
+
     expect(
-      screen.queryByText('Delete Account')
+      screen.queryByText('delete_modal.title')
     ).toBeNull();
   });
 
-  it('renders step 1 warning when open', () => {
-    render(
-      React.createElement(DeleteAccountModal,
-        defaultProps)
-    );
+  it('renders account selection step 1 when open', () => {
+    renderModal();
+
     expect(
-      screen.getByText('THIS ACTION IS IRREVERSIBLE',
-        { exact: false })
+      screen.getByText('delete_modal.title')
+    ).toBeDefined();
+    expect(
+      screen.getByText('delete_modal.subtitle_select')
+    ).toBeDefined();
+    expect(
+      screen.getByText('delete_modal.select_account_label')
     ).toBeDefined();
   });
 
-  it('displays connected account ids in step 1', () => {
-    render(
-      React.createElement(DeleteAccountModal,
-        defaultProps)
-    );
+  it('displays both connected account ids in step 1', () => {
+    renderModal();
+
     expect(
       screen.getByText('user1@gmail.com')
     ).toBeDefined();
@@ -73,80 +104,140 @@ describe('DeleteAccountModal', () => {
     ).toBeDefined();
   });
 
-  it('advances to step 2 on Continue click', () => {
-    render(
-      React.createElement(DeleteAccountModal,
-        defaultProps)
-    );
-    fireEvent.click(screen.getByText('Continue'));
+  it('shows reconnect chip for auth_required account', () => {
+    renderModal();
+
     expect(
-      screen.getByPlaceholderText('DELETE MY ACCOUNT')
+      screen.getByText('Reconnect required')
     ).toBeDefined();
   });
 
-  it('confirm button disabled until exact phrase', () => {
-    render(
-      React.createElement(DeleteAccountModal,
-        defaultProps)
+  it('continue button disabled until account selected', () => {
+    renderModal();
+
+    const continueButton = screen.getByRole('button', {
+      name: 'delete_modal.btn_continue',
+    });
+
+    expect(continueButton).toBeDisabled();
+
+    fireEvent.click(
+      screen.getByRole('radio', { name: /user1@gmail\.com/ })
     );
-    fireEvent.click(screen.getByText('Continue'));
-    const btn = screen.getByText('Delete My Account')
-      .closest('button');
-    expect(btn).toBeDefined();
-    expect((btn as HTMLButtonElement).disabled)
-      .toBe(true);
+
+    expect(continueButton).toBeEnabled();
+  });
+
+  it('continue button enabled after account selected', () => {
+    renderModal();
+
+    fireEvent.click(
+      screen.getByRole('radio', { name: /user1@gmail\.com/ })
+    );
+
+    expect(
+      screen.getByRole('button', {
+        name: 'delete_modal.btn_continue',
+      })
+    ).toBeEnabled();
+  });
+
+  it('advances to step 2 showing selected account id', () => {
+    renderModal();
+
+    selectFirstAccountAndContinue();
+
+    expect(
+      screen.getByText('delete_modal.subtitle_confirm')
+    ).toBeDefined();
+    expect(
+      screen.getByText('delete_modal.selected_account_label')
+    ).toBeDefined();
+    expect(
+      screen.getByText('user1@gmail.com')
+    ).toBeDefined();
+  });
+
+  it('confirm button disabled until exact phrase typed', () => {
+    renderModal();
+
+    selectFirstAccountAndContinue();
+
+    const confirmButton = screen.getByRole('button', {
+      name: 'delete_modal.btn_confirm',
+    });
+
+    expect(confirmButton).toBeDisabled();
+
     fireEvent.change(
-      screen.getByPlaceholderText('DELETE MY ACCOUNT'),
-      { target: { value: 'DELETE MY' } }
+      screen.getByPlaceholderText('DISCONNECT ACCOUNT'),
+      { target: { value: 'DISCONNECT' } }
     );
-    expect((btn as HTMLButtonElement).disabled)
-      .toBe(true);
+
+    expect(confirmButton).toBeDisabled();
   });
 
   it('confirm button enabled with exact phrase', () => {
-    render(
-      React.createElement(DeleteAccountModal,
-        defaultProps)
-    );
-    fireEvent.click(screen.getByText('Continue'));
-    fireEvent.change(
-      screen.getByPlaceholderText('DELETE MY ACCOUNT'),
-      { target: { value: 'DELETE MY ACCOUNT' } }
-    );
-    const btn = screen.getByText('Delete My Account')
-      .closest('button');
-    expect((btn as HTMLButtonElement).disabled)
-      .toBe(false);
-  });
+    renderModal();
 
-  it('calls onSuccess with exact phrase confirmed', () => {
-    const onSuccess = vi.fn();
-    render(
-      React.createElement(DeleteAccountModal, {
-        ...defaultProps, onSuccess
-      })
-    );
-    fireEvent.click(screen.getByText('Continue'));
-    fireEvent.change(
-      screen.getByPlaceholderText('DELETE MY ACCOUNT'),
-      { target: { value: 'DELETE MY ACCOUNT' } }
-    );
-    fireEvent.click(
-      screen.getByText('Delete My Account')
-    );
-    expect(onSuccess).toHaveBeenCalledTimes(1);
-  });
+    selectFirstAccountAndContinue();
 
-  it('displays error message when error prop set', () => {
-    render(
-      React.createElement(DeleteAccountModal, {
-        ...defaultProps,
-        error: 'Deletion failed. Please try again.'
-      })
+    fireEvent.change(
+      screen.getByPlaceholderText('DISCONNECT ACCOUNT'),
+      { target: { value: 'DISCONNECT ACCOUNT' } }
     );
+
     expect(
-      screen.getByText(
-        'Deletion failed. Please try again.')
+      screen.getByRole('button', {
+        name: 'delete_modal.btn_confirm',
+      })
+    ).toBeEnabled();
+  });
+
+  it('calls onSuccess with selected account id', () => {
+    const onSuccess = vi.fn();
+
+    renderModal({ onSuccess });
+
+    selectFirstAccountAndContinue();
+
+    fireEvent.change(
+      screen.getByPlaceholderText('DISCONNECT ACCOUNT'),
+      { target: { value: 'DISCONNECT ACCOUNT' } }
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'delete_modal.btn_confirm',
+      })
+    );
+
+    expect(onSuccess).toHaveBeenCalledWith(
+      'user1@gmail.com'
+    );
+  });
+
+  it('displays error when error prop provided', () => {
+    renderModal({
+      error: 'Disconnect failed. Please try again.',
+    });
+
+    expect(
+      screen.getByText('Disconnect failed. Please try again.')
     ).toBeDefined();
+  });
+
+  it('calls onDeleteAllData when delete all link clicked', () => {
+    const onDeleteAllData = vi.fn();
+
+    renderModal({ onDeleteAllData });
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'delete_modal.delete_all_link',
+      })
+    );
+
+    expect(onDeleteAllData).toHaveBeenCalledTimes(1);
   });
 });

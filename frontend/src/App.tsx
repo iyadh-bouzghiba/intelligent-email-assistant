@@ -1600,14 +1600,31 @@ export const App = () => {
     }
   };
 
-  const handleDeleteAccountSuccess =
+  const handleDisconnectModalSuccess =
+    async (accountId: string) => {
+      setIsDeletingAccount(true);
+      try {
+        await handleDisconnect(accountId);
+        setShowDeleteModal(false);
+        setDeleteAccountError(null);
+      } catch {
+        setDeleteAccountError(
+          t('auth.disconnect_account_failed',
+            { account: accountId })
+        );
+      } finally {
+        setIsDeletingAccount(false);
+      }
+    };
+
+  const handleDeleteAllDataSuccess =
     async () => {
       setIsDeletingAccount(true);
       try {
         await apiService.deleteUserAccount();
         websocketService.disconnect();
         window.location.href = '/';
-      } catch (err) {
+      } catch {
         setDeleteAccountError(
           'Deletion failed. Please try again.'
         );
@@ -3730,8 +3747,9 @@ export const App = () => {
           setShowDeleteModal(false);
           setDeleteAccountError(null);
         }}
-        onSuccess={handleDeleteAccountSuccess}
-        isDeleting={isDeletingAccount}
+        onSuccess={handleDisconnectModalSuccess}
+        isDisconnecting={isDeletingAccount}
+        onDeleteAllData={handleDeleteAllDataSuccess}
         connectedAccounts={connectedAccounts}
         error={deleteAccountError}
       />
