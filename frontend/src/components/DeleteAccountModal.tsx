@@ -1,51 +1,72 @@
 import { motion } from 'framer-motion';
-import { X, AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Check, RefreshCw, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation as useI18nTranslation } from 'react-i18next';
+import { AccountInfo } from '@types';
 import { FocusTrap } from './FocusTrap';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
-  isDeleting: boolean;
+  onSuccess: (accountId: string) => void;
+  isDisconnecting: boolean;
+  connectedAccounts: AccountInfo[];
   error?: string | null;
-  connectedAccounts?: Array<{ account_id: string }>;
+  onDeleteAllData?: () => void;
 }
 
-const CONFIRM_PHRASE = 'DELETE MY ACCOUNT';
-const TITLE_ID = 'delete-account-title';
-const DESC_ID = 'delete-account-desc';
+const DISCONNECT_PHRASE = 'DISCONNECT ACCOUNT';
+const TITLE_ID = 'disconnect-account-title';
+const DESC_ID = 'disconnect-account-desc';
 
-const CONSEQUENCES = [
-  'All emails and summaries will be deleted.',
-  'All account connections will be removed.',
-  'Your preferences and templates will be deleted.',
-  'This action cannot be undone.',
+const CONSEQUENCE_KEYS = [
+  'delete_modal.consequence_credentials',
+  'delete_modal.consequence_sync_stops',
+  'delete_modal.consequence_data_preserved',
+  'delete_modal.consequence_gmail_safe',
+  'delete_modal.consequence_reconnect',
+  'delete_modal.consequence_others_safe',
 ];
 
-export function DeleteAccountModal({ isOpen, onClose, onSuccess, isDeleting, error, connectedAccounts }: Props) {
+export function DeleteAccountModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  isDisconnecting,
+  connectedAccounts,
+  error,
+  onDeleteAllData,
+}: Props) {
+  const { t } = useI18nTranslation();
   const [step, setStep] = useState<1 | 2>(1);
+  const [selectedAccountId, setSelectedAccountId] = useState('');
   const [confirmPhrase, setConfirmPhrase] = useState('');
 
   useEffect(() => {
     if (isOpen) {
       setStep(1);
+      setSelectedAccountId('');
       setConfirmPhrase('');
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const phraseMatches = confirmPhrase === CONFIRM_PHRASE;
+  const phraseMatches = confirmPhrase === DISCONNECT_PHRASE;
 
   const handleClose = () => {
-    if (isDeleting) return;
+    if (isDisconnecting) return;
     onClose();
   };
 
   const handleConfirm = () => {
-    if (!phraseMatches || isDeleting) return;
-    onSuccess();
+    if (!phraseMatches || isDisconnecting || selectedAccountId === '') return;
+    onSuccess(selectedAccountId);
+  };
+
+  const handleContinue = () => {
+    if (selectedAccountId === '' || isDisconnecting) return;
+    setStep(2);
   };
 
   return (
@@ -81,22 +102,22 @@ export function DeleteAccountModal({ isOpen, onClose, onSuccess, isDeleting, err
                     id={TITLE_ID}
                     className="text-xl font-black text-white leading-tight"
                   >
-                    Delete Account
+                    {t('delete_modal.title')}
                   </h2>
                   <p
                     id={DESC_ID}
                     className="mt-1 text-sm text-slate-400"
                   >
                     {step === 1
-                      ? 'Review what will be permanently deleted.'
-                      : 'Confirm to permanently delete your account.'}
+                      ? t('delete_modal.subtitle_select')
+                      : t('delete_modal.subtitle_confirm')}
                   </p>
                 </div>
                 <button
                   data-modal-close
                   type="button"
                   onClick={handleClose}
-                  disabled={isDeleting}
+                  disabled={isDisconnecting}
                   aria-label="Close"
                   className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -108,69 +129,112 @@ export function DeleteAccountModal({ isOpen, onClose, onSuccess, isDeleting, err
             {/* Body */}
             <div className="flex-1 overflow-y-auto custom-scrollbar px-5 py-6 sm:px-6">
               {step === 1 ? (
-                <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <AlertTriangle size={16} className="text-rose-400 flex-shrink-0" />
-                    <p className="text-xs font-black uppercase tracking-wide text-rose-300">
-                      This action is irreversible
-                    </p>
-                  </div>
-                  <ul className="space-y-2">
-                    {CONSEQUENCES.map((consequence) => (
-                      <li
-                        key={consequence}
-                        className="flex items-start gap-2 text-sm text-rose-100/80"
-                      >
-                        <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-rose-400 flex-shrink-0" />
-                        {consequence}
-                      </li>
-                    ))}
-                  </ul>
-
-                  {connectedAccounts && connectedAccounts.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-rose-500/20">
-                      <p className="text-xs font-bold text-rose-300 mb-2">
-                        Accounts that will be permanently deleted:
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <AlertTriangle size={16} className="text-rose-400 flex-shrink-0" />
+                      <p className="text-xs font-black uppercase tracking-wide text-rose-300">
+                        {t('delete_modal.irreversible_warning')}
                       </p>
-                      <ul className="space-y-1">
-                        {connectedAccounts.map((a) => (
-                          <li
-                            key={a.account_id}
-                            className="flex items-center gap-2 text-xs text-rose-100/70"
-                          >
-                            <span className="h-1.5 w-1.5 rounded-full bg-rose-400 flex-shrink-0" />
-                            {a.account_id}
-                          </li>
-                        ))}
-                      </ul>
                     </div>
+                    <ul className="space-y-2">
+                      {CONSEQUENCE_KEYS.map((key) => (
+                        <li
+                          key={key}
+                          className="flex items-start gap-2 text-sm text-rose-100/80"
+                        >
+                          <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-rose-400 flex-shrink-0" />
+                          {t(key)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="space-y-2" role="radiogroup" aria-label={t('delete_modal.select_account_label')}>
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                      {t('delete_modal.select_account_label')}
+                    </p>
+                    {connectedAccounts.map((account) => {
+                      const isSelected = selectedAccountId === account.account_id;
+
+                      return (
+                        <button
+                          key={account.account_id}
+                          type="button"
+                          role="radio"
+                          aria-checked={isSelected}
+                          aria-pressed={isSelected}
+                          onClick={() => setSelectedAccountId(account.account_id)}
+                          disabled={isDisconnecting}
+                          className={`flex min-h-[44px] w-full items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                            isSelected
+                              ? 'border border-rose-500/70 bg-rose-500/10 text-white'
+                              : 'border border-white/10 bg-white/[0.04] text-slate-200 hover:border-rose-500/40'
+                          }`}
+                        >
+                          <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                            {account.account_id}
+                          </span>
+                          <span className="flex flex-shrink-0 items-center gap-2">
+                            {account.auth_required && (
+                              <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-200">
+                                Reconnect required
+                              </span>
+                            )}
+                            {isSelected && (
+                              <Check size={16} className="text-rose-300" aria-hidden="true" />
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {selectedAccountId === '' && (
+                    <p className="text-xs text-slate-500">
+                      {t('delete_modal.no_account_selected')}
+                    </p>
                   )}
+
+                  <p className="text-xs text-slate-500">
+                    {t('delete_modal.gmail_not_deleted_notice')}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-4">
+                  <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-4">
+                    <p className="text-xs font-bold uppercase tracking-wide text-rose-300">
+                      {t('delete_modal.selected_account_label')}
+                    </p>
+                    <p className="mt-2 break-all text-sm font-black text-white">
+                      {selectedAccountId}
+                    </p>
+                  </div>
+
                   <p className="text-sm text-slate-300">
-                    Type{' '}
+                    {t('delete_modal.confirm_instruction')}{' '}
                     <span className="font-black text-rose-300 tracking-wide">
-                      DELETE MY ACCOUNT
-                    </span>{' '}
-                    to confirm permanent deletion.
+                      DISCONNECT ACCOUNT
+                    </span>
                   </p>
+
                   <input
-                    id="delete-account-confirm-input"
+                    id="disconnect-account-confirm-input"
                     name="confirmPhrase"
                     type="text"
                     value={confirmPhrase}
                     onChange={(e) => setConfirmPhrase(e.target.value)}
-                    disabled={isDeleting}
-                    placeholder="DELETE MY ACCOUNT"
+                    disabled={isDisconnecting}
+                    placeholder="DISCONNECT ACCOUNT"
                     autoComplete="off"
-                    aria-label="Type DELETE MY ACCOUNT to confirm"
-                    className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label={t('delete_modal.confirm_instruction')}
+                    className="w-full min-h-[44px] px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 placeholder-slate-600 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </div>
               )}
+
               {error && (
-                <p className="text-xs text-rose-400">
+                <p className="mt-4 text-xs text-rose-400">
                   {error}
                 </p>
               )}
@@ -182,37 +246,49 @@ export function DeleteAccountModal({ isOpen, onClose, onSuccess, isDeleting, err
                 <button
                   type="button"
                   onClick={handleClose}
-                  disabled={isDeleting}
+                  disabled={isDisconnecting}
                   className="inline-flex items-center justify-center min-h-[44px] sm:min-h-0 sm:py-2 px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Cancel
+                  {t('delete_modal.btn_cancel')}
                 </button>
                 {step === 1 ? (
                   <button
                     type="button"
-                    onClick={() => setStep(2)}
-                    className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-lg shadow-rose-600/20"
+                    onClick={handleContinue}
+                    disabled={selectedAccountId === '' || isDisconnecting}
+                    className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-lg shadow-rose-600/20"
                   >
-                    Continue
+                    {t('delete_modal.btn_continue')}
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={handleConfirm}
-                    disabled={!phraseMatches || isDeleting}
+                    disabled={!phraseMatches || isDisconnecting}
                     className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 sm:py-2 px-5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-lg shadow-rose-600/20"
                   >
-                    {isDeleting ? (
+                    {isDisconnecting ? (
                       <>
                         <RefreshCw size={12} className="animate-spin" />
-                        Deleting…
+                        {t('delete_modal.btn_disconnecting')}
                       </>
                     ) : (
-                      'Delete My Account'
+                      t('delete_modal.btn_confirm')
                     )}
                   </button>
                 )}
               </div>
+
+              {onDeleteAllData && (
+                <button
+                  type="button"
+                  onClick={onDeleteAllData}
+                  disabled={isDisconnecting}
+                  className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl text-xs font-semibold text-slate-500 underline-offset-4 transition-colors hover:text-rose-300 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {t('delete_modal.delete_all_link')}
+                </button>
+              )}
             </div>
           </motion.div>
         </FocusTrap>

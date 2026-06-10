@@ -404,5 +404,29 @@
         "finance": "Finance",
         "travel": "Travel",
         "alert": "Alert"
+    },
+    "delete_modal": {
+        "title": "Disconnect Account",
+        "subtitle_select": "Choose the account to disconnect.",
+        "subtitle_confirm": "Confirm account disconnection.",
+        "irreversible_warning": "This action will remove access for the selected account.",
+        "consequence_credentials": "Gmail credentials for this account will be removed.",
+        "consequence_sync_stops": "This account will stop syncing.",
+        "consequence_data_preserved": "Your emails and summaries are preserved in the app.",
+        "consequence_gmail_safe": "Your Gmail mailbox is not deleted.",
+        "consequence_reconnect": "You can reconnect this account later.",
+        "consequence_others_safe": "Other connected accounts are not affected.",
+        "select_account_label": "Select account to disconnect",
+        "no_account_selected": "Select an account above to continue.",
+        "selected_account_label": "Account to be disconnected:",
+        "confirm_instruction": "Type DISCONNECT ACCOUNT to confirm.",
+        "confirm_placeholder": "DISCONNECT ACCOUNT",
+        "confirm_phrase": "DISCONNECT ACCOUNT",
+        "btn_continue": "Continue",
+        "btn_cancel": "Cancel",
+        "btn_confirm": "Disconnect selected account",
+        "btn_disconnecting": "Disconnecting...",
+        "delete_all_link": "Delete all my product data permanently",
+        "gmail_not_deleted_notice": "This does not delete your Google account or Gmail mailbox."
     }
 }
