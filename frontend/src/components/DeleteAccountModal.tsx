@@ -118,7 +118,7 @@ export function DeleteAccountModal({
                   type="button"
                   onClick={handleClose}
                   disabled={isDisconnecting}
-                  aria-label="Close"
+                  aria-label={t('common.close')}
                   className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 sm:p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <X size={18} />
