@@ -428,5 +428,31 @@
     "btn_disconnecting": "연결 해제 중...",
     "delete_all_link": "내 모든 제품 데이터를 영구적으로 삭제",
     "gmail_not_deleted_notice": "이것은 Google 계정이나 Gmail 받은편지함을 삭제하지 않습니다."
+  },
+  "settings_panel": {
+    "title": "설정",
+    "language_label": "현재 인터페이스 언어",
+    "danger_zone_title": "위험 영역",
+    "danger_zone_subtitle": "제품 데이터에 영향을 주는 영구 작업입니다.",
+    "delete_all_description": "이 앱에 저장된 제품 데이터를 삭제합니다. Google 계정이나 Gmail 받은편지함은 삭제되지 않습니다.",
+    "delete_all_btn": "모든 제품 데이터 삭제"
+  },
+  "delete_all_modal": {
+    "title": "모든 제품 데이터 삭제",
+    "subtitle": "이 영구 작업은 앱에서 제품 데이터를 삭제합니다.",
+    "will_delete": "삭제됨",
+    "will_not_delete": "삭제되지 않음",
+    "item_emails": "저장된 이메일 및 요약",
+    "item_templates": "저장된 답장 템플릿",
+    "item_preferences": "앱 및 AI 기본 설정",
+    "item_accounts": "앱에 저장된 계정 연결",
+    "item_gmail": "Google 계정 또는 Gmail 받은편지함",
+    "item_google": "이 앱 외부의 데이터",
+    "confirm_instruction": "확인하려면 DELETE MY ACCOUNT를 입력하세요.",
+    "confirm_placeholder": "DELETE MY ACCOUNT",
+    "confirm_phrase": "DELETE MY ACCOUNT",
+    "btn_cancel": "취소",
+    "btn_confirm": "제품 데이터 삭제",
+    "btn_deleting": "삭제 중..."
   }
 }

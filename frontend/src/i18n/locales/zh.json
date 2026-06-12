@@ -428,5 +428,31 @@
     "btn_disconnecting": "正在断开连接...",
     "delete_all_link": "永久删除我的所有产品数据",
     "gmail_not_deleted_notice": "此操作不会删除您的Google账户或Gmail收件箱。"
+  },
+  "settings_panel": {
+    "title": "设置",
+    "language_label": "当前界面语言",
+    "danger_zone_title": "危险区域",
+    "danger_zone_subtitle": "会影响你的产品数据的永久操作。",
+    "delete_all_description": "删除此应用中存储的产品数据。这不会删除你的 Google 账号或 Gmail 收件箱。",
+    "delete_all_btn": "删除所有产品数据"
+  },
+  "delete_all_modal": {
+    "title": "删除所有产品数据",
+    "subtitle": "此永久操作会从应用中清除你的产品数据。",
+    "will_delete": "将删除",
+    "will_not_delete": "不会删除",
+    "item_emails": "已存储的邮件和摘要",
+    "item_templates": "已保存的回复模板",
+    "item_preferences": "应用和 AI 偏好设置",
+    "item_accounts": "应用中存储的账号连接",
+    "item_gmail": "Google 账号或 Gmail 收件箱",
+    "item_google": "此应用之外的数据",
+    "confirm_instruction": "输入 DELETE MY ACCOUNT 以确认。",
+    "confirm_placeholder": "DELETE MY ACCOUNT",
+    "confirm_phrase": "DELETE MY ACCOUNT",
+    "btn_cancel": "取消",
+    "btn_confirm": "删除产品数据",
+    "btn_deleting": "正在删除..."
   }
 }

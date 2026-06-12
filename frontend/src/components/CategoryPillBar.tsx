@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent } from 'react';
+import { useRef, type KeyboardEvent, type WheelEvent } from 'react';
 
 export interface CategoryPillBarProps {
     categories: string[];
@@ -65,12 +65,19 @@ const CategoryPillBar = ({
         }
     };
 
+    const handlePillWheel = (e: WheelEvent<HTMLDivElement>) => {
+        if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+        e.preventDefault();
+        e.currentTarget.scrollLeft += e.deltaY;
+    };
+
     return (
         <div className="w-full">
             <div
                 role="radiogroup"
                 aria-label={ariaLabel}
                 dir={isRTL ? 'rtl' : 'ltr'}
+                onWheel={handlePillWheel}
                 className="flex items-stretch gap-2 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
                 {categories.map((code, index) => {

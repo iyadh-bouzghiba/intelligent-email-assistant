@@ -428,5 +428,31 @@
     "btn_disconnecting": "Wird getrennt...",
     "delete_all_link": "Alle meine Produktdaten dauerhaft löschen",
     "gmail_not_deleted_notice": "Dein Google-Konto oder Gmail-Postfach wird dadurch nicht gelöscht."
+  },
+  "settings_panel": {
+    "title": "Einstellungen",
+    "language_label": "Aktuelle Oberflächensprache",
+    "danger_zone_title": "Gefahrenbereich",
+    "danger_zone_subtitle": "Dauerhafte Aktionen, die deine Produktdaten betreffen.",
+    "delete_all_description": "Lösche die in dieser App gespeicherten Produktdaten. Dein Google-Konto oder Gmail-Postfach wird dadurch nicht gelöscht.",
+    "delete_all_btn": "Alle Produktdaten löschen"
+  },
+  "delete_all_modal": {
+    "title": "Alle Produktdaten löschen",
+    "subtitle": "Diese dauerhafte Aktion entfernt deine Produktdaten aus der App.",
+    "will_delete": "Wird gelöscht",
+    "will_not_delete": "Wird nicht gelöscht",
+    "item_emails": "Gespeicherte E-Mails und Zusammenfassungen",
+    "item_templates": "Gespeicherte Antwortvorlagen",
+    "item_preferences": "App- und KI-Einstellungen",
+    "item_accounts": "In der App gespeicherte Kontoverknüpfungen",
+    "item_gmail": "Google-Konto oder Gmail-Postfach",
+    "item_google": "Daten außerhalb dieser App",
+    "confirm_instruction": "Gib DELETE MY ACCOUNT zur Bestätigung ein.",
+    "confirm_placeholder": "DELETE MY ACCOUNT",
+    "confirm_phrase": "DELETE MY ACCOUNT",
+    "btn_cancel": "Abbrechen",
+    "btn_confirm": "Produktdaten löschen",
+    "btn_deleting": "Wird gelöscht..."
   }
 }

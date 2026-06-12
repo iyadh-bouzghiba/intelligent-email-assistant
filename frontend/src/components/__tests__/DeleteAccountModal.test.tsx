@@ -45,7 +45,6 @@ const defaultProps = {
   onSuccess: vi.fn(),
   isDisconnecting: false,
   connectedAccounts: MOCK_ACCOUNTS,
-  onDeleteAllData: vi.fn(),
 };
 
 const renderModal = (
@@ -68,6 +67,7 @@ const selectFirstAccountAndContinue = () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  document.body.classList.remove('panel-open');
 });
 
 describe('DeleteAccountModal', () => {
@@ -108,7 +108,7 @@ describe('DeleteAccountModal', () => {
     renderModal();
 
     expect(
-      screen.getByText('Reconnect required')
+      screen.getByText('settings.reconnect_required')
     ).toBeDefined();
   });
 
@@ -227,17 +227,17 @@ describe('DeleteAccountModal', () => {
     ).toBeDefined();
   });
 
-  it('calls onDeleteAllData when delete all link clicked', () => {
-    const onDeleteAllData = vi.fn();
+  it('adds panel-open class to body when open', () => {
+    const { unmount } = renderModal({ isOpen: true });
 
-    renderModal({ onDeleteAllData });
+    expect(
+      document.body.classList.contains('panel-open')
+    ).toBe(true);
 
-    fireEvent.click(
-      screen.getByRole('button', {
-        name: 'delete_modal.delete_all_link',
-      })
-    );
+    unmount();
 
-    expect(onDeleteAllData).toHaveBeenCalledTimes(1);
+    expect(
+      document.body.classList.contains('panel-open')
+    ).toBe(false);
   });
 });

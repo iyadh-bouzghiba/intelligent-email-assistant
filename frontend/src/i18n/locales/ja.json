@@ -428,5 +428,31 @@
     "btn_disconnecting": "切断中...",
     "delete_all_link": "すべての製品データを完全に削除",
     "gmail_not_deleted_notice": "これによりGoogleアカウントやGmailメールボックスは削除されません。"
+  },
+  "settings_panel": {
+    "title": "設定",
+    "language_label": "現在のインターフェイス言語",
+    "danger_zone_title": "危険な操作",
+    "danger_zone_subtitle": "製品データに影響する永続的な操作です。",
+    "delete_all_description": "このアプリに保存されている製品データを削除します。Google アカウントや Gmail の受信トレイは削除されません。",
+    "delete_all_btn": "すべての製品データを削除"
+  },
+  "delete_all_modal": {
+    "title": "すべての製品データを削除",
+    "subtitle": "この永続的な操作により、アプリから製品データが削除されます。",
+    "will_delete": "削除されるもの",
+    "will_not_delete": "削除されないもの",
+    "item_emails": "保存済みメールと要約",
+    "item_templates": "保存済み返信テンプレート",
+    "item_preferences": "アプリと AI の設定",
+    "item_accounts": "アプリに保存されたアカウント連携",
+    "item_gmail": "Google アカウントまたは Gmail 受信トレイ",
+    "item_google": "このアプリ外のデータ",
+    "confirm_instruction": "確認するには DELETE MY ACCOUNT と入力してください。",
+    "confirm_placeholder": "DELETE MY ACCOUNT",
+    "confirm_phrase": "DELETE MY ACCOUNT",
+    "btn_cancel": "キャンセル",
+    "btn_confirm": "製品データを削除",
+    "btn_deleting": "削除中..."
   }
 }

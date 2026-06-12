@@ -428,5 +428,31 @@
         "btn_disconnecting": "Disconnecting...",
         "delete_all_link": "Delete all my product data permanently",
         "gmail_not_deleted_notice": "This does not delete your Google account or Gmail mailbox."
+    },
+    "settings_panel": {
+        "title": "Settings",
+        "language_label": "Display language",
+        "danger_zone_title": "Danger zone",
+        "danger_zone_subtitle": "These actions are permanent and cannot be undone.",
+        "delete_all_btn": "Delete all product data",
+        "delete_all_description": "Permanently removes all emails, summaries, templates, preferences, and account connections from Executive Brain. Your Gmail mailbox and Google account are not affected."
+    },
+    "delete_all_modal": {
+        "title": "Delete all product data",
+        "subtitle": "This permanently removes everything stored in Executive Brain.",
+        "will_delete": "Will be deleted:",
+        "item_emails": "All synced emails and AI summaries",
+        "item_templates": "All email templates and drafts",
+        "item_preferences": "All preferences and intelligence profiles",
+        "item_accounts": "All Gmail account connections",
+        "will_not_delete": "Will NOT be deleted:",
+        "item_gmail": "Your Gmail mailbox",
+        "item_google": "Your Google account",
+        "confirm_instruction": "Type DELETE MY ACCOUNT to confirm.",
+        "confirm_placeholder": "DELETE MY ACCOUNT",
+        "confirm_phrase": "DELETE MY ACCOUNT",
+        "btn_cancel": "Cancel",
+        "btn_confirm": "Delete everything permanently",
+        "btn_deleting": "Deleting..."
     }
 }
