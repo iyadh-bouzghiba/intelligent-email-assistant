@@ -12,7 +12,6 @@ interface Props {
   isDisconnecting: boolean;
   connectedAccounts: AccountInfo[];
   error?: string | null;
-  onDeleteAllData?: () => void;
 }
 
 const DISCONNECT_PHRASE = 'DISCONNECT ACCOUNT';
@@ -35,7 +34,6 @@ export function DeleteAccountModal({
   isDisconnecting,
   connectedAccounts,
   error,
-  onDeleteAllData,
 }: Props) {
   const { t } = useI18nTranslation();
   const [step, setStep] = useState<1 | 2>(1);
@@ -47,7 +45,14 @@ export function DeleteAccountModal({
       setStep(1);
       setSelectedAccountId('');
       setConfirmPhrase('');
+      document.body.classList.add('panel-open');
+    } else {
+      document.body.classList.remove('panel-open');
     }
+
+    return () => {
+      document.body.classList.remove('panel-open');
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -178,7 +183,7 @@ export function DeleteAccountModal({
                           <span className="flex flex-shrink-0 items-center gap-2">
                             {account.auth_required && (
                               <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-200">
-                                Reconnect required
+                                {t('settings.reconnect_required')}
                               </span>
                             )}
                             {isSelected && (
@@ -279,16 +284,6 @@ export function DeleteAccountModal({
                 )}
               </div>
 
-              {onDeleteAllData && (
-                <button
-                  type="button"
-                  onClick={onDeleteAllData}
-                  disabled={isDisconnecting}
-                  className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl text-xs font-semibold text-slate-500 underline-offset-4 transition-colors hover:text-rose-300 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {t('delete_modal.delete_all_link')}
-                </button>
-              )}
             </div>
           </motion.div>
         </FocusTrap>

@@ -428,5 +428,31 @@
     "btn_disconnecting": "Desconectando...",
     "delete_all_link": "Excluir todos os meus dados do produto permanentemente",
     "gmail_not_deleted_notice": "Isso não exclui sua conta do Google nem sua caixa de entrada do Gmail."
+  },
+  "settings_panel": {
+    "title": "Configurações",
+    "language_label": "Idioma atual da interface",
+    "danger_zone_title": "Zona de perigo",
+    "danger_zone_subtitle": "Ações permanentes que afetam seus dados do produto.",
+    "delete_all_description": "Exclua os dados do produto armazenados neste aplicativo. Isso não exclui sua conta do Google nem sua caixa de entrada do Gmail.",
+    "delete_all_btn": "Excluir todos os dados do produto"
+  },
+  "delete_all_modal": {
+    "title": "Excluir todos os dados do produto",
+    "subtitle": "Esta ação permanente apaga seus dados do produto do aplicativo.",
+    "will_delete": "Será excluído",
+    "will_not_delete": "Não será excluído",
+    "item_emails": "E-mails armazenados e resumos",
+    "item_templates": "Modelos de resposta salvos",
+    "item_preferences": "Preferências do aplicativo e da IA",
+    "item_accounts": "Vínculos de conta armazenados no aplicativo",
+    "item_gmail": "Conta do Google ou caixa de entrada do Gmail",
+    "item_google": "Seus dados fora deste aplicativo",
+    "confirm_instruction": "Digite DELETE MY ACCOUNT para confirmar.",
+    "confirm_placeholder": "DELETE MY ACCOUNT",
+    "confirm_phrase": "DELETE MY ACCOUNT",
+    "btn_cancel": "Cancelar",
+    "btn_confirm": "Excluir dados do produto",
+    "btn_deleting": "Excluindo..."
   }
 }

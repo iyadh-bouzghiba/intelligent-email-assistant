@@ -428,5 +428,31 @@
     "btn_disconnecting": "Bağlantı kesiliyor...",
     "delete_all_link": "Tüm ürün verilerimi kalıcı olarak sil",
     "gmail_not_deleted_notice": "Bu işlem Google hesabını veya Gmail gelen kutunu silmez."
+  },
+  "settings_panel": {
+    "title": "Ayarlar",
+    "language_label": "Geçerli arayüz dili",
+    "danger_zone_title": "Tehlikeli bölge",
+    "danger_zone_subtitle": "Ürün verilerini etkileyen kalıcı işlemler.",
+    "delete_all_description": "Bu uygulamada saklanan ürün verilerini sil. Bu işlem Google hesabını veya Gmail gelen kutunu silmez.",
+    "delete_all_btn": "Tüm ürün verilerini sil"
+  },
+  "delete_all_modal": {
+    "title": "Tüm ürün verilerini sil",
+    "subtitle": "Bu kalıcı işlem ürün verilerini uygulamadan siler.",
+    "will_delete": "Silinecek",
+    "will_not_delete": "Silinmeyecek",
+    "item_emails": "Saklanan e-postalar ve özetler",
+    "item_templates": "Kaydedilmiş yanıt şablonları",
+    "item_preferences": "Uygulama ve AI tercihleri",
+    "item_accounts": "Uygulamada saklanan hesap bağlantıları",
+    "item_gmail": "Google hesabı veya Gmail gelen kutusu",
+    "item_google": "Bu uygulamanın dışındaki verileriniz",
+    "confirm_instruction": "Onaylamak için DELETE MY ACCOUNT yaz.",
+    "confirm_placeholder": "DELETE MY ACCOUNT",
+    "confirm_phrase": "DELETE MY ACCOUNT",
+    "btn_cancel": "İptal",
+    "btn_confirm": "Ürün verilerini sil",
+    "btn_deleting": "Siliniyor..."
   }
 }

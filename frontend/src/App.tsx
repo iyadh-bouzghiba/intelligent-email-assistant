@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import './i18n';
 import { apiService, AILanguage } from '@services';
 import { websocketService, type EmailsUpdatedData, type SummaryReadyData } from '@services/websocket';
-import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send, Search, X, Paperclip } from 'lucide-react';
+import { Sparkles, RefreshCw, Mail, MailOpen, Shield, AlertCircle, Clock, ChevronRight, Brain, LogOut, Send, Search, X, Paperclip, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { EmailViewModel, AccountInfo, SentEmail, SupportedLanguage, SupportedTone, EmailTemplate, DraftTone, InboxThreadRow, ReplyAttachmentDraft, AccountIntelligenceProfile } from '@types';
@@ -22,6 +22,8 @@ import { isSearchQueryActive, shouldDisableAttachmentToggle, shouldResetAttachme
 import { deriveSpineSignals } from '@utils/deriveSpineSignals';
 import { ThreadSpine } from './components/ThreadSpine';
 import DeleteAccountModal from './components/DeleteAccountModal';
+import SettingsPanel from './components/SettingsPanel';
+import DeleteAllDataModal from './components/DeleteAllDataModal';
 
 const devLog = (...args: unknown[]) => {
   if (import.meta.env.DEV) {
@@ -108,6 +110,9 @@ export const App = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+  const [deleteAllError, setDeleteAllError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const activeEmailRef = useRef<string | null>(null); // Track current activeEmail for closures
   const lastSyncTimeRef = useRef<number>(0); // Track last sync timestamp for cooldown
@@ -1620,20 +1625,18 @@ export const App = () => {
   const handleDeleteAllDataSuccess =
     async () => {
       setIsDeletingAccount(true);
+      setDeleteAllError(null);
       try {
         await apiService.deleteUserAccount();
         websocketService.disconnect();
         window.location.href = '/';
       } catch {
-        setDeleteAccountError(
-          'Deletion failed. Please try again.'
-        );
+        setDeleteAllError(t('common.network_error_try_again'));
         setIsDeletingAccount(false);
       }
     };
 
   const connectedAccounts = accounts.filter(a => a.connected);
-  const canDeleteAccount = connectedAccounts.length > 0;
   const hasLegacyAccounts = connectedAccounts.some(a => a.account_id === 'default' || a.account_id === 'PRIMARY');
 
   // ── BL-01: Reply compose helpers ──────────────────────────────────────────
@@ -2779,6 +2782,19 @@ export const App = () => {
                 />
               )}
 
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteAllError(null);
+                  setShowSettingsPanel(true);
+                }}
+                aria-label={t('settings_panel.title')}
+                title={t('settings_panel.title')}
+                className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-400 transition-all hover:border-primary-500/40 hover:bg-primary-600/20 hover:text-white active:scale-95"
+              >
+                <Settings size={17} aria-hidden="true" />
+              </button>
+
               {/* Desktop session/action rail — account context and immediate actions only */}
               <div className="flex items-center gap-3 min-w-0">
                 <div className="relative">
@@ -2891,6 +2907,18 @@ export const App = () => {
                 onAiLanguageChange={handleAiLanguageChange}
                 languageAriaIdPrefix="mobile"
               />
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteAllError(null);
+                  setShowSettingsPanel(true);
+                }}
+                aria-label={t('settings_panel.title')}
+                title={t('settings_panel.title')}
+                className="flex-shrink-0 h-11 w-11 sm:h-9 sm:w-9 flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-400 transition-all hover:border-primary-500/40 hover:bg-primary-600/20 hover:text-white active:scale-95"
+              >
+                <Settings size={16} aria-hidden="true" />
+              </button>
               {canShowSyncControl && (
                 <button
                   onClick={async () => {
@@ -3594,17 +3622,6 @@ export const App = () => {
           </div>
           <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest opacity-50">{t('footer.executive_brain_ecosystem_2026')}</p>
         </div>
-        {canDeleteAccount && (
-          <div className="mt-8 pt-6 border-t border-white/5 flex justify-center">
-            <button
-              type="button"
-              onClick={() => setShowDeleteModal(true)}
-              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all"
-            >
-              Delete Account
-            </button>
-          </div>
-        )}
       </footer>
 
       <AnimatePresence>
@@ -3749,9 +3766,30 @@ export const App = () => {
         }}
         onSuccess={handleDisconnectModalSuccess}
         isDisconnecting={isDeletingAccount}
-        onDeleteAllData={handleDeleteAllDataSuccess}
         connectedAccounts={connectedAccounts}
         error={deleteAccountError}
+      />
+
+      <SettingsPanel
+        isOpen={showSettingsPanel}
+        onClose={() => setShowSettingsPanel(false)}
+        onDeleteAllData={() => {
+          setDeleteAllError(null);
+          setShowSettingsPanel(false);
+          setShowDeleteAllModal(true);
+        }}
+      />
+
+      <DeleteAllDataModal
+        isOpen={showDeleteAllModal}
+        onClose={() => {
+          if (isDeletingAccount) return;
+          setShowDeleteAllModal(false);
+          setDeleteAllError(null);
+        }}
+        onSuccess={handleDeleteAllDataSuccess}
+        isDeleting={isDeletingAccount}
+        error={deleteAllError}
       />
 
       {/* Scroll to Top FAB - Bottom Right — hidden while any modal is open */}

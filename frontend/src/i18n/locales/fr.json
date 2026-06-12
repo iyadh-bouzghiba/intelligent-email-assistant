@@ -428,5 +428,31 @@
     "btn_disconnecting": "Déconnexion en cours...",
     "delete_all_link": "Supprimer définitivement toutes mes données",
     "gmail_not_deleted_notice": "Cela ne supprime pas votre compte Google ni votre boîte Gmail."
+  },
+  "settings_panel": {
+    "title": "Paramètres",
+    "language_label": "Langue actuelle de l’interface",
+    "danger_zone_title": "Zone de danger",
+    "danger_zone_subtitle": "Actions permanentes qui affectent vos données produit.",
+    "delete_all_description": "Supprime les données produit stockées dans cette application. Cela ne supprime pas votre compte Google ni votre boîte Gmail.",
+    "delete_all_btn": "Supprimer toutes les données produit"
+  },
+  "delete_all_modal": {
+    "title": "Supprimer toutes les données produit",
+    "subtitle": "Cette action permanente efface vos données produit de l’application.",
+    "will_delete": "Sera supprimé",
+    "will_not_delete": "Ne sera pas supprimé",
+    "item_emails": "E-mails stockés et résumés",
+    "item_templates": "Modèles de réponse enregistrés",
+    "item_preferences": "Préférences de l’application et de l’IA",
+    "item_accounts": "Liens de comptes stockés dans l’application",
+    "item_gmail": "Compte Google ou boîte Gmail",
+    "item_google": "Vos données en dehors de cette application",
+    "confirm_instruction": "Tapez DELETE MY ACCOUNT pour confirmer.",
+    "confirm_placeholder": "DELETE MY ACCOUNT",
+    "confirm_phrase": "DELETE MY ACCOUNT",
+    "btn_cancel": "Annuler",
+    "btn_confirm": "Supprimer les données produit",
+    "btn_deleting": "Suppression..."
   }
 }

@@ -428,5 +428,31 @@
     "btn_disconnecting": "Memutuskan koneksi...",
     "delete_all_link": "Hapus semua data produk saya secara permanen",
     "gmail_not_deleted_notice": "Ini tidak menghapus akun Google atau kotak masuk Gmail Anda."
+  },
+  "settings_panel": {
+    "title": "Pengaturan",
+    "language_label": "Bahasa antarmuka saat ini",
+    "danger_zone_title": "Zona berbahaya",
+    "danger_zone_subtitle": "Tindakan permanen yang memengaruhi data produk Anda.",
+    "delete_all_description": "Hapus data produk yang disimpan di aplikasi ini. Ini tidak menghapus akun Google atau kotak masuk Gmail Anda.",
+    "delete_all_btn": "Hapus semua data produk"
+  },
+  "delete_all_modal": {
+    "title": "Hapus semua data produk",
+    "subtitle": "Tindakan permanen ini menghapus data produk Anda dari aplikasi.",
+    "will_delete": "Akan dihapus",
+    "will_not_delete": "Tidak akan dihapus",
+    "item_emails": "Email tersimpan dan ringkasan",
+    "item_templates": "Template balasan tersimpan",
+    "item_preferences": "Preferensi aplikasi dan AI",
+    "item_accounts": "Tautan akun yang disimpan di aplikasi",
+    "item_gmail": "Akun Google atau kotak masuk Gmail",
+    "item_google": "Data Anda di luar aplikasi ini",
+    "confirm_instruction": "Ketik DELETE MY ACCOUNT untuk mengonfirmasi.",
+    "confirm_placeholder": "DELETE MY ACCOUNT",
+    "confirm_phrase": "DELETE MY ACCOUNT",
+    "btn_cancel": "Batal",
+    "btn_confirm": "Hapus data produk",
+    "btn_deleting": "Menghapus..."
   }
 }

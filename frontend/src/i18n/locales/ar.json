@@ -428,5 +428,31 @@
     "btn_disconnecting": "جارٍ قطع الاتصال...",
     "delete_all_link": "حذف جميع بيانات المنتج نهائياً",
     "gmail_not_deleted_notice": "لا يؤدي هذا إلى حذف حساب Google أو صندوق البريد Gmail."
+  },
+  "settings_panel": {
+    "title": "الإعدادات",
+    "language_label": "لغة الواجهة الحالية",
+    "danger_zone_title": "منطقة خطرة",
+    "danger_zone_subtitle": "إجراءات دائمة تؤثر على بيانات منتجك.",
+    "delete_all_description": "احذف بيانات المنتج المخزنة في هذا التطبيق. لا يؤدي ذلك إلى حذف حساب Google أو صندوق بريد Gmail.",
+    "delete_all_btn": "حذف جميع بيانات المنتج"
+  },
+  "delete_all_modal": {
+    "title": "حذف جميع بيانات المنتج",
+    "subtitle": "هذا إجراء دائم يمحو بيانات منتجك من التطبيق.",
+    "will_delete": "سيتم حذف",
+    "will_not_delete": "لن يتم حذف",
+    "item_emails": "رسائل البريد الإلكتروني المخزنة والملخصات",
+    "item_templates": "قوالب الردود المحفوظة",
+    "item_preferences": "تفضيلات التطبيق والذكاء الاصطناعي",
+    "item_accounts": "روابط الحسابات المخزنة في التطبيق",
+    "item_gmail": "حساب Google أو صندوق بريد Gmail",
+    "item_google": "بياناتك خارج هذا التطبيق",
+    "confirm_instruction": "اكتب DELETE MY ACCOUNT للتأكيد.",
+    "confirm_placeholder": "DELETE MY ACCOUNT",
+    "confirm_phrase": "DELETE MY ACCOUNT",
+    "btn_cancel": "إلغاء",
+    "btn_confirm": "حذف بيانات المنتج",
+    "btn_deleting": "جارٍ الحذف..."
   }
 }

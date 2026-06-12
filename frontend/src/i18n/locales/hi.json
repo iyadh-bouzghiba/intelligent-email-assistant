@@ -428,5 +428,31 @@
     "btn_disconnecting": "डिसकनेक्ट हो रहा है...",
     "delete_all_link": "मेरा सारा उत्पाद डेटा स्थायी रूप से हटाएं",
     "gmail_not_deleted_notice": "यह आपका Google खाता या Gmail इनबॉक्स नहीं हटाता।"
+  },
+  "settings_panel": {
+    "title": "सेटिंग्स",
+    "language_label": "वर्तमान इंटरफ़ेस भाषा",
+    "danger_zone_title": "जोखिम क्षेत्र",
+    "danger_zone_subtitle": "स्थायी कार्रवाइयाँ जो आपके उत्पाद डेटा को प्रभावित करती हैं।",
+    "delete_all_description": "इस ऐप में संग्रहीत उत्पाद डेटा हटाएँ। इससे आपका Google खाता या Gmail इनबॉक्स नहीं हटता।",
+    "delete_all_btn": "सभी उत्पाद डेटा हटाएँ"
+  },
+  "delete_all_modal": {
+    "title": "सभी उत्पाद डेटा हटाएँ",
+    "subtitle": "यह स्थायी कार्रवाई ऐप से आपका उत्पाद डेटा मिटा देती है।",
+    "will_delete": "हटाया जाएगा",
+    "will_not_delete": "नहीं हटाया जाएगा",
+    "item_emails": "संग्रहीत ईमेल और सारांश",
+    "item_templates": "सहेजे गए उत्तर टेम्पलेट",
+    "item_preferences": "ऐप और AI प्राथमिकताएँ",
+    "item_accounts": "ऐप में संग्रहीत खाता लिंक",
+    "item_gmail": "Google खाता या Gmail इनबॉक्स",
+    "item_google": "इस ऐप के बाहर आपका डेटा",
+    "confirm_instruction": "पुष्टि करने के लिए DELETE MY ACCOUNT टाइप करें।",
+    "confirm_placeholder": "DELETE MY ACCOUNT",
+    "confirm_phrase": "DELETE MY ACCOUNT",
+    "btn_cancel": "रद्द करें",
+    "btn_confirm": "उत्पाद डेटा हटाएँ",
+    "btn_deleting": "हटाया जा रहा है..."
   }
 }
