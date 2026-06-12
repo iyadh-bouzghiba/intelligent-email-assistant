@@ -2782,6 +2782,7 @@ export const App = () => {
                 />
               )}
 
+              {(hasAuthenticatedSession || connectedAccounts.length > 0) && (
               <button
                 type="button"
                 onClick={() => {
@@ -2794,6 +2795,7 @@ export const App = () => {
               >
                 <Settings size={17} aria-hidden="true" />
               </button>
+              )}
 
               {/* Desktop session/action rail — account context and immediate actions only */}
               <div className="flex items-center gap-3 min-w-0">
@@ -2907,6 +2909,7 @@ export const App = () => {
                 onAiLanguageChange={handleAiLanguageChange}
                 languageAriaIdPrefix="mobile"
               />
+              {(hasAuthenticatedSession || connectedAccounts.length > 0) && (
               <button
                 type="button"
                 onClick={() => {
@@ -2919,6 +2922,7 @@ export const App = () => {
               >
                 <Settings size={16} aria-hidden="true" />
               </button>
+              )}
               {canShowSyncControl && (
                 <button
                   onClick={async () => {
