@@ -21,7 +21,6 @@ import AttachmentSearchToggle from './components/AttachmentSearchToggle';
 import { isSearchQueryActive, shouldDisableAttachmentToggle, shouldResetAttachmentFilterOnInput, resolveSearchEmptyBodyKey } from './utils/searchFilterState';
 import { deriveSpineSignals } from '@utils/deriveSpineSignals';
 import { ThreadSpine } from './components/ThreadSpine';
-import DeleteAccountModal from './components/DeleteAccountModal';
 import SettingsPanel from './components/SettingsPanel';
 import DeleteAllDataModal from './components/DeleteAllDataModal';
 
@@ -107,9 +106,7 @@ export const App = () => {
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [activeEmail, setActiveEmail] = useState<string | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
-  const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
   const [deleteAllError, setDeleteAllError] = useState<string | null>(null);
@@ -1604,23 +1601,6 @@ export const App = () => {
       setError(t('auth.disconnect_account_failed', { account: account_id }));
     }
   };
-
-  const handleDisconnectModalSuccess =
-    async (accountId: string) => {
-      setIsDeletingAccount(true);
-      try {
-        await handleDisconnect(accountId);
-        setShowDeleteModal(false);
-        setDeleteAccountError(null);
-      } catch {
-        setDeleteAccountError(
-          t('auth.disconnect_account_failed',
-            { account: accountId })
-        );
-      } finally {
-        setIsDeletingAccount(false);
-      }
-    };
 
   const handleDeleteAllDataSuccess =
     async () => {
@@ -3761,18 +3741,6 @@ export const App = () => {
           </div>
         </>
       )}
-
-      <DeleteAccountModal
-        isOpen={showDeleteModal}
-        onClose={() => {
-          setShowDeleteModal(false);
-          setDeleteAccountError(null);
-        }}
-        onSuccess={handleDisconnectModalSuccess}
-        isDisconnecting={isDeletingAccount}
-        connectedAccounts={connectedAccounts}
-        error={deleteAccountError}
-      />
 
       <SettingsPanel
         isOpen={showSettingsPanel}
