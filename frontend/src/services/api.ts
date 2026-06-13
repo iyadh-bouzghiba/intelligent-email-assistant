@@ -214,13 +214,17 @@ export const apiService = {
 
     translateRenderEmail: async (
         gmail_message_id: string,
-        target_language: TranslationLanguage
+        target_language: TranslationLanguage,
+        account_id?: string
     ): Promise<TranslateRenderResponse> => {
         try {
             const response = await api.post(
                 `${API_ROOT}/emails/${encodeURIComponent(gmail_message_id)}/translate-render`,
                 { target_language },
-                { timeout: 120000 }
+                {
+                    timeout: 120000,
+                    params: account_id ? { account_id } : undefined,
+                }
             );
             return response.data;
         } catch (error: unknown) {

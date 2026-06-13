@@ -1301,11 +1301,12 @@ async def list_emails_with_summaries(
 async def get_rendered_email(
     gmail_message_id: str,
     claims: JWTClaims = Depends(require_jwt_auth),
+    account_id: Optional[str] = None,
 ):
     store = safe_get_store()
     if not store:
         raise HTTPException(status_code=503, detail="Storage unavailable")
-    effective_account_id = _require_account_ownership(claims.uid, None, store)
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
     record = await asyncio.to_thread(
         _lookup_email_record_by_message_id, effective_account_id, gmail_message_id
     )
@@ -5206,6 +5207,7 @@ async def translate_render_email(
     gmail_message_id: str,
     request: TranslateRenderRequest,
     claims: JWTClaims = Depends(require_jwt_auth),
+    account_id: Optional[str] = None,
 ):
     """
     Message-bound translation endpoint returning an explicit translated render contract.
@@ -5222,7 +5224,7 @@ async def translate_render_email(
     store = safe_get_store()
     if not store:
         raise HTTPException(status_code=503, detail="Storage unavailable")
-    effective_account_id = _require_account_ownership(claims.uid, None, store)
+    effective_account_id = _require_account_ownership(claims.uid, account_id, store)
     record = await asyncio.to_thread(
         _lookup_email_record_by_message_id, effective_account_id, gmail_message_id
     )
