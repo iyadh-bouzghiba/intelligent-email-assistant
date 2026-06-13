@@ -149,7 +149,8 @@
         "confidence_reason_fallback_summary": "This summary is using a fallback language variant.",
         "confidence_reason_summary_too_short": "This summary may be too brief to rely on alone.",
         "confidence_reason_language_mismatch": "This summary language does not match the preferred AI language.",
-        "confidence_reason_signal_incomplete": "Some summary language signals are unavailable."
+        "confidence_reason_signal_incomplete": "Some summary language signals are unavailable.",
+        "email_load_failed": "Could not load this message."
     },
     "auth": {
         "add_account": "+ Add account",

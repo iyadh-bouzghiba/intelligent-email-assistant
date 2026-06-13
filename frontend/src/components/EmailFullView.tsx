@@ -269,7 +269,11 @@ export function EmailFullView({
       setRenderError(null);
 
       try {
-        const response = await fetch(`/api/emails/${encodeURIComponent(email.gmail_message_id || '')}/rendered`, {
+        const accountParam = email.account
+          ? `?account_id=${encodeURIComponent(email.account)}`
+          : '';
+
+        const response = await fetch(`/api/emails/${encodeURIComponent(email.gmail_message_id || '')}/rendered${accountParam}`, {
           credentials: 'include',
           signal: controller.signal,
         });
@@ -286,7 +290,7 @@ export function EmailFullView({
         }
 
         setRenderedEmail(null);
-        setRenderError(t('modal.loading_inline_assets'));
+        setRenderError(t('modal.email_load_failed'));
       } finally {
         if (!controller.signal.aborted) {
           setRenderLoading(false);
@@ -297,7 +301,7 @@ export function EmailFullView({
     loadRenderedEmail();
 
     return () => controller.abort();
-  }, [email.gmail_message_id, t]);
+  }, [email.gmail_message_id, email.account, t]);
 
   const isSent = Boolean(email.sentMeta);
 

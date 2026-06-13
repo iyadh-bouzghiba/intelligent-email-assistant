@@ -219,7 +219,8 @@ export function EmailDetailModal({
       if (email.gmail_message_id) {
         const result: TranslateRenderResponse = await apiService.translateRenderEmail(
           email.gmail_message_id,
-          normalizedTranslationLanguage
+          normalizedTranslationLanguage,
+          email.account
         );
         if (result.error) {
           resetOnError(result.error);
