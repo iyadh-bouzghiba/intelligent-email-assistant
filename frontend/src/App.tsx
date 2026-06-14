@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import './i18n';
 import { apiService, AILanguage } from '@services';
 import { websocketService, type EmailsUpdatedData, type SummaryReadyData } from '@services/websocket';
@@ -112,6 +112,7 @@ export const App = () => {
   const [deleteAllError, setDeleteAllError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const activeEmailRef = useRef<string | null>(null); // Track current activeEmail for closures
+  const activeTabRef = useRef<'inbox' | 'sent'>('inbox'); // Track current activeTab for mount-stable realtime handlers
   const lastSyncTimeRef = useRef<number>(0); // Track last sync timestamp for cooldown
   const syncingRef = useRef<boolean>(false); // Ref-based lock for synchronous check (prevents race conditions)
   const queuedSummarizeIdsRef = useRef<Set<string>>(new Set()); // Persistent in-flight tracking — prevents re-queuing
@@ -787,12 +788,26 @@ export const App = () => {
     return () => { cancelled = true; };
   }, [activeTab, activeEmail]);
 
+  const refreshSentIfActive = useCallback(
+    (accountId: string | null) => {
+      if (activeTabRef.current !== 'sent' || !accountId) return;
+      apiService.getSentEmails(accountId)
+        .then(data => {
+          if (activeEmailRef.current === accountId) {
+            setSentEmails(data);
+          }
+        })
+        .catch(() => {});
+    },
+    []
+  );
+
   // Reset sent page when switching tabs or accounts.
   useEffect(() => {
     setSentCurrentPage(1);
   }, [activeTab, activeEmail]);
 
-  const SENT_PAGE_SIZE = 5;
+  const SENT_PAGE_SIZE = 10;
   const sentTotalPages = Math.max(1, Math.ceil(sentEmails.length / SENT_PAGE_SIZE));
   const sentStartIndex = (sentCurrentPage - 1) * SENT_PAGE_SIZE;
   const currentSentItems = sentEmails.slice(sentStartIndex, sentStartIndex + SENT_PAGE_SIZE);
@@ -1064,6 +1079,7 @@ export const App = () => {
         }
       } else {
         await fetchEmails(accountId, { reason: 'runSync:success' });
+        refreshSentIfActive(accountId);
       }
     } catch (err) {
       console.error('[SYNC] Failed:', err);
@@ -1197,7 +1213,9 @@ export const App = () => {
         devLog('[FETCH] ws:emails_updated — sync active, skipping redundant fetch');
         return;
       }
-      fetchEmails(activeEmailRef.current, { reason: 'ws:emails_updated' });
+      const accountId = activeEmailRef.current;
+      fetchEmails(accountId, { reason: 'ws:emails_updated' })
+        .finally(() => refreshSentIfActive(accountId));
     };
 
     const handleSummaryReady = (data: SummaryReadyData) => {
@@ -1251,6 +1269,11 @@ export const App = () => {
       localStorage.setItem('last_selected_account', activeEmail);
     }
   }, [activeEmail]);
+
+  // Keep activeTabRef in sync for mount-stable realtime handlers without rebinding Socket.IO listeners.
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
 
   // Fetch account intelligence profile whenever the active account changes.
   useEffect(() => {
@@ -1738,6 +1761,7 @@ export const App = () => {
         setPanelError(null);
 
         await fetchEmails(activeEmail, { reason: 'post-send' });
+        refreshSentIfActive(activeEmail);
         setTimeout(() => { setSendSuccess(false); setSentToAddress(''); setSentCCAddress(''); }, 4000);
       } else {
         setPanelError(result.error || t('compose.send_failed'));

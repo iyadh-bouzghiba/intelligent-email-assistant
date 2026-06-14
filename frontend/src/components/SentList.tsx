@@ -1,6 +1,15 @@
-import { Clock, Mail, Paperclip, Send, Users } from 'lucide-react';
+import { Clock, Paperclip, Send, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SentEmail } from '@types';
+
+// stripQuotedThread removes quoted reply chains from sent previews.
+const stripQuotedThread = (preview: string | null): string => {
+  if (!preview) return '';
+  const text = preview.trim();
+  const match = text.search(/\r?\nOn .{5,}\bwrote:/);
+  if (match > 10) return text.substring(0, match).trim();
+  return text;
+};
 
 interface Props {
   emails: SentEmail[];
@@ -79,7 +88,7 @@ export function SentList({ emails, loading, onSelect }: Props) {
     <div className="flex flex-col gap-4">
       {emails.map((email) => {
         const subject = compactText(email.subject) || t('sent.no_subject');
-        const preview = compactText(email.body_preview);
+        const preview = compactText(stripQuotedThread(email.body_preview));
         const toAddress = compactText(email.to_address) || t('sent.unknown_recipient');
         const ccAddresses = compactText(email.cc_addresses);
 
@@ -140,11 +149,7 @@ export function SentList({ emails, loading, onSelect }: Props) {
                 )}
               </div>
 
-              <div className="pt-1 flex items-center justify-between gap-3">
-                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-600">
-                  <Mail size={11} className="text-slate-600" />
-                  {t('sent.outbound_message')}
-                </span>
+              <div className="pt-1 flex items-center justify-end gap-3">
                 <span className="text-[10px] font-black uppercase tracking-[0.18em] text-primary-500/80 opacity-0 group-hover:opacity-100 transition-opacity">
                   {t('sent.open')}
                 </span>
